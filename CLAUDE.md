@@ -60,13 +60,14 @@ This project implements **Processing Elements (PEs)** for AI/ML inference, speci
 
 ### PE Variants (top-level modules in `rtl/`)
 
-| Module | Algorithm | Accumulators | Array |
-|---|---|---|---|
-| `top_bas_4x8_sc` | Baseline Booth Radix-4/8, split-cell (4×4 sub-muls) | 1 | 64× (4-bit A × 8-bit B) |
-| `top_bas_4x8` | Baseline (extended) | 1 | — |
-| `top_win_4x8_sc` | Winograd, split-cell (4×4 sub-muls) | 3 | 64× (4-bit A × 8-bit B) |
-| `top_win_4x8` | Winograd | 3 | — |
-| `top_sqr_4x8_sc` | Squaring, split-cell (4×4 sub-muls) | — | — |
+| Module                 | Algorithm                                           | Accumulators | Array                   |
+|------------------------|-----------------------------------------------------|--------------|-------------------------|
+| `top_bas_4x8`          | Baseline (extended)                                 | 1            | —                       |
+| `top_bas_4x8_sc`       | Baseline Booth Radix-4/8, split-cell (4×4 sub-muls) | 1            | 64× (4-bit A × 8-bit B) |
+| `top_win_4x8`          | Winograd                                            | 3            | —                       |
+| `top_win_4x8_sc`       | Winograd, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
+| `top_sqr_4x8_sc`       | Squaring, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
+| `top_sqr_4x8_sc_alpha` | Squaring reduced variant, 32 lanes, no accumulators | 0            | 32× (4-bit A)           |
 
 All variants share the same 3-stage pipeline:
 ```
@@ -85,7 +86,9 @@ Input FFs (ff_n) → Partial Product Generator → Compression Tree (cpr_tree) �
 
 ### Parameter Conventions
 
-- `MULT_TYPE`: 0 = Booth Radix-4, 1 = Booth Radix-8
+- `MULT_TYPE`: 0 = Booth Radix-4, 1 = Booth Radix-8 (BAS and WIN top-levels)
+- `IS_PIPELINED`: 0 = 2-cycle latency, 1 = 3-cycle latency (all top-levels)
+- `IS_SQUARE`: 0 = passthrough sum `Σ(a[i])`, 1 = squaring `Σ(a[i]²)` (`top_sqr_4x8_sc_alpha` only)
 - `IN_SIZE`: number of multiply-accumulate lanes (typically 64)
 - `IN_WIDTH_A` / `IN_WIDTH_B`: bit widths of operands A and B
 - `ACC_SIZE`: number of accumulator inputs to the compression tree
@@ -94,3 +97,11 @@ Input FFs (ff_n) → Partial Product Generator → Compression Tree (cpr_tree) �
 ### Testbenches
 
 Each PE has a matching testbench at `tb/tb_<top_level>.sv`. The simulation flow compiles the testbench via Verilator, generating a VCD activity trace (`activity.vcd`) that is also used for dynamic power analysis.
+
+### Automation Scripts
+
+```bash
+bash scripts/flow/run_regres.sh   # full flow across all PE variants
+bash scripts/flow/ext_results.sh  # extract results into doc/data/
+bash scripts/flow/gen_charts.sh   # generate comparison charts in doc/charts/
+```
