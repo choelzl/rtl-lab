@@ -50,7 +50,7 @@ module top_bas_4x8 #(
     localparam int CPR_IN_SIZE  = IN_SIZE / NUM_LANES;
     localparam int CPR_IN_WIDTH = MULT_TYPE == 0 ? IN_WIDTH_B + 2 : IN_WIDTH_B + 3;
     localparam int PP_SHIFT     = MULT_TYPE == 0 ? 2 : 3;
-    localparam int PP_WIDTH     = CPR_IN_WIDTH + $clog2(CPR_IN_SIZE) + 1 + PP_SHIFT;
+    localparam int PP_WIDTH     = CPR_IN_WIDTH + $clog2(CPR_IN_SIZE) + 1 + (PP_SHIFT * (PP_PER_MUL - 1));
 
     logic [IN_WIDTH_A-1:0] a  [0:IN_SIZE-1];
     logic [IN_WIDTH_B-1:0] b  [0:IN_SIZE-1];
@@ -94,12 +94,12 @@ module top_bas_4x8 #(
     // -------------------------------------------------------------------------
     // Compression tree
     // -------------------------------------------------------------------------
-    cpr_tree #(
+    cpr_tree_4x8 #(
         .IS_PIPELINED(IS_PIPELINED),
         .PP_SIZE     (PP_SIZE),
         .PP_WIDTH    (PP_WIDTH),
         .ACC_SIZE    (ACC_SIZE)
-    ) cpr_tree_i (
+    ) cpr_tree_4x8_i (
         .clk_i      (clk_i),
         .rst_ni     (rst_ni),
         .acc_i      (acc_i),

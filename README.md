@@ -107,6 +107,7 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | Top level              | Testbench                 | Verified formula                                 |
 | ---------------------- | ------------------------- | ------------------------------------------------ |
 | `top_bas_4x8`          | `tb_top_bas_4x8`          | `Σ(a[i]×b[i]) + acc[0]`                          |
+| `top_bas_8x8`          | `tb_top_bas_8x8`          | `Σ(a[i]×b[i]) + acc[0]`                          |
 | `top_bas_4x8_sc`       | `tb_top_bas_4x8_sc`       | `Σ(a[i]×b[i]) + acc[0]`                          |
 | `top_win_4x8`          | `tb_top_win_4x8`          | `Σ[(a[i+1]+b[i])×(a[i]+b[i+1])] + Σacc`          |
 | `top_win_4x8_sc`       | `tb_top_win_4x8_sc`       | Winograd with B sub-lane split + Σacc            |
@@ -258,12 +259,12 @@ make clean-all                  # remove all sim/ and imp/ directories
 All PE variants share the same 3-stage pipeline:
 
 ```
-Input FFs (ff_n) → Partial Product Generator → Compression Tree (cpr_tree) → Output FF
+Input FFs (ff_n) → Partial Product Generator → Compression Tree → Output FF
 ```
 
 - **Stage 1**: `ff_n` registers the `a_i` and `b_i` input arrays.
-- **Stage 2**: the partial product generator produces compressed partial sums; `cpr_tree` begins reduction in stage 0 and optionally stores the result in a pipeline register (`IS_PIPELINED=1`).
-- **Stage 3**: `cpr_tree` completes the reduction; `ff` registers the final 48-bit output.
+- **Stage 2**: the partial product generator produces compressed partial sums; the compression tree begins reduction in stage 0 and optionally stores the result in a pipeline register (`IS_PIPELINED=1`).
+- **Stage 3**: the compression tree completes the reduction; `ff` registers the final 48-bit output.
 
 With `IS_PIPELINED=1` the latency is 3 clock cycles; with `IS_PIPELINED=0` it is 2 clock cycles.
 
@@ -294,6 +295,27 @@ Final:   4 outputs + 1 accumulator     → cpr_n_2 → add_n → 48-bit result
 ```
 
 Between stages, `ext_n` conditionally sign/zero-extends and optionally left-shifts the compressor outputs to grow the bit width.
+
+### Baseline 8x8
+
+**Formula:** `out = Σ(a[i] × b[i]) + acc[0]`
+
+Directly multiplies 32 pairs of 8-bit A and 8-bit B operands using a Booth multiplier array and sums the products with one 48-bit accumulator. Compared to Baseline 4x8, the wider A operand increases the number of partial products per multiplier, making this a higher-latency, higher-area variant.
+
+**Booth encoding** — same R4/R8 selection via `MULT_TYPE`, with the partial product count scaling with the wider A operand:
+
+| `MULT_TYPE` | Encoding | Partial products per multiplier |
+| ----------- | -------- | ------------------------------- |
+| `0`         | Radix-4  | `(8 + 1) / 2 = 4`               |
+| `1`         | Radix-8  | `(8 + 2) / 3 = 3`               |
+
+**Compression tree** — `cpr_tree_8x8` with 1 accumulator reduces all partial products to a 48-bit output in two stages:
+
+```
+Stage 0: 4 groups × (PP_SIZE/4) inputs → 4 groups × 2 outputs  [pipeline FF here if IS_PIPELINED=1]
+Stage 1: 2 groups × 4 inputs           → 2 groups × 2 outputs
+Final:   4 outputs + 1 accumulator     → cpr_n_2 → add_n → 48-bit result
+```
 
 ### Baseline 4x8 Split-Cell
 
@@ -370,13 +392,14 @@ The `IS_SQUARE` parameter selects the operation:
 ### Compressor hierarchy
 
 
-| Module           | Description                                                     |
-| ---------------- | --------------------------------------------------------------- |
-| `cpr_4_2_bit`    | 1-bit 4:2 compressor cell (two cascaded full adders)            |
-| `cpr_4_2`        | Multi-bit 4:2 compressor with sign extension                    |
-| `cpr_n_2`        | Tree of 4:2 compressors reducing N inputs to sum + carry        |
-| `cpr_tree`       | Full 3-stage compression tree with accumulators and pipeline FF |
-| `cpr_tree_alpha` | Compression tree variant for `top_sqr_4x8_sc_alpha`             |
+| Module           | Description                                                          |
+| ---------------- | -------------------------------------------------------------------- |
+| `cpr_4_2_bit`    | 1-bit 4:2 compressor cell (two cascaded full adders)                 |
+| `cpr_4_2`        | Multi-bit 4:2 compressor with sign extension                         |
+| `cpr_n_2`        | Tree of 4:2 compressors reducing N inputs to sum + carry             |
+| `cpr_tree_4x8`   | 3-stage compression tree for 4×8 PEs (PP_SIZE multiple of 8)        |
+| `cpr_tree_8x8`   | 2-stage compression tree for 8×8 PEs (PP_SIZE multiple of 4)        |
+| `cpr_tree_alpha` | Compression tree variant for `top_sqr_4x8_sc_alpha`                 |
 
 
 ### Booth multipliers
@@ -410,6 +433,7 @@ The `IS_SQUARE` parameter selects the operation:
 | Module           | Description                                                |
 | ---------------- | ---------------------------------------------------------- |
 | `bas_4x8`        | Baseline 4×8 PP generator (full 8-bit B)                   |
+| `bas_8x8`        | Baseline 8×8 PP generator (32 lanes, 8-bit A and B)        |
 | `bas_4x8_sc`     | Baseline split-cell (B split into B_lo and B_hi halves)    |
 | `add_mult_array` | Winograd pairing: `(a[i+1]+b[i]) × (a[i]+b[i+1])` per pair |
 | `win_4x8`        | Winograd 4×8 PP generator                                  |

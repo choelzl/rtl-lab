@@ -2,12 +2,12 @@
 // Author: Simone Machetti
 //
 // Description:
-//   Baseline partial product generator for a 64-element 4×8 multiply-
-//   accumulate array. Splits the 64 (a_i, b_i) pairs into 8 lanes of 8 pairs
+//   Baseline partial product generator for a 32-element 8×8 multiply-
+//   accumulate array. Splits the 32 (a_i, b_i) pairs into 4 lanes of 8 pairs
 //   each. Within each lane, mult_array generates PP_PER_MUL partial products
 //   per pair; a first-level cpr_n_2 compresses all PP_PER_MUL sets of 8
 //   partial products down to 2 outputs each. The outputs are sign-extended and
-//   shift-aligned so that all PP_SIZE entries of pp_o are ready for cpr_tree.
+//   shift-aligned so that all PP_SIZE entries of pp_o are ready for cpr_tree_8x8.
 //
 // Parameters:
 //   MULT_TYPE - 0 = Radix-4 Booth, 1 = Radix-8 Booth
@@ -17,13 +17,13 @@
 
 `timescale 1 ns/1 ps
 
-module bas_4x8 #(
+module bas_8x8 #(
     parameter int MULT_TYPE = 0,
 
-    localparam int IN_SIZE      = 64,
-    localparam int IN_WIDTH_A   = 4,
+    localparam int IN_SIZE      = 32,
+    localparam int IN_WIDTH_A   = 8,
     localparam int IN_WIDTH_B   = 8,
-    localparam int NUM_LANES    = 8,
+    localparam int NUM_LANES    = 4,
     localparam int PP_PER_MUL   = MULT_TYPE == 0 ? (IN_WIDTH_A + 1) / 2 : (IN_WIDTH_A + 2) / 3,
     localparam int PP_SIZE      = 2 * PP_PER_MUL * NUM_LANES,
     localparam int CPR_IN_SIZE  = IN_SIZE / NUM_LANES,

@@ -18,6 +18,7 @@ CLK_NS=1.35
 
 DESIGNS=(
     "bas_4x8|Baseline 4x8"
+    "bas_8x8|Baseline 8x8"
     "bas_4x8_sc|Baseline 4x8 SC"
     "win_4x8|Winograd 4x8"
     "win_4x8_sc|Winograd 4x8 SC"

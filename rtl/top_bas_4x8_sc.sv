@@ -95,12 +95,12 @@ module top_bas_4x8_sc #(
     // -------------------------------------------------------------------------
     // Compression tree
     // -------------------------------------------------------------------------
-    cpr_tree #(
+    cpr_tree_4x8 #(
         .IS_PIPELINED(IS_PIPELINED),
         .PP_SIZE     (PP_SIZE),
         .PP_WIDTH    (PP_WIDTH),
         .ACC_SIZE    (ACC_SIZE)
-    ) cpr_tree_i (
+    ) cpr_tree_4x8_i (
         .clk_i      (clk_i),
         .rst_ni     (rst_ni),
         .acc_i      (acc_i),

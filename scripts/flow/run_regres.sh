@@ -36,6 +36,15 @@ run "post-syn-sta Baseline 4x8"  post-syn-sta TOP_LEVEL=top_bas_4x8  CLK_PERIOD_
 run "post-syn-dpa Baseline 4x8"  post-syn-dpa TOP_LEVEL=top_bas_4x8  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_4x8_post_syn_dpa  NETLIST_DIR=bas_4x8_syn  VCD_DIR=bas_4x8_post_syn_sim
 
 # -----------------------------------------------------------------------------
+# Baseline 8x8
+# -----------------------------------------------------------------------------
+run "sim          Baseline 8x8"  sim          TOP_LEVEL=top_bas_8x8  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_8x8_sim                                    PARAMS="IS_PIPELINED=1 MULT_TYPE=0"
+run "syn          Baseline 8x8"  syn          TOP_LEVEL=top_bas_8x8                      OUT_DIR=bas_8x8_syn                                    PARAMS="IS_PIPELINED=1 MULT_TYPE=0"
+run "post-syn-sim Baseline 8x8"  post-syn-sim TOP_LEVEL=top_bas_8x8  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_8x8_post_syn_sim  NETLIST_DIR=bas_8x8_syn  PARAMS="IS_PIPELINED=1 MULT_TYPE=0"
+run "post-syn-sta Baseline 8x8"  post-syn-sta TOP_LEVEL=top_bas_8x8  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_8x8_post_syn_sta  NETLIST_DIR=bas_8x8_syn
+run "post-syn-dpa Baseline 8x8"  post-syn-dpa TOP_LEVEL=top_bas_8x8  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_8x8_post_syn_dpa  NETLIST_DIR=bas_8x8_syn  VCD_DIR=bas_8x8_post_syn_sim
+
+# -----------------------------------------------------------------------------
 # Baseline 4x8 SC
 # -----------------------------------------------------------------------------
 run "sim          Baseline 4x8 SC"  sim          TOP_LEVEL=top_bas_4x8_sc  CLK_PERIOD_NS=$CLK  OUT_DIR=bas_4x8_sc_sim                                       PARAMS="IS_PIPELINED=1 MULT_TYPE=0"

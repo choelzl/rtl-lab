@@ -26,7 +26,7 @@ make syn TOP_LEVEL=<top_level> OUT_DIR=<name> [PARAMS="KEY=VAL ..."] [KEEP_HIERA
 
 Set `KEEP_HIERARCHY=1` to preserve module boundaries in the output netlist (skips `flatten`). Default is `0` (fully flattened netlist).
 
-`TOP_LEVEL` can be any module in the hierarchy (e.g. `cpr_tree`, `mult_array`), not only PE top-levels. Module parameters are passed via `PARAMS` as a space-separated list of `KEY=VALUE` pairs (e.g. `PARAMS="MULT_TYPE=1 PP_SIZE=32"`).
+`TOP_LEVEL` can be any module in the hierarchy (e.g. `cpr_tree_4x8`, `mult_array`), not only PE top-levels. Module parameters are passed via `PARAMS` as a space-separated list of `KEY=VALUE` pairs (e.g. `PARAMS="MULT_TYPE=1 PP_SIZE=32"`).
 
 **Post-synthesis static timing analysis** (OpenSTA):
 ```bash
@@ -63,6 +63,7 @@ This project implements **Processing Elements (PEs)** for AI/ML inference, speci
 | Module                 | Algorithm                                           | Accumulators | Array                   |
 |------------------------|-----------------------------------------------------|--------------|-------------------------|
 | `top_bas_4x8`          | Baseline (extended)                                 | 1            | —                       |
+| `top_bas_8x8`          | Baseline 8-bit × 8-bit                              | 1            | 32× (8-bit A × 8-bit B) |
 | `top_bas_4x8_sc`       | Baseline Booth Radix-4/8, split-cell (4×4 sub-muls) | 1            | 64× (4-bit A × 8-bit B) |
 | `top_win_4x8`          | Winograd                                            | 3            | —                       |
 | `top_win_4x8_sc`       | Winograd, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
@@ -71,15 +72,16 @@ This project implements **Processing Elements (PEs)** for AI/ML inference, speci
 
 All variants share the same 3-stage pipeline:
 ```
-Input FFs (ff_n) → Partial Product Generator → Compression Tree (cpr_tree) → Output FF
+Input FFs (ff_n) → Partial Product Generator → Compression Tree → Output FF
 ```
 
 ### Key RTL Modules
 
 - **`booth_r4.sv` / `booth_r8.sv`** — Radix-4/8 Booth encoder cells; selected via `MULT_TYPE` parameter (0 = R4, 1 = R8)
 - **`mult_array.sv`** — Instantiates the correct Booth encoder array
-- **`bas_4x8_sc.sv` / `win_4x8_sc.sv` / `add_sqr_array.sv`** — Partial product generators for each PE variant
-- **`cpr_tree.sv`** — Multi-stage 4-to-2 compression tree; takes partial products + accumulator inputs and reduces to a 48-bit result
+- **`bas_4x8.sv` / `bas_8x8.sv` / `bas_4x8_sc.sv` / `win_4x8_sc.sv` / `add_sqr_array.sv`** — Partial product generators for each PE variant
+- **`cpr_tree_4x8.sv`** — 3-stage 4-to-2 compression tree for 4×8 PEs
+- **`cpr_tree_8x8.sv`** — 2-stage 4-to-2 compression tree for 8×8 PEs
 - **`cpr_n_2.sv` → `cpr_4_2.sv` → `cpr_4_2_bit.sv`** — Hierarchical 4-to-2 compressor building blocks
 - **`ff.sv` / `ff_n.sv`** — Pipeline registers; `ff_n` is an array of N flip-flops
 - **`fa.sv` / `ha.sv`** — Full adder / half adder primitives
