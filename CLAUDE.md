@@ -69,6 +69,7 @@ This project implements **Processing Elements (PEs)** for AI/ML inference, speci
 | `top_win_4x8_sc`       | Winograd, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
 | `top_sqr_4x8_sc`       | Squaring, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
 | `top_sqr_4x8_sc_alpha` | Squaring reduced variant, 32 lanes, no accumulators | 0            | 32× (4-bit A)           |
+| `top_sqr_8x8`          | Squaring 8-bit × 8-bit                              | 3            | 32× (8-bit A × 8-bit B) |
 
 All variants share the same 3-stage pipeline:
 ```
@@ -79,7 +80,7 @@ Input FFs (ff_n) → Partial Product Generator → Compression Tree → Output F
 
 - **`booth_r4.sv` / `booth_r8.sv`** — Radix-4/8 Booth encoder cells; selected via `MULT_TYPE` parameter (0 = R4, 1 = R8)
 - **`mult_array.sv`** — Instantiates the correct Booth encoder array
-- **`bas_4x8.sv` / `bas_8x8.sv` / `bas_4x8_sc.sv` / `win_4x8_sc.sv` / `add_sqr_array.sv`** — Partial product generators for each PE variant
+- **`bas_4x8.sv` / `bas_8x8.sv` / `bas_4x8_sc.sv` / `win_4x8_sc.sv` / `add_sqr_s_5_bit_array.sv` / `add_sqr_s_9_bit_array.sv`** — Partial product generators for each PE variant
 - **`cpr_tree_4x8.sv`** — 3-stage 4-to-2 compression tree for 4×8 PEs
 - **`cpr_tree_8x8.sv`** — 2-stage 4-to-2 compression tree for 8×8 PEs
 - **`cpr_n_2.sv` → `cpr_4_2.sv` → `cpr_4_2_bit.sv`** — Hierarchical 4-to-2 compressor building blocks
