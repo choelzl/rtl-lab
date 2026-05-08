@@ -113,6 +113,7 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | `top_win_4x8_sc`       | `tb_top_win_4x8_sc`       | Winograd with B sub-lane split + Σacc            |
 | `top_sqr_4x8_sc`       | `tb_top_sqr_4x8_sc`       | `Σ[(a[k]+b_lo[k])² + 16×(a[k]+b_hi[k])²] + Σacc` |
 | `top_sqr_4x8_sc_alpha` | `tb_top_sqr_4x8_sc_alpha` | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
+| `top_sqr_8x8`          | `tb_top_sqr_8x8`          | `Σ((a[i]+b[i])²) + acc[0] + acc[1] + acc[2]`     |
 
 
 **Accepted `PARAMS`:**
@@ -359,6 +360,20 @@ Replaces Booth multiplication with squaring via the identity `a×b = [(a+b)² �
 
 **Compression tree** — `cpr_tree` with 3 accumulators, same stage structure as `top_win_4x8`.
 
+### Square 8x8
+
+**Formula:** `out = Σ((a[i]+b[i])²) + acc[0] + acc[1] + acc[2]`
+
+Squaring-based 8-bit × 8-bit PE over 32 lanes. Each lane sign-extends both 8-bit operands to 9 bits, sums them, then squares the result using a dedicated `sqr_s_9_bit` cell. No `MULT_TYPE` parameter — there is no Booth encoder. Requires 3 accumulators, matching the three squaring terms of the underlying identity.
+
+**Compression tree** — `cpr_tree_8x8` with 3 accumulators and `EXT_BITS=4`:
+
+```
+Stage 0: 4 groups × 8 inputs → 4 groups × 2 outputs  [pipeline FF here if IS_PIPELINED=1]
+Stage 1: 2 groups × 4 inputs → 2 groups × 2 outputs
+Final:   4 outputs + 3 accumulators → cpr_n_2 → add_n → 48-bit result
+```
+
 ### Square 4x8 Split-Cell Alpha
 
 A reduced squaring variant with 32 input lanes and a dedicated `cpr_tree_alpha` that carries no accumulator inputs. Uses `sqr_s_4_bit` cells (signed 4-bit squarer) instead of the 5-bit cells in `top_sqr_4x8_sc`.
@@ -417,14 +432,17 @@ The `IS_SQUARE` parameter selects the operation:
 ### Squaring units
 
 
-| Module            | Description                                                     |
-| ----------------- | --------------------------------------------------------------- |
-| `sqr_u_3_bit`     | Unsigned 3-bit squarer (combinational truth-table logic)        |
-| `sqr_u_4_bit`     | Unsigned 4-bit squarer (combinational truth-table logic)        |
-| `sqr_s_4_bit`     | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit) |
-| `sqr_s_5_bit`     | Signed 5-bit squarer (2's complement → magnitude + sqr_u_4_bit) |
-| `sqr_alpha_array` | Array: `a[i]²` or `a[i]` passthrough, selected by `IS_SQUARE`   |
-| `add_sqr_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_5_bit`               |
+| Module                    | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| `sqr_u_3_bit`             | Unsigned 3-bit squarer (combinational truth-table logic)            |
+| `sqr_u_4_bit`             | Unsigned 4-bit squarer (combinational truth-table logic)            |
+| `sqr_u_8_bit`             | Unsigned 8-bit squarer (Wallace tree, no final carry-propagate adder) |
+| `sqr_s_4_bit`             | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit)    |
+| `sqr_s_5_bit`             | Signed 5-bit squarer (2's complement → magnitude + sqr_u_4_bit)    |
+| `sqr_s_9_bit`             | Signed 9-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
+| `sqr_alpha_array`         | Array: `a[i]²` or `a[i]` passthrough, selected by `IS_SQUARE`      |
+| `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_5_bit` (4-bit inputs)  |
+| `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_9_bit` (8-bit inputs)  |
 
 
 ### Partial product generators
@@ -438,4 +456,5 @@ The `IS_SQUARE` parameter selects the operation:
 | `add_mult_array` | Winograd pairing: `(a[i+1]+b[i]) × (a[i]+b[i+1])` per pair |
 | `win_4x8`        | Winograd 4×8 PP generator                                  |
 | `win_4x8_sc`     | Winograd split-cell                                        |
-| `sqr_4x8_sc`     | Squaring split-cell: `(a+b_lo)² + 16*(a+b_hi)²` per lane   |
+| `sqr_4x8_sc`              | Squaring split-cell: `(a+b_lo)² + 16*(a+b_hi)²` per lane   |
+| `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` for `top_sqr_8x8` (8-bit inputs) |
