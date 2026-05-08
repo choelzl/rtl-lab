@@ -5,7 +5,7 @@
 //   Squaring split-cell partial product generator for 64 input pairs.
 //   Splits the 64 inputs into 8 lanes × 2 sub-lanes. Each sub-lane extracts
 //   one 4-bit half of the 8-bit B operand (b_lo = B[3:0], b_hi = B[7:4]) and
-//   applies add_sqr_array, which computes (a[k] + b_half[k])^2 per element.
+//   applies add_sqr_s_5_bit_array, which computes (a[k] + b_half[k])^2 per element.
 //   The low sub-lane MSB-inverts b_lo to convert unsigned to a sign-compatible
 //   representation. Sub-lane outputs are shifted by PP_SUB_SHIFT = 4 bits
 //   relative to each other, implementing:
@@ -60,9 +60,9 @@ module sqr_4x8_sc #(
                     end
                 end
                 
-                add_sqr_array #(
+                add_sqr_s_5_bit_array #(
                     .IN_SIZE (ADD_SQR_ARRAY_IN_SIZE)
-                ) add_sqr_array_i (
+                ) add_sqr_s_5_bit_array_i (
                     .a_i (a),
                     .b_i (b),
                     .pp_o(pp)

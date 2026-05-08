@@ -8,12 +8,10 @@ import os
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CSV  = os.path.join(_DIR, '..', '..', 'data', 'freq', 'freq.csv')
 
-C_BAS  = "#97665b"
 C_FREQ = "#005f73"
 
 def load():
@@ -25,27 +23,20 @@ def load():
 
 def main():
     names, freqs = load()
-    x      = np.arange(len(names))
-    width  = 0.5
-    colors = [C_BAS] + [C_FREQ] * (len(names) - 1)
+    x     = np.arange(len(names))
+    width = 0.5
 
     fig, ax = plt.subplots(figsize=(11, 5))
-    ax.bar(x, freqs, width, color=colors)
+    ax.bar(x, freqs, width, color=C_FREQ)
 
     for i, f in enumerate(freqs):
-        if i == 0:
-            ax.text(x[i], f * 1.01, f"{f:.3f} GHz", ha="center", va="bottom", fontsize=9)
-        else:
-            pct = (f - freqs[0]) / freqs[0] * 100.0
-            ax.text(x[i], f * 1.01, f"{pct:+.1f}%", ha="center", va="bottom", fontsize=9)
+        ax.text(x[i], f * 1.01, f"{f:.3f} GHz", ha="center", va="bottom", fontsize=9)
 
     ax.set_ylim(0, max(freqs) * 1.20)
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=15, ha='right')
     ax.set_ylabel("Freq Max (GHz)")
     ax.set_title("Frequency Analysis: PE Level")
-    ax.legend(handles=[Patch(color=C_BAS,  label="Baseline 4x8"),
-                       Patch(color=C_FREQ, label="Other")])
     plt.tight_layout()
     plt.savefig("freq_pe_level.png", dpi=200)
 

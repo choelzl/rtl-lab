@@ -23,6 +23,7 @@ DESIGNS=(
     "win_4x8|Winograd 4x8"
     "win_4x8_sc|Winograd 4x8 SC"
     "sqr_4x8_sc|Square 4x8 SC"
+    "sqr_8x8|Square 8x8"
     "alpha|Alpha"
     "alpha_sqr|Alpha Squared"
 )
@@ -142,6 +143,11 @@ power_rows=()
 for entry in "${DESIGNS[@]}"; do
     name="${entry%%|*}"
     label="${entry##*|}"
+
+    if [ ! -f "$IMP_DIR/${name}_syn/report/area.rpt" ]; then
+        echo "  Skipping $label (no synthesis results)"
+        continue
+    fi
 
     area=$(extract_area      "$name")
     slack=$(extract_slack_ps "$name")

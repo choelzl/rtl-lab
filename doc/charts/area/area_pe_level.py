@@ -8,12 +8,10 @@ import os
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CSV  = os.path.join(_DIR, '..', '..', 'data', 'area', 'area.csv')
 
-C_BAS  = "#97665b"
 C_AREA = "#005f73"
 
 def load():
@@ -25,27 +23,20 @@ def load():
 
 def main():
     names, areas = load()
-    x      = np.arange(len(names))
-    width  = 0.5
-    colors = [C_BAS] + [C_AREA] * (len(names) - 1)
+    x     = np.arange(len(names))
+    width = 0.5
 
     fig, ax = plt.subplots(figsize=(11, 5))
-    ax.bar(x, areas, width, color=colors)
+    ax.bar(x, areas, width, color=C_AREA)
 
     for i, a in enumerate(areas):
-        if i == 0:
-            ax.text(x[i], a * 1.01, f"{a:.1f} µm²", ha="center", va="bottom", fontsize=9)
-        else:
-            pct = (a - areas[0]) / areas[0] * 100.0
-            ax.text(x[i], a * 1.01, f"{pct:+.1f}%", ha="center", va="bottom", fontsize=9)
+        ax.text(x[i], a * 1.01, f"{a:.1f} µm²", ha="center", va="bottom", fontsize=9)
 
     ax.set_ylim(0, max(areas) * 1.20)
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=15, ha='right')
     ax.set_ylabel("Area (µm²)")
     ax.set_title("Area Analysis: PE Level")
-    ax.legend(handles=[Patch(color=C_BAS,  label="Baseline 4x8"),
-                       Patch(color=C_AREA, label="Other")])
     plt.tight_layout()
     plt.savefig("area_pe_level.png", dpi=200)
 

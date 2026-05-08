@@ -12,7 +12,7 @@
 
 `timescale 1 ns/1 ps
 
-module add_sqr_array #(
+module add_sqr_s_5_bit_array #(
     parameter int IN_SIZE = 8,
 
     localparam int IN_WIDTH      = 4,
