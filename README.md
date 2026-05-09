@@ -112,8 +112,8 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | `top_win_4x8`          | `tb_top_win_4x8`          | `Σ[(a[i+1]+b[i])×(a[i]+b[i+1])] + Σacc`          |
 | `top_win_4x8_sc`       | `tb_top_win_4x8_sc`       | Winograd with B sub-lane split + Σacc            |
 | `top_sqr_4x8_sc`       | `tb_top_sqr_4x8_sc`       | `Σ[(a[k]+b_lo[k])² + 16×(a[k]+b_hi[k])²] + Σacc` |
-| `top_sqr_4x8_sc_alpha` | `tb_top_sqr_4x8_sc_alpha` | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
 | `top_sqr_8x8`          | `tb_top_sqr_8x8`          | `Σ((a[i]+b[i])²) + acc[0] + acc[1] + acc[2]`     |
+| `top_sqr_4x8_sc_alpha` | `tb_top_sqr_4x8_sc_alpha` | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
 | `top_sqr_8x8_alpha`    | `tb_top_sqr_8x8_alpha`    | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
 
 

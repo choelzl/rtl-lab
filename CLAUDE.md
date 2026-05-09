@@ -68,8 +68,8 @@ This project implements **Processing Elements (PEs)** for AI/ML inference, speci
 | `top_win_4x8`          | Winograd                                            | 3            | —                       |
 | `top_win_4x8_sc`       | Winograd, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
 | `top_sqr_4x8_sc`       | Squaring, split-cell (4×4 sub-muls)                 | 3            | 64× (4-bit A × 8-bit B) |
-| `top_sqr_4x8_sc_alpha` | Squaring reduced variant, 32 lanes, no accumulators | 0            | 32× (4-bit A)           |
 | `top_sqr_8x8`          | Squaring 8-bit × 8-bit                              | 3            | 32× (8-bit A × 8-bit B) |
+| `top_sqr_4x8_sc_alpha` | Squaring reduced variant, 32 lanes, no accumulators | 0            | 32× (4-bit A)           |
 | `top_sqr_8x8_alpha`    | Squaring 8-bit, no accumulator                      | 0            | 16× (8-bit A)           |
 
 All variants share the same 3-stage pipeline:
