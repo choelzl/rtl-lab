@@ -6,6 +6,7 @@
 
 import os
 import csv
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
@@ -13,45 +14,62 @@ from matplotlib.patches import Patch
 _DIR = os.path.dirname(os.path.abspath(__file__))
 CSV  = os.path.join(_DIR, '..', '..', 'data', 'power', 'power.csv')
 
-C_BAS   = "#97665b"
-C_SQR   = "#005f73"
-C_ALPHA = "#97bdc5"
+C_BAS_4   = "#97665b"
+C_SQR_4   = "#005f73"
+C_ALPHA_4 = "#97bdc5"
 
 def load():
     with open(CSV) as f:
         return {r['design']: float(r['power_mw']) for r in csv.DictReader(f)}
 
 def main():
-    d         = load()
-    bas_sys   = 256 * d['Baseline 4x8']
-    sqr_sys   = 256 * d['Square 4x8 SC']
-    alpha_sys = 16  * (4 * d['Alpha Squared'] + 3 * d['Alpha'])
-    sqr_total = sqr_sys + alpha_sys
+    parser = argparse.ArgumentParser()
+    parser.add_argument('ARRAY_SIZE', type=int)
+    args = parser.parse_args()
+    n = args.ARRAY_SIZE
 
-    x     = np.array([0, 1])
+    d = load()
+
+    bas_4x8       = n*n * d['Baseline 4x8']
+    bas_8x8       = n*n * d['Baseline 8x8']
+    sqr_4x8_pe    = n*n * d['Square 4x8 SC']
+    sqr_4x8_alpha = n   * (4 * d['Square 4x8 Alpha Squared'] + 3 * d['Square 4x8 Alpha'])
+    sqr_4x8       = sqr_4x8_pe + sqr_4x8_alpha
+    sqr_8x8_pe    = n*n * d['Square 8x8']
+    sqr_8x8_alpha = n   * (4 * d['Square 8x8 Alpha Squared'])
+    sqr_8x8       = sqr_8x8_pe + sqr_8x8_alpha
+
+    x     = np.arange(4)
     width = 0.5
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.bar(x[0], bas_sys,   width, color=C_BAS)
-    ax.bar(x[1], sqr_sys,   width, color=C_SQR)
-    ax.bar(x[1], alpha_sys, width, bottom=sqr_sys, color=C_ALPHA)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(x[0], bas_4x8,       width, color=C_BAS_4)
+    ax.bar(x[1], bas_8x8,       width, color=C_SQR_4)
+    ax.bar(x[2], sqr_4x8_pe,    width, color=C_SQR_4)
+    ax.bar(x[2], sqr_4x8_alpha, width, bottom=sqr_4x8_pe, color=C_ALPHA_4)
+    ax.bar(x[3], sqr_8x8_pe,    width, color=C_SQR_4)
+    ax.bar(x[3], sqr_8x8_alpha, width, bottom=sqr_8x8_pe, color=C_ALPHA_4)
 
-    pct = (sqr_total - bas_sys) / bas_sys * 100.0
-    ax.text(x[0], bas_sys   * 1.01, f"{bas_sys:.1f} mW", ha="center", va="bottom", fontsize=9)
-    ax.text(x[1], sqr_total * 1.01, f"{pct:+.1f}%",       ha="center", va="bottom", fontsize=9)
+    ref = bas_4x8
+    def pct(v): return (v - ref) / ref * 100.0
 
-    ax.set_ylim(0, max(bas_sys, sqr_total) * 1.40)
+    ax.text(x[0], bas_4x8 * 1.01, f"{bas_4x8:.1f} mW",     ha="center", va="bottom", fontsize=9)
+    ax.text(x[1], bas_8x8 * 1.01, f"{pct(bas_8x8):+.1f}%", ha="center", va="bottom", fontsize=9)
+    ax.text(x[2], sqr_4x8 * 1.01, f"{pct(sqr_4x8):+.1f}%", ha="center", va="bottom", fontsize=9)
+    ax.text(x[3], sqr_8x8 * 1.01, f"{pct(sqr_8x8):+.1f}%", ha="center", va="bottom", fontsize=9)
+
+    ax.set_ylim(0, max(bas_4x8, bas_8x8, sqr_4x8, sqr_8x8) * 1.40)
     ax.set_xticks(x)
-    ax.set_xticklabels(['Baseline 4x8', 'Square 4x8 SC'])
+    ax.set_xticklabels(['Baseline 4x8', 'Baseline 8x8', 'Square 4x8', 'Square 8x8'])
     ax.set_ylabel("Power (mW)")
-    ax.set_title("Power Analysis: AI-Core Level")
+    ax.set_title(f"Power Analysis: AI-Core Level ({n}x{n})")
     ax.legend(handles=[
-        Patch(color=C_BAS,   label="PE Baseline 4x8 ×256"),
-        Patch(color=C_SQR,   label="PE Square 4x8 SC ×256"),
-        Patch(color=C_ALPHA, label="16× (4× Alpha Sqr + 3× Alpha)"),
+        Patch(color=C_BAS_4,   label=f"PE Baseline 4x8 ×{n*n}"),
+        Patch(color=C_SQR_4,   label=f"PE ×{n*n}"),
+        Patch(color=C_ALPHA_4, label=f"Alpha ×{n}"),
     ])
     plt.tight_layout()
-    plt.savefig("pwr_ai_core_level.png", dpi=200)
+    plt.savefig(f"pwr_ai_core_level_{n}.png", dpi=200)
 
 if __name__ == "__main__":
     main()
