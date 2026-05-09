@@ -26,6 +26,8 @@ DESIGNS=(
     "sqr_8x8|Square 8x8"
     "alpha|Alpha"
     "alpha_sqr|Alpha Squared"
+    "sqr_8x8_alpha|Square 8x8 Alpha"
+    "sqr_8x8_alpha_sqr|Square 8x8 Alpha Squared"
 )
 
 # -----------------------------------------------------------------------------

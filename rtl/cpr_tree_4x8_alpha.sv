@@ -21,7 +21,7 @@
 
 `timescale 1 ns/1 ps
 
-module cpr_tree_alpha #(
+module cpr_tree_4x8_alpha #(
     parameter bit IS_PIPELINE = 1,
     parameter int PP_SIZE     = 32,
     parameter int PP_WIDTH    = 4,

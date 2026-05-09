@@ -2,19 +2,19 @@
 // Author: Simone Machetti
 //
 // Description:
-//   Top-level Processing Element (alpha variant): 32-input squaring or
+//   Top-level Processing Element (8x8 alpha variant): 16-input squaring or
 //   identity PE with no accumulator.
 //
-//   Uses sqr_s_4_bit_alpha_array as the partial product generator: either squares each
-//   4-bit signed input (IS_SQUARE = 1, via sqr_s_4_bit) or passes it through
-//   unchanged (IS_SQUARE = 0). The cpr_tree_4x8_alpha variant then reduces the 32
+//   Uses sqr_s_8_bit_alpha_array as the partial product generator: either squares
+//   each 8-bit signed input (IS_SQUARE = 1, via sqr_s_8_bit) or passes it through
+//   unchanged (IS_SQUARE = 0). The cpr_tree_8x8_alpha variant then reduces the 16
 //   partial products to a single output.
 //
 //   Function (IS_SQUARE = 1): out = sum_i(a[i]^2)
 //   Function (IS_SQUARE = 0): out = sum_i(a[i])
 //
 // Parameters:
-//   IS_PIPELINED - 1 = pipeline register in cpr_tree_4x8_alpha after stage 2;
+//   IS_PIPELINED - 1 = pipeline register in cpr_tree_8x8_alpha after stage 1;
 //                  0 = no register
 //   IS_SQUARE    - 1 = square each input; 0 = accumulate inputs directly
 // -----------------------------------------------------------------------------
@@ -24,17 +24,17 @@
 
 `timescale 1 ns/1 ps
 
-module top_sqr_4x8_sc_alpha #(
+module top_sqr_8x8_alpha #(
     parameter bit IS_PIPELINED = 1,
     parameter bit IS_SQUARE    = 0,
 
-    localparam int IN_SIZE      = 32,
-    localparam int IN_WIDTH_A   = 4,
-    localparam int EXT_NUM      = 15,
+    localparam int IN_SIZE      = 16,
+    localparam int IN_WIDTH_A   = 8,
+    localparam int EXT_NUM      = 3,
     localparam int PP_SIZE      = IN_SIZE,
     localparam int PP_WIDTH     = IS_SQUARE ? (2 * IN_WIDTH_A) : IN_WIDTH_A,
     localparam int CPR_EXT_BITS = 4,
-    localparam int OUT_WIDTH    = PP_WIDTH + CPR_EXT_BITS + 20
+    localparam int OUT_WIDTH    = PP_WIDTH + CPR_EXT_BITS + 16
 )(
     input  logic                  clk_i,
     input  logic                  rst_ni,
@@ -64,10 +64,10 @@ module top_sqr_4x8_sc_alpha #(
     // -------------------------------------------------------------------------
     // Partial product generator
     // -------------------------------------------------------------------------
-    sqr_s_4_bit_alpha_array #(
+    sqr_s_8_bit_alpha_array #(
         .IN_SIZE  (IN_SIZE),
         .IS_SQUARE(IS_SQUARE)
-    ) sqr_s_4_bit_alpha_array_i (
+    ) sqr_s_8_bit_alpha_array_i (
         .a_i (a),
         .pp_o(pp)
     );
@@ -75,11 +75,11 @@ module top_sqr_4x8_sc_alpha #(
     // -------------------------------------------------------------------------
     // Compression tree
     // -------------------------------------------------------------------------
-    cpr_tree_4x8_alpha #(
+    cpr_tree_8x8_alpha #(
         .IS_PIPELINE(IS_PIPELINED),
         .PP_SIZE    (PP_SIZE),
         .PP_WIDTH   (PP_WIDTH)
-    ) cpr_tree_4x8_alpha_i (
+    ) cpr_tree_8x8_alpha_i (
         .clk_i      (clk_i),
         .rst_ni     (rst_ni),
         .is_signed_i(is_signed_i),

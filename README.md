@@ -114,6 +114,7 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | `top_sqr_4x8_sc`       | `tb_top_sqr_4x8_sc`       | `Σ[(a[k]+b_lo[k])² + 16×(a[k]+b_hi[k])²] + Σacc` |
 | `top_sqr_4x8_sc_alpha` | `tb_top_sqr_4x8_sc_alpha` | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
 | `top_sqr_8x8`          | `tb_top_sqr_8x8`          | `Σ((a[i]+b[i])²) + acc[0] + acc[1] + acc[2]`     |
+| `top_sqr_8x8_alpha`    | `tb_top_sqr_8x8_alpha`    | `Σ(a[i]²)` or `Σ(a[i])` depending on `IS_SQUARE` |
 
 
 **Accepted `PARAMS`:**
@@ -250,7 +251,7 @@ make clean-all                  # remove all sim/ and imp/ directories
 | -------------- | --------------------------- | ------------------ | ------------------------------------------ |
 | `MULT_TYPE`    | BAS and WIN top-levels      | `0` (R4), `1` (R8) | Booth encoding radix                       |
 | `IS_PIPELINED` | all top-levels              | `0`, `1`           | 2-cycle (`0`) or 3-cycle (`1`) latency     |
-| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha` only | `0`, `1`           | Squaring (`1`) or passthrough (`0`) inputs |
+| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha`, `top_sqr_8x8_alpha` | `0`, `1`           | Squaring (`1`) or passthrough (`0`) inputs |
 
 
 ## PE architectures
@@ -376,7 +377,7 @@ Final:   4 outputs + 3 accumulators → cpr_n_2 → add_n → 48-bit result
 
 ### Square 4x8 Split-Cell Alpha
 
-A reduced squaring variant with 32 input lanes and a dedicated `cpr_tree_alpha` that carries no accumulator inputs. Uses `sqr_s_4_bit` cells (signed 4-bit squarer) instead of the 5-bit cells in `top_sqr_4x8_sc`.
+A reduced squaring variant with 32 input lanes and a dedicated `cpr_tree_4x8_alpha` that carries no accumulator inputs. Uses `sqr_s_4_bit` cells (signed 4-bit squarer) instead of the 5-bit cells in `top_sqr_4x8_sc`.
 
 The `IS_SQUARE` parameter selects the operation:
 
@@ -385,6 +386,27 @@ The `IS_SQUARE` parameter selects the operation:
 | ----------- | --------------- | ---------- |
 | `1`         | Squaring        | `Σ(a[i]²)` |
 | `0`         | Passthrough sum | `Σ(a[i])`  |
+
+### Square 8x8 Alpha
+
+A reduced squaring variant with 16 input lanes and a dedicated `cpr_tree_8x8_alpha` that carries no accumulator inputs. Uses `sqr_s_8_bit` cells (signed 8-bit squarer) for the squaring mode.
+
+The `IS_SQUARE` parameter selects the operation:
+
+
+| `IS_SQUARE` | Operation       | Formula    |
+| ----------- | --------------- | ---------- |
+| `1`         | Squaring        | `Σ(a[i]²)` |
+| `0`         | Passthrough sum | `Σ(a[i])`  |
+
+
+**Compression tree** — `cpr_tree_8x8_alpha` with no accumulators and `CPR_EXT_BITS=4`:
+
+```
+Stage 0: 2 groups × 8 inputs → 2 groups × 2 outputs  [pipeline FF here if IS_PIPELINED=1]
+Stage 1: 1 group  × 4 inputs → 1 group  × 2 outputs
+Final:   2 outputs → add_n → (PP_WIDTH + CPR_EXT_BITS + 16)-bit result
+```
 
 ## RTL modules reference
 
@@ -414,7 +436,8 @@ The `IS_SQUARE` parameter selects the operation:
 | `cpr_n_2`        | Tree of 4:2 compressors reducing N inputs to sum + carry             |
 | `cpr_tree_4x8`   | 3-stage compression tree for 4×8 PEs (PP_SIZE multiple of 8)        |
 | `cpr_tree_8x8`   | 2-stage compression tree for 8×8 PEs (PP_SIZE multiple of 4)        |
-| `cpr_tree_alpha` | Compression tree variant for `top_sqr_4x8_sc_alpha`                 |
+| `cpr_tree_4x8_alpha` | 3-stage compression tree (no accumulators) for `top_sqr_4x8_sc_alpha` |
+| `cpr_tree_8x8_alpha` | 2-stage compression tree (no accumulators) for `top_sqr_8x8_alpha`    |
 
 
 ### Booth multipliers
@@ -439,8 +462,10 @@ The `IS_SQUARE` parameter selects the operation:
 | `sqr_u_8_bit`             | Unsigned 8-bit squarer (Wallace tree, no final carry-propagate adder) |
 | `sqr_s_4_bit`             | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit)    |
 | `sqr_s_5_bit`             | Signed 5-bit squarer (2's complement → magnitude + sqr_u_4_bit)    |
+| `sqr_s_8_bit`             | Signed 8-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
 | `sqr_s_9_bit`             | Signed 9-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
-| `sqr_alpha_array`         | Array: `a[i]²` or `a[i]` passthrough, selected by `IS_SQUARE`      |
+| `sqr_s_4_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 4-bit inputs, `IS_SQUARE` |
+| `sqr_s_8_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 8-bit inputs, `IS_SQUARE` |
 | `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_5_bit` (4-bit inputs)  |
 | `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_9_bit` (8-bit inputs)  |
 

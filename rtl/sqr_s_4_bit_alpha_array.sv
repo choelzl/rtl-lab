@@ -17,7 +17,7 @@
 
 `timescale 1 ns/1 ps
 
-module sqr_alpha_array #(
+module sqr_s_4_bit_alpha_array #(
     parameter int IN_SIZE   = 8,
     parameter bit IS_SQUARE = 0,
 
