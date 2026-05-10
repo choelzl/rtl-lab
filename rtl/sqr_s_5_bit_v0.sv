@@ -10,7 +10,7 @@
 
 `timescale 1 ns/1 ps
 
-module sqr_s_5_bit (
+module sqr_s_5_bit_v0 (
     input  logic [4:0] in_i,
     output logic [8:0] out_o
 );

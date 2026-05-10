@@ -3,8 +3,10 @@
 //
 // Description:
 //   Array of IN_SIZE squaring units. Each unit computes pp[i] = (a[i]+b[i])^2
-//   using sqr_s_5_bit on the sign-extended 5-bit sum. Both a_i and b_i are
-//   4-bit signed inputs. Output partial products are PP_WIDTH = 10 bits wide.
+//   on the sign-extended 5-bit sum. Both a_i and b_i are 4-bit signed inputs.
+//   Output partial products are PP_WIDTH = 10 bits wide.
+//   SQR_TYPE selects the squarer implementation: 0 = sqr_s_5_bit_v0 (structural,
+//   ripple HA chain), 1 = sqr_s_5_bit_v1 (flat KMap-minimized Boolean).
 //   Used by sqr_4x8_sc to implement the squaring-based multiply-accumulate.
 // -----------------------------------------------------------------------------
 
@@ -13,7 +15,8 @@
 `timescale 1 ns/1 ps
 
 module add_sqr_s_5_bit_array #(
-    parameter int IN_SIZE = 8,
+    parameter int IN_SIZE   = 8,
+    parameter int SQR_TYPE  = 0,
 
     localparam int IN_WIDTH      = 4,
     localparam int IN_SQR_WIDTH  = IN_WIDTH + 1,
@@ -36,10 +39,17 @@ module add_sqr_s_5_bit_array #(
 
             assign sum = IN_SQR_WIDTH'($signed(a_i[i])) + IN_SQR_WIDTH'($signed(b_i[i]));
 
-            sqr_s_5_bit sqr_s_5_bit_i (
-                .in_i (sum),
-                .out_o(pp)
-            );
+            if (SQR_TYPE == 0) begin : gen_v0
+                sqr_s_5_bit_v0 sqr_s_5_bit_i (
+                    .in_i (sum),
+                    .out_o(pp)
+                );
+            end else begin : gen_v1
+                sqr_s_5_bit_v1 sqr_s_5_bit_i (
+                    .in_i (sum),
+                    .out_o(pp)
+                );
+            end
 
             assign pp_o[i] = {1'b0, pp};
 

@@ -17,6 +17,7 @@
 `timescale 1 ns/1 ps
 
 module sqr_4x8_sc #(
+    parameter  int SQR_TYPE      = 0,
     localparam int IN_SIZE       = 64,
     localparam int IN_WIDTH_A    = 4,
     localparam int IN_WIDTH_B    = 8,
@@ -61,7 +62,8 @@ module sqr_4x8_sc #(
                 end
                 
                 add_sqr_s_5_bit_array #(
-                    .IN_SIZE (ADD_SQR_ARRAY_IN_SIZE)
+                    .IN_SIZE (ADD_SQR_ARRAY_IN_SIZE),
+                    .SQR_TYPE(SQR_TYPE)
                 ) add_sqr_s_5_bit_array_i (
                     .a_i (a),
                     .b_i (b),

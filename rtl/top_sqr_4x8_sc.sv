@@ -14,6 +14,7 @@
 // Parameters:
 //   IS_PIPELINED - 1 = 3-cycle latency; 0 = 2-cycle (no cpr_tree register)
 //   MULT_TYPE    - unused; squaring does not use Booth encoding
+//   SQR_TYPE     - 0 = sqr_s_5_bit_v0 (structural); 1 = sqr_s_5_bit_v1 (KMap flat)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off GENUNNAMED */
@@ -24,6 +25,7 @@
 module top_sqr_4x8_sc #(
     parameter bit IS_PIPELINED = 1,
     parameter int MULT_TYPE    = 0,
+    parameter int SQR_TYPE     = 0,
 
     localparam int IN_SIZE    = 64,
     localparam int IN_WIDTH_A = 4,
@@ -82,7 +84,9 @@ module top_sqr_4x8_sc #(
     // -------------------------------------------------------------------------
     // Partial product generator
     // -------------------------------------------------------------------------
-    sqr_4x8_sc sqr_4x8_sc_i (
+    sqr_4x8_sc #(
+        .SQR_TYPE(SQR_TYPE)
+    ) sqr_4x8_sc_i (
         .a_i (a),
         .b_i (b),
         .pp_o(pp)

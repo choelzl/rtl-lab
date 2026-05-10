@@ -357,7 +357,7 @@ Split-cell variant of `top_win_4x8`. Applies the same B decomposition (`B = B_lo
 
 **Formula:** `out = Σ[(a[k]+b_lo[k])² + 16×(a[k]+b_hi[k])²] + Σacc`
 
-Replaces Booth multiplication with squaring via the identity `a×b = [(a+b)² − a² − b²] / 2`, decomposing B as `B_lo + 16×B_hi`. Uses dedicated `sqr_s_5_bit` squaring cells instead of a Booth multiplier array, which are more area-efficient for this computation. No `MULT_TYPE` parameter. Operates over 64 lanes.
+Replaces Booth multiplication with squaring via the identity `a×b = [(a+b)² − a² − b²] / 2`, decomposing B as `B_lo + 16×B_hi`. Uses dedicated `sqr_s_5_bit_v0`/`sqr_s_5_bit_v1` squaring cells (selected via `SQR_TYPE`) instead of a Booth multiplier array, which are more area-efficient for this computation. No `MULT_TYPE` parameter. Operates over 64 lanes.
 
 **Compression tree** — `cpr_tree` with 3 accumulators, same stage structure as `top_win_4x8`.
 
@@ -461,12 +461,13 @@ Final:   2 outputs → add_n → (PP_WIDTH + CPR_EXT_BITS + 16)-bit result
 | `sqr_u_4_bit`             | Unsigned 4-bit squarer (combinational truth-table logic)            |
 | `sqr_u_8_bit`             | Unsigned 8-bit squarer (Wallace tree, no final carry-propagate adder) |
 | `sqr_s_4_bit`             | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit)    |
-| `sqr_s_5_bit`             | Signed 5-bit squarer (2's complement → magnitude + sqr_u_4_bit)    |
+| `sqr_s_5_bit_v0`          | Signed 5-bit squarer, structural (2's complement → magnitude + sqr_u_4_bit via HA chain) |
+| `sqr_s_5_bit_v1`          | Signed 5-bit squarer, optimized (flat KMap-minimized Boolean, no submodules) |
 | `sqr_s_8_bit`             | Signed 8-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
 | `sqr_s_9_bit`             | Signed 9-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
 | `sqr_s_4_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 4-bit inputs, `IS_SQUARE` |
 | `sqr_s_8_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 8-bit inputs, `IS_SQUARE` |
-| `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_5_bit` (4-bit inputs)  |
+| `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²`, `SQR_TYPE` selects v0/v1 (4-bit inputs) |
 | `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_9_bit` (8-bit inputs)  |
 
 

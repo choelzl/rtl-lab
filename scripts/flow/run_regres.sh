@@ -90,22 +90,22 @@ run "post-syn-sta Square 8x8"  post-syn-sta TOP_LEVEL=top_sqr_8x8  CLK_PERIOD_NS
 run "post-syn-dpa Square 8x8"  post-syn-dpa TOP_LEVEL=top_sqr_8x8  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_8x8_post_syn_dpa  NETLIST_DIR=sqr_8x8_syn  VCD_DIR=sqr_8x8_post_syn_sim
 
 # -----------------------------------------------------------------------------
-# Alpha
+# Square 4x8 Alpha
 # -----------------------------------------------------------------------------
-run "sim          Alpha"  sim          TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_sim                                  PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
-run "syn          Alpha"  syn          TOP_LEVEL=top_sqr_4x8_sc_alpha                      OUT_DIR=alpha_syn                                  PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
-run "post-syn-sim Alpha"  post-syn-sim TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_post_syn_sim  NETLIST_DIR=alpha_syn  PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
-run "post-syn-sta Alpha"  post-syn-sta TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_post_syn_sta  NETLIST_DIR=alpha_syn
-run "post-syn-dpa Alpha"  post-syn-dpa TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_post_syn_dpa  NETLIST_DIR=alpha_syn  VCD_DIR=alpha_post_syn_sim
+run "sim          Alpha"  sim          TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_sim                                          PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
+run "syn          Alpha"  syn          TOP_LEVEL=top_sqr_4x8_sc_alpha                      OUT_DIR=sqr_4x8_alpha_syn                                          PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
+run "post-syn-sim Alpha"  post-syn-sim TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_post_syn_sim  NETLIST_DIR=sqr_4x8_alpha_syn  PARAMS="IS_PIPELINED=1 IS_SQUARE=0"
+run "post-syn-sta Alpha"  post-syn-sta TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_post_syn_sta  NETLIST_DIR=sqr_4x8_alpha_syn
+run "post-syn-dpa Alpha"  post-syn-dpa TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_post_syn_dpa  NETLIST_DIR=sqr_4x8_alpha_syn  VCD_DIR=sqr_4x8_alpha_post_syn_sim
 
 # -----------------------------------------------------------------------------
-# Alpha Squared
+# Square 4x8 Alpha Squared
 # -----------------------------------------------------------------------------
-run "sim          Alpha Squared"  sim          TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_sqr_sim                                      PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
-run "syn          Alpha Squared"  syn          TOP_LEVEL=top_sqr_4x8_sc_alpha                      OUT_DIR=alpha_sqr_syn                                      PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
-run "post-syn-sim Alpha Squared"  post-syn-sim TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_sqr_post_syn_sim  NETLIST_DIR=alpha_sqr_syn  PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
-run "post-syn-sta Alpha Squared"  post-syn-sta TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_sqr_post_syn_sta  NETLIST_DIR=alpha_sqr_syn
-run "post-syn-dpa Alpha Squared"  post-syn-dpa TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=alpha_sqr_post_syn_dpa  NETLIST_DIR=alpha_sqr_syn  VCD_DIR=alpha_sqr_post_syn_sim
+run "sim          Alpha Squared"  sim          TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_sqr_sim                                              PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
+run "syn          Alpha Squared"  syn          TOP_LEVEL=top_sqr_4x8_sc_alpha                      OUT_DIR=sqr_4x8_alpha_sqr_syn                                              PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
+run "post-syn-sim Alpha Squared"  post-syn-sim TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_sqr_post_syn_sim  NETLIST_DIR=sqr_4x8_alpha_sqr_syn  PARAMS="IS_PIPELINED=1 IS_SQUARE=1"
+run "post-syn-sta Alpha Squared"  post-syn-sta TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_sqr_post_syn_sta  NETLIST_DIR=sqr_4x8_alpha_sqr_syn
+run "post-syn-dpa Alpha Squared"  post-syn-dpa TOP_LEVEL=top_sqr_4x8_sc_alpha  CLK_PERIOD_NS=$CLK  OUT_DIR=sqr_4x8_alpha_sqr_post_syn_dpa  NETLIST_DIR=sqr_4x8_alpha_sqr_syn  VCD_DIR=sqr_4x8_alpha_sqr_post_syn_sim
 
 # -----------------------------------------------------------------------------
 # Square 8x8 Alpha

@@ -12,6 +12,7 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT (1 = 3-cycle latency, 0 = 2-cycle)
 //   MULT_TYPE    - unused by DUT (included for interface consistency)
+//   SQR_TYPE     - forwarded to DUT (0 = sqr_s_5_bit_v0; 1 = sqr_s_5_bit_v1)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -21,7 +22,8 @@
 
 module tb_top_sqr_4x8_sc #(
     parameter bit IS_PIPELINED = 1,
-    parameter int MULT_TYPE    = 0
+    parameter int MULT_TYPE    = 0,
+    parameter int SQR_TYPE     = 0
 );
     localparam int IN_SIZE    = 64;
     localparam int IN_WIDTH_A = 4;
@@ -81,7 +83,8 @@ module tb_top_sqr_4x8_sc #(
 `else
     top_sqr_4x8_sc #(
         .IS_PIPELINED(IS_PIPELINED),
-        .MULT_TYPE   (MULT_TYPE)
+        .MULT_TYPE   (MULT_TYPE),
+        .SQR_TYPE    (SQR_TYPE)
     ) top_sqr_4x8_sc_i (
         .clk_i      (clk),
         .rst_ni     (rst_n),
