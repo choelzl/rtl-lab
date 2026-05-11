@@ -102,7 +102,7 @@ Input FFs (ff_n) → Partial Product Generator → Compression Tree → Output F
 
 ### Testbenches
 
-Each PE has a matching testbench at `tb/tb_<top_level>.sv`. The simulation flow compiles the testbench via Verilator, generating a VCD activity trace (`activity.vcd`) that is also used for dynamic power analysis.
+Each PE has a matching testbench at `tb/tb_<top_level>.sv`. Both the pre-synthesis (`make sim`) and post-synthesis (`make post-syn-sim`) flows generate a VCD activity trace (`activity.vcd`). The post-synthesis VCD is the recommended input for `make post-syn-dpa`.
 
 ### Automation Scripts
 

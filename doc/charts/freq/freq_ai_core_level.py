@@ -25,7 +25,7 @@ def main():
 
     bas_4x8 = d['Baseline 4x8']
     bas_8x8 = d['Baseline 8x8']
-    sqr_4x8 = min(d['Square 4x8 SC'], d['Square 4x8 Alpha'], d['Square 4x8 Alpha Squared'])
+    sqr_4x8 = min(d['Square 4x8 SC'], d['Square 4x8 Alpha Squared'])
     sqr_8x8 = min(d['Square 8x8'],    d['Square 8x8 Alpha Squared'])
 
     x     = np.arange(4)

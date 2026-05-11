@@ -78,9 +78,6 @@ clean-all:
 	rm -rf $(CODE_HOME)/ai-core/sim
 	rm -rf $(CODE_HOME)/ai-core/imp
 
-clean-doc:
-	rm -rf $(CODE_HOME)/ai-core/doc
-
 clean-sim:
 	rm -rf $(CODE_HOME)/ai-core/sim/$(OUT_DIR)
 

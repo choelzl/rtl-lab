@@ -13,11 +13,14 @@ make sim TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8
 # Logic synthesis
 make syn TOP_LEVEL=top_bas_4x8 OUT_DIR=bas_4x8
 
+# Post-synthesis gate-level simulation
+make post-syn-sim TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_post_syn_sim NETLIST_DIR=bas_4x8
+
 # Post-synthesis static timing analysis
-make post-syn-sta TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_sta NETLIST_DIR=imp/bas_4x8
+make post-syn-sta TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_sta NETLIST_DIR=bas_4x8
 
 # Post-synthesis dynamic power analysis
-make post-syn-dpa TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_dpa NETLIST_DIR=imp/bas_4x8 VCD_DIR=sim/bas_4x8
+make post-syn-dpa TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_dpa NETLIST_DIR=bas_4x8 VCD_DIR=bas_4x8_post_syn_sim
 ```
 
 ## Repository structure
@@ -45,8 +48,8 @@ make post-syn-dpa TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_dpa NE
 │       ├── ext_results.sh      Result extraction from synthesis/STA/DPA reports
 │       └── gen_charts.sh       Chart generation from extracted results
 ├── doc/                        Documentation and results
-|   |── diagrams/               Block diagrams
-|   |── formulas/               Mathematical formulas
+│   ├── diagrams/               Block diagrams
+│   ├── formulas/               Mathematical formulas
 │   ├── charts/                 Comparison charts
 │   │   ├── area/               Area charts (Python scripts + PNG outputs)
 │   │   ├── freq/               Maximum frequency charts
@@ -74,10 +77,10 @@ source sourceme.sh
 
 The make targets form a pipeline where earlier steps produce artifacts consumed by later ones:
 
-1. `make sim` — functional verification; produces `activity.vcd` for debugging purpose.
+1. `make sim` — functional verification; produces `activity.vcd`.
 2. `make syn` — logic synthesis; produces the netlist consumed by all post-synthesis flows.
-3. `make post-syn-sta` — static timing analysis from the synthesized netlist.
-4. `make post-syn-sim` — gate-level functional verification; produces `activity.vcd` for debugging purpose.
+3. `make post-syn-sim` — gate-level functional verification; produces `activity.vcd` consumed by `make post-syn-dpa`.
+4. `make post-syn-sta` — static timing analysis from the synthesized netlist.
 5. `make post-syn-dpa` — power estimation using the synthesized netlist and the `activity.vcd` from `make post-syn-sim`.
 
 To characterize all PE variants at once, use the automation scripts in `scripts/flow/`.
@@ -124,7 +127,7 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | -------------- | -------- | ----------------------------------------------------------------- |
 | `MULT_TYPE`    | `0`, `1` | Booth Radix-4 (`0`) or Radix-8 (`1`)                              |
 | `IS_PIPELINED` | `0`, `1` | 2-cycle (`0`) or 3-cycle (`1`) latency                            |
-| `IS_SQUARE`    | `0`, `1` | Squaring (`1`) or passthrough (`0`) — `top_sqr_4x8_sc_alpha` only |
+| `IS_SQUARE`    | `0`, `1` | Squaring (`1`) or passthrough (`0`) — alpha variants only          |
 
 
 **Testbench structure:** all testbenches share the same pattern — clock/reset generation with a configurable period, 1000 iterations of randomized inputs and accumulator values, corner cases (max-positive, min-negative, mixed-sign, zero), and self-checking via a software reference model that calls `$fatal` on any mismatch. Outputs go to `sim/<OUT_DIR>/`. A `activity.vcd` waveform is produced for debugging purpose.
@@ -185,7 +188,7 @@ make post-syn-sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> NETLI
 | `PARAMS`        | no       | RTL elaboration parameters: `MULT_TYPE`, `IS_PIPELINED`, `IS_SQUARE` (same values as `make sim`) |
 
 
-Outputs go to `sim/<OUT_DIR>/`. Compiles the testbench with ``define POST_SYNTH` to instantiate the flattened gate-level netlist instead of the RTL.
+Outputs go to `sim/<OUT_DIR>/`. Compiles the testbench with the `POST_SYNTH` compile-time flag to instantiate the flattened gate-level netlist instead of the RTL.
 
 ### Post-synthesis dynamic power analysis (OpenSTA)
 

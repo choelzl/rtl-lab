@@ -1,8 +1,6 @@
-# Copyright 2023 EPFL
-# Solderpad Hardware License, Version 2.1, see LICENSE.md for details.
-# SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-#
-# Author: Simone Machetti - simone.machetti@epfl.ch
+# -----------------------------------------------------------------------------
+# Author: Simone Machetti
+# -----------------------------------------------------------------------------
 
 set REPORT_DIR $env(CODE_HOME)/ai-core/imp/$env(SEL_OUT_DIR)/report
 

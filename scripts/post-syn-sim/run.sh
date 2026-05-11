@@ -42,5 +42,3 @@ verilator \
 
 exec "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/build/simv" "$@" \
     | tee "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/output/run.log"
-
-# Add option --trace-fst to verilator command for FST generation.
