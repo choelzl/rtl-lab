@@ -4,8 +4,5 @@
 
 /sim
 /imp
-/doc/charts/*/*.png
-/doc/data/*
-/doc/diagrams/*.excalidraw
 /doc/scratch
 __pycache__
