@@ -33,7 +33,8 @@ def main():
     bas_4x8       = n*n * d['Baseline 4x8']
     bas_8x8       = n*n * d['Baseline 8x8']
     sqr_4x8_pe    = n*n * d['Square 4x8 SC']
-    sqr_4x8_alpha = n   * (4 * d['Square 4x8 Alpha Squared'] + 3 * d['Square 4x8 Alpha'])
+    # sqr_4x8_alpha = n   * (4 * d['Square 4x8 Alpha Squared'] + 3 * d['Square 4x8 Alpha'])
+    sqr_4x8_alpha = n   * (4 * d['Square 4x8 Alpha Squared'])
     sqr_4x8       = sqr_4x8_pe + sqr_4x8_alpha
     sqr_8x8_pe    = n*n * d['Square 8x8']
     sqr_8x8_alpha = n   * (4 * d['Square 8x8 Alpha Squared'])
