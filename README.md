@@ -123,11 +123,11 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 **Accepted `PARAMS`:**
 
 
-| Key            | Values   | Description                                                       |
-| -------------- | -------- | ----------------------------------------------------------------- |
-| `MULT_TYPE`    | `0`, `1` | Booth Radix-4 (`0`) or Radix-8 (`1`)                              |
-| `IS_PIPELINED` | `0`, `1` | 2-cycle (`0`) or 3-cycle (`1`) latency                            |
-| `IS_SQUARE`    | `0`, `1` | Squaring (`1`) or passthrough (`0`) — alpha variants only          |
+| Key            | Values   | Description                                               |
+| -------------- | -------- | --------------------------------------------------------- |
+| `MULT_TYPE`    | `0`, `1` | Booth Radix-4 (`0`) or Radix-8 (`1`)                      |
+| `IS_PIPELINED` | `0`, `1` | 2-cycle (`0`) or 3-cycle (`1`) latency                    |
+| `IS_SQUARE`    | `0`, `1` | Squaring (`1`) or passthrough (`0`) — alpha variants only |
 
 
 **Testbench structure:** all testbenches share the same pattern — clock/reset generation with a configurable period, 1000 iterations of randomized inputs and accumulator values, corner cases (max-positive, min-negative, mixed-sign, zero), and self-checking via a software reference model that calls `$fatal` on any mismatch. Outputs go to `sim/<OUT_DIR>/`. A `activity.vcd` waveform is produced for debugging purpose.
@@ -250,14 +250,29 @@ make clean-all                  # remove all sim/ and imp/ directories
 **RTL elaboration parameters (passed via `PARAMS="..."`):**
 
 
-| Key            | Applies to                  | Values             | Description                                |
-| -------------- | --------------------------- | ------------------ | ------------------------------------------ |
-| `MULT_TYPE`    | BAS and WIN top-levels      | `0` (R4), `1` (R8) | Booth encoding radix                       |
-| `IS_PIPELINED` | all top-levels              | `0`, `1`           | 2-cycle (`0`) or 3-cycle (`1`) latency     |
-| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha`, `top_sqr_8x8_alpha` | `0`, `1`           | Squaring (`1`) or passthrough (`0`) inputs |
+| Key            | Applies to                                  | Values             | Description                                                                                    |
+| -------------- | ------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------- |
+| `MULT_TYPE`    | BAS and WIN top-levels                      | `0` (R4), `1` (R8) | Booth encoding radix                                                                           |
+| `IS_PIPELINED` | all top-levels                              | `0`, `1`           | 2-cycle (`0`) or 3-cycle (`1`) latency                                                         |
+| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha`, `top_sqr_8x8_alpha` | `0`, `1`           | Squaring (`1`) or passthrough (`0`) inputs                                                     |
+| `SQR_TYPE`     | `top_sqr_4x8_sc`                            | `0`, `1`           | `0` = `sqr_s_5_bit_v0` (structural via HA chain), `1` = `sqr_s_5_bit_v1` (flat KMap-minimized) |
 
 
 ## PE architectures
+
+### Module instantiation map
+
+| Top-level              | Partial product generator               | Compression tree     | Accumulators |
+|------------------------|-----------------------------------------|----------------------|:------------:|
+| `top_bas_4x8`          | `bas_4x8` → `mult_array`                | `cpr_tree_4x8`       | 1            |
+| `top_bas_8x8`          | `bas_8x8` → `mult_array`                | `cpr_tree_8x8`       | 1            |
+| `top_bas_4x8_sc`       | `bas_4x8_sc` → `mult_array`             | `cpr_tree_4x8`       | 1            |
+| `top_win_4x8`          | `win_4x8` → `add_mult_array`            | `cpr_tree_4x8`       | 3            |
+| `top_win_4x8_sc`       | `win_4x8_sc` → `add_mult_array`         | `cpr_tree_4x8`       | 3            |
+| `top_sqr_4x8_sc`       | `sqr_4x8_sc` → `add_sqr_s_5_bit_array`  | `cpr_tree_4x8`       | 3            |
+| `top_sqr_8x8`          | `add_sqr_s_9_bit_array`                 | `cpr_tree_8x8`       | 3            |
+| `top_sqr_4x8_sc_alpha` | `sqr_s_4_bit_alpha_array`               | `cpr_tree_4x8_alpha` | 0            |
+| `top_sqr_8x8_alpha`    | `sqr_s_8_bit_alpha_array`               | `cpr_tree_8x8_alpha` | 0            |
 
 ### Common pipeline
 
@@ -432,13 +447,13 @@ Final:   2 outputs → add_n → (PP_WIDTH + CPR_EXT_BITS + 16)-bit result
 ### Compressor hierarchy
 
 
-| Module           | Description                                                          |
-| ---------------- | -------------------------------------------------------------------- |
-| `cpr_4_2_bit`    | 1-bit 4:2 compressor cell (two cascaded full adders)                 |
-| `cpr_4_2`        | Multi-bit 4:2 compressor with sign extension                         |
-| `cpr_n_2`        | Tree of 4:2 compressors reducing N inputs to sum + carry             |
-| `cpr_tree_4x8`   | 3-stage compression tree for 4×8 PEs (PP_SIZE multiple of 8)        |
-| `cpr_tree_8x8`   | 2-stage compression tree for 8×8 PEs (PP_SIZE multiple of 4)        |
+| Module               | Description                                                           |
+| -------------------- | --------------------------------------------------------------------- |
+| `cpr_4_2_bit`        | 1-bit 4:2 compressor cell (two cascaded full adders)                  |
+| `cpr_4_2`            | Multi-bit 4:2 compressor with sign extension                          |
+| `cpr_n_2`            | Tree of 4:2 compressors reducing N inputs to sum + carry              |
+| `cpr_tree_4x8`       | 3-stage compression tree for 4×8 PEs (PP_SIZE multiple of 8)          |
+| `cpr_tree_8x8`       | 2-stage compression tree for 8×8 PEs (PP_SIZE multiple of 4)          |
 | `cpr_tree_4x8_alpha` | 3-stage compression tree (no accumulators) for `top_sqr_4x8_sc_alpha` |
 | `cpr_tree_8x8_alpha` | 2-stage compression tree (no accumulators) for `top_sqr_8x8_alpha`    |
 
@@ -458,32 +473,32 @@ Final:   2 outputs → add_n → (PP_WIDTH + CPR_EXT_BITS + 16)-bit result
 ### Squaring units
 
 
-| Module                    | Description                                                         |
-| ------------------------- | ------------------------------------------------------------------- |
-| `sqr_u_3_bit`             | Unsigned 3-bit squarer (combinational truth-table logic)            |
-| `sqr_u_4_bit`             | Unsigned 4-bit squarer (combinational truth-table logic)            |
-| `sqr_u_8_bit`             | Unsigned 8-bit squarer (Wallace tree, no final carry-propagate adder) |
-| `sqr_s_4_bit`             | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit)    |
+| Module                    | Description                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `sqr_u_3_bit`             | Unsigned 3-bit squarer (combinational truth-table logic)                                 |
+| `sqr_u_4_bit`             | Unsigned 4-bit squarer (combinational truth-table logic)                                 |
+| `sqr_u_8_bit`             | Unsigned 8-bit squarer (Wallace tree, no final carry-propagate adder)                    |
+| `sqr_s_4_bit`             | Signed 4-bit squarer (2's complement → magnitude + sqr_u_3_bit)                          |
 | `sqr_s_5_bit_v0`          | Signed 5-bit squarer, structural (2's complement → magnitude + sqr_u_4_bit via HA chain) |
-| `sqr_s_5_bit_v1`          | Signed 5-bit squarer, optimized (flat KMap-minimized Boolean, no submodules) |
-| `sqr_s_8_bit`             | Signed 8-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
-| `sqr_s_9_bit`             | Signed 9-bit squarer (2's complement → magnitude + sqr_u_8_bit)    |
-| `sqr_s_4_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 4-bit inputs, `IS_SQUARE` |
-| `sqr_s_8_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 8-bit inputs, `IS_SQUARE` |
-| `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²`, `SQR_TYPE` selects v0/v1 (4-bit inputs) |
-| `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_9_bit` (8-bit inputs)  |
+| `sqr_s_5_bit_v1`          | Signed 5-bit squarer, optimized (flat KMap-minimized Boolean, no submodules)             |
+| `sqr_s_8_bit`             | Signed 8-bit squarer (2's complement → magnitude + sqr_u_8_bit)                          |
+| `sqr_s_9_bit`             | Signed 9-bit squarer (2's complement → magnitude + sqr_u_8_bit)                          |
+| `sqr_s_4_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 4-bit inputs, `IS_SQUARE`                       |
+| `sqr_s_8_bit_alpha_array` | Array: `a[i]²` or `a[i]` passthrough for 8-bit inputs, `IS_SQUARE`                       |
+| `add_sqr_s_5_bit_array`   | Array: `pp[i] = (a[i]+b[i])²`, `SQR_TYPE` selects v0/v1 (4-bit inputs)                   |
+| `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` using `sqr_s_9_bit` (8-bit inputs)                         |
 
 
 ### Partial product generators
 
 
-| Module           | Description                                                |
-| ---------------- | ---------------------------------------------------------- |
-| `bas_4x8`        | Baseline 4×8 PP generator (full 8-bit B)                   |
-| `bas_8x8`        | Baseline 8×8 PP generator (32 lanes, 8-bit A and B)        |
-| `bas_4x8_sc`     | Baseline split-cell (B split into B_lo and B_hi halves)    |
-| `add_mult_array` | Winograd pairing: `(a[i+1]+b[i]) × (a[i]+b[i+1])` per pair |
-| `win_4x8`        | Winograd 4×8 PP generator                                  |
-| `win_4x8_sc`     | Winograd split-cell                                        |
-| `sqr_4x8_sc`              | Squaring split-cell: `(a+b_lo)² + 16*(a+b_hi)²` per lane   |
-| `add_sqr_s_9_bit_array`   | Array: `pp[i] = (a[i]+b[i])²` for `top_sqr_8x8` (8-bit inputs) |
+| Module                  | Description                                                    |
+| ----------------------- | -------------------------------------------------------------- |
+| `bas_4x8`               | Baseline 4×8 PP generator (full 8-bit B)                       |
+| `bas_8x8`               | Baseline 8×8 PP generator (32 lanes, 8-bit A and B)            |
+| `bas_4x8_sc`            | Baseline split-cell (B split into B_lo and B_hi halves)        |
+| `add_mult_array`        | Winograd pairing: `(a[i+1]+b[i]) × (a[i]+b[i+1])` per pair     |
+| `win_4x8`               | Winograd 4×8 PP generator                                      |
+| `win_4x8_sc`            | Winograd split-cell                                            |
+| `sqr_4x8_sc`            | Squaring split-cell: `(a+b_lo)² + 16*(a+b_hi)²` per lane       |
+| `add_sqr_s_9_bit_array` | Array: `pp[i] = (a[i]+b[i])²` for `top_sqr_8x8` (8-bit inputs) |
