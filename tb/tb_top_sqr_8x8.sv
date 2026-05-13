@@ -36,6 +36,7 @@ module tb_top_sqr_8x8 #(
     localparam int ACC_WIDTH  = 48;
     localparam int EXT_NUM    = 7;
     localparam int OUT_WIDTH  = ACC_WIDTH;
+    localparam int ALPHA_LANES = 16;  // IN_SIZE of sqr_8x8_alpha (feeds acc[1]/acc[2])
 
     real clk_p = `CLK_PERIOD_NS;
 
@@ -174,8 +175,8 @@ module tb_top_sqr_8x8 #(
         begin
             exp    = '0;
             acc[0] = ACC_WIDTH'($urandom_range(0, (1 << ACC_WIDTH) - 1));
-            acc[1] = ACC_WIDTH'($urandom_range(0, (1 << ACC_WIDTH) - 1));
-            acc[2] = ACC_WIDTH'($urandom_range(0, (1 << ACC_WIDTH) - 1));
+            acc[1] = ACC_WIDTH'($urandom_range(0, ALPHA_LANES * MAX_VAL_A * MAX_VAL_A));
+            acc[2] = ACC_WIDTH'($signed(int'($urandom_range(0, 2 * ALPHA_LANES * MAX_VAL_A)) - ALPHA_LANES * MAX_VAL_A));
 
             for (int k = 0; k < EXT_NUM; k++) begin
                 is_signed[k] = 1'b1;
