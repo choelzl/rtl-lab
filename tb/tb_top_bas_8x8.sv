@@ -13,6 +13,9 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT (1 = 3-cycle latency, 0 = 2-cycle)
 //   MULT_TYPE    - 0 = Radix-4 Booth, 1 = Radix-8 Booth
+//   DYN_RANGE_A  - active bits for a inputs (1..IN_WIDTH_A, default = IN_WIDTH_A)
+//   DYN_RANGE_B  - active bits for b inputs (1..IN_WIDTH_B, default = IN_WIDTH_B)
+//   DIST_TYPE    - 0 = uniform, 1 = normal centered at unsigned midpoint (default = 0)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -22,7 +25,10 @@
 
 module tb_top_bas_8x8 #(
     parameter bit IS_PIPELINED = 1,
-    parameter int MULT_TYPE    = 0
+    parameter int MULT_TYPE    = 0,
+    parameter int DYN_RANGE_A  = 8,
+    parameter int DYN_RANGE_B  = 8,
+    parameter int DIST_TYPE    = 0
 );
     localparam int IN_SIZE    = 32;
     localparam int IN_WIDTH_A = 8;
@@ -120,6 +126,42 @@ module tb_top_bas_8x8 #(
     end
 
     // -------------------------------------------------------------------------
+    // Random input generation
+    // -------------------------------------------------------------------------
+    function automatic real normal_rand(real mu, real sigma);
+        real u1, u2;
+        u1 = (real'($urandom()) + 1.0) / 4294967297.0;
+        u2 = real'($urandom()) / 4294967295.0;
+        return mu + sigma * ($sqrt(-2.0 * $ln(u1)) * $cos(6.28318530717959 * u2));
+    endfunction
+
+    function automatic logic [IN_WIDTH_A-1:0] gen_a();
+        real s;
+        int  v;
+        if (DIST_TYPE == 0)
+            return IN_WIDTH_A'($signed(DYN_RANGE_A'($urandom_range(0, (1 << DYN_RANGE_A) - 1))));
+        s = normal_rand((real'(1 << DYN_RANGE_A) - 1.0) / 2.0,
+                         real'(1 << (DYN_RANGE_A - 2)));
+        v = int'($floor(s + 0.5));
+        if (v < 0)                       v = 0;
+        if (v > (1 << DYN_RANGE_A) - 1) v = (1 << DYN_RANGE_A) - 1;
+        return IN_WIDTH_A'($signed(DYN_RANGE_A'(v)));
+    endfunction
+
+    function automatic logic [IN_WIDTH_B-1:0] gen_b();
+        real s;
+        int  v;
+        if (DIST_TYPE == 0)
+            return IN_WIDTH_B'($signed(DYN_RANGE_B'($urandom_range(0, (1 << DYN_RANGE_B) - 1))));
+        s = normal_rand((real'(1 << DYN_RANGE_B) - 1.0) / 2.0,
+                         real'(1 << (DYN_RANGE_B - 2)));
+        v = int'($floor(s + 0.5));
+        if (v < 0)                       v = 0;
+        if (v > (1 << DYN_RANGE_B) - 1) v = (1 << DYN_RANGE_B) - 1;
+        return IN_WIDTH_B'($signed(DYN_RANGE_B'(v)));
+    endfunction
+
+    // -------------------------------------------------------------------------
     // Verification tasks
     // -------------------------------------------------------------------------
     task automatic run_and_check(
@@ -138,8 +180,8 @@ module tb_top_bas_8x8 #(
 
             for (int i = 0; i < IN_SIZE; i++) begin
                 if (use_random) begin
-                    a[i] = IN_WIDTH_A'($urandom_range(0, (1 << IN_WIDTH_A) - 1));
-                    b[i] = IN_WIDTH_B'($urandom_range(0, (1 << IN_WIDTH_B) - 1));
+                    a[i] = gen_a();
+                    b[i] = gen_b();
                 end else begin
                     a[i] = a_fixed;
                     b[i] = b_fixed;
@@ -172,10 +214,10 @@ module tb_top_bas_8x8 #(
 
     task automatic verify_with_corner;
         begin
-            max_pos_0 = (1 <<< (IN_WIDTH_A - 1)) - 1;
-            min_neg_0 =  1 <<< (IN_WIDTH_A - 1);
-            max_pos_1 = (1 <<< (IN_WIDTH_B - 1)) - 1;
-            min_neg_1 =  1 <<< (IN_WIDTH_B - 1);
+            max_pos_0 = (1 <<< (DYN_RANGE_A - 1)) - 1;
+            min_neg_0 = IN_WIDTH_A'($signed(DYN_RANGE_A'(1 <<< (DYN_RANGE_A - 1))));
+            max_pos_1 = (1 <<< (DYN_RANGE_B - 1)) - 1;
+            min_neg_1 = IN_WIDTH_B'($signed(DYN_RANGE_B'(1 <<< (DYN_RANGE_B - 1))));
 
             run_and_check(1'b0, max_pos_0, max_pos_1);
             run_and_check(1'b0, min_neg_0, min_neg_1);

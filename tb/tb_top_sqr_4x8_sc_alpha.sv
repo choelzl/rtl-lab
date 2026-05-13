@@ -13,6 +13,8 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT
 //   IS_SQUARE    - 1 = squaring mode; 0 = accumulate mode
+//   DYN_RANGE_A  - active bits for a inputs (1..IN_WIDTH_A, default = IN_WIDTH_A)
+//   DIST_TYPE    - 0 = uniform, 1 = normal centered at unsigned midpoint (default = 0)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -22,7 +24,9 @@
 
 module tb_top_sqr_4x8_sc_alpha #(
     parameter bit IS_PIPELINED = 1,
-    parameter bit IS_SQUARE    = 0
+    parameter bit IS_SQUARE    = 0,
+    parameter int DYN_RANGE_A  = 4,
+    parameter int DIST_TYPE    = 0
 );
     localparam int IN_SIZE      = 32;
     localparam int IN_WIDTH_A   = 4;
@@ -106,6 +110,29 @@ module tb_top_sqr_4x8_sc_alpha #(
     end
 
     // -------------------------------------------------------------------------
+    // Random input generation
+    // -------------------------------------------------------------------------
+    function automatic real normal_rand(real mu, real sigma);
+        real u1, u2;
+        u1 = (real'($urandom()) + 1.0) / 4294967297.0;
+        u2 = real'($urandom()) / 4294967295.0;
+        return mu + sigma * ($sqrt(-2.0 * $ln(u1)) * $cos(6.28318530717959 * u2));
+    endfunction
+
+    function automatic logic [IN_WIDTH_A-1:0] gen_a();
+        real s;
+        int  v;
+        if (DIST_TYPE == 0)
+            return IN_WIDTH_A'($signed(DYN_RANGE_A'($urandom_range(0, (1 << DYN_RANGE_A) - 1))));
+        s = normal_rand((real'(1 << DYN_RANGE_A) - 1.0) / 2.0,
+                         real'(1 << (DYN_RANGE_A - 2)));
+        v = int'($floor(s + 0.5));
+        if (v < 0)                      v = 0;
+        if (v > (1 << DYN_RANGE_A) - 1) v = (1 << DYN_RANGE_A) - 1;
+        return IN_WIDTH_A'($signed(DYN_RANGE_A'(v)));
+    endfunction
+
+    // -------------------------------------------------------------------------
     // Verification tasks
     // -------------------------------------------------------------------------
     task automatic run_and_check(
@@ -125,7 +152,7 @@ module tb_top_sqr_4x8_sc_alpha #(
 
             for (int i = 0; i < IN_SIZE; i++) begin
                 if (use_random) begin
-                    a[i] = IN_WIDTH_A'($urandom_range(0, (1 << IN_WIDTH_A) - 1));
+                    a[i] = gen_a();
                     // a[i] = 4'b1101;
                 end else begin
                     a[i] = a_fixed;
@@ -165,8 +192,8 @@ module tb_top_sqr_4x8_sc_alpha #(
 
     task automatic verify_with_corner;
         begin
-            max_pos = (1 <<< (IN_WIDTH_A - 1)) - 1;
-            min_neg =  1 <<< (IN_WIDTH_A - 1);
+            max_pos = (1 <<< (DYN_RANGE_A - 1)) - 1;
+            min_neg = IN_WIDTH_A'($signed(DYN_RANGE_A'(1 <<< (DYN_RANGE_A - 1))));
 
             run_and_check(1'b0, max_pos);
             run_and_check(1'b0, min_neg);
