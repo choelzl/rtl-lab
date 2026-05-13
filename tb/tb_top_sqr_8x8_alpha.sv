@@ -14,8 +14,8 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT
 //   IS_SQUARE    - 1 = squaring mode; 0 = accumulate mode
-//   DYN_RANGE_A  - active bits for a inputs (1..IN_WIDTH_A, default = IN_WIDTH_A)
-//   DIST_TYPE    - 0 = uniform, 1 = normal centered at unsigned midpoint (default = 0)
+//   MAX_VAL_A    - max positive value for a inputs (1..2^(IN_WIDTH_A-1)-1, default = 2^(IN_WIDTH_A-1)-1)
+//   DIST_TYPE    - 0 = uniform over [-MAX_VAL, +MAX_VAL], 1 = normal tightly concentrated near max positive with random sign (default = 0)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -26,7 +26,7 @@
 module tb_top_sqr_8x8_alpha #(
     parameter bit IS_PIPELINED = 1,
     parameter bit IS_SQUARE    = 0,
-    parameter int DYN_RANGE_A  = 8,
+    parameter int MAX_VAL_A    = 127,
     parameter int DIST_TYPE    = 0
 );
     localparam int IN_SIZE      = 16;
@@ -124,13 +124,14 @@ module tb_top_sqr_8x8_alpha #(
         real s;
         int  v;
         if (DIST_TYPE == 0)
-            return IN_WIDTH_A'($signed(DYN_RANGE_A'($urandom_range(0, (1 << DYN_RANGE_A) - 1))));
-        s = normal_rand((real'(1 << DYN_RANGE_A) - 1.0) / 2.0,
-                         real'(1 << (DYN_RANGE_A - 2)));
+            return IN_WIDTH_A'($signed(int'($urandom_range(0, 2 * MAX_VAL_A)) - MAX_VAL_A));
+        s = normal_rand(7.0 / 8.0 * real'(MAX_VAL_A),
+                        1.0 / 8.0 * real'(MAX_VAL_A));
         v = int'($floor(s + 0.5));
-        if (v < 0)                       v = 0;
-        if (v > (1 << DYN_RANGE_A) - 1) v = (1 << DYN_RANGE_A) - 1;
-        return IN_WIDTH_A'($signed(DYN_RANGE_A'(v)));
+        if (v < 0)                           v = 0;
+        if (v > (1 << (IN_WIDTH_A - 1)) - 1) v = (1 << (IN_WIDTH_A - 1)) - 1;
+        if ($urandom_range(0, 1) != 0)       v = -v;
+        return IN_WIDTH_A'($signed(v));
     endfunction
 
     // -------------------------------------------------------------------------
@@ -195,8 +196,8 @@ module tb_top_sqr_8x8_alpha #(
         logic [IN_WIDTH_A-1:0] mixed_pos;
         logic [IN_WIDTH_A-1:0] mixed_neg;
         begin
-            max_pos   = (1 <<< (DYN_RANGE_A - 1)) - 1;
-            min_neg   = IN_WIDTH_A'($signed(DYN_RANGE_A'(1 <<< (DYN_RANGE_A - 1))));
+            max_pos   = IN_WIDTH_A'(MAX_VAL_A);
+            min_neg   = IN_WIDTH_A'(-MAX_VAL_A);
             mixed_pos = IN_WIDTH_A'(max_pos >> 1);
             mixed_neg = IN_WIDTH_A'(min_neg | 8'h01);
 
