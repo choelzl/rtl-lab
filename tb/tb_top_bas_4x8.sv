@@ -13,9 +13,11 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT (1 = 3-cycle latency, 0 = 2-cycle)
 //   MULT_TYPE    - 0 = Radix-4 Booth, 1 = Radix-8 Booth
-//   MAX_VAL_A    - max positive value for a inputs (1..2^(IN_WIDTH_A-1)-1, default = 2^(IN_WIDTH_A-1)-1)
-//   MAX_VAL_B    - max positive value for b inputs (1..2^(IN_WIDTH_B-1)-1, default = 2^(IN_WIDTH_B-1)-1)
-//   DIST_TYPE    - 0 = uniform over [-MAX_VAL, +MAX_VAL], 1 = normal tightly concentrated near max positive with random sign (default = 0)
+//   MAX_VAL_A    - max positive value for a inputs (0..2^(IN_WIDTH_A-1)-1, default = 2^(IN_WIDTH_A-1)-1)
+//   MAX_VAL_B    - max positive value for b inputs (0..2^(IN_WIDTH_B-1)-1, default = 2^(IN_WIDTH_B-1)-1)
+//   DIST_TYPE    - 0 = uniform over [-MAX_VAL, +MAX_VAL], 1 = bimodal normal at ±MU_SCALE × MAX_VAL with std-dev SIGMA_SCALE × MAX_VAL, random sign per sample (default = 0)
+//   MU_SCALE     - mean of the normal distribution as a fraction of MAX_VAL (default = 1.0/2.0)
+//   SIGMA_SCALE  - std-dev of the normal distribution as a fraction of MAX_VAL (default = 1.0/6.0)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -24,11 +26,13 @@
 `timescale 1 ns/1 ps
 
 module tb_top_bas_4x8 #(
-    parameter bit IS_PIPELINED = 1,
-    parameter int MULT_TYPE    = 0,
-    parameter int MAX_VAL_A    = 7,
-    parameter int MAX_VAL_B    = 127,
-    parameter int DIST_TYPE    = 0
+    parameter bit  IS_PIPELINED = 1,
+    parameter int  MULT_TYPE    = 0,
+    parameter int  MAX_VAL_A    = 7,
+    parameter int  MAX_VAL_B    = 127,
+    parameter int  DIST_TYPE    = 0,
+    parameter real MU_SCALE     = 1.0/2.0,
+    parameter real SIGMA_SCALE  = 1.0/6.0
 );
     localparam int IN_SIZE    = 64;
     localparam int IN_WIDTH_A = 4;
@@ -138,10 +142,12 @@ module tb_top_bas_4x8 #(
     function automatic logic [IN_WIDTH_A-1:0] gen_a();
         real s;
         int  v;
+        if (MAX_VAL_A == 0)
+            return '0;
         if (DIST_TYPE == 0)
             return IN_WIDTH_A'($signed(int'($urandom_range(0, 2 * MAX_VAL_A)) - MAX_VAL_A));
-        s = normal_rand(7.0 / 8.0 * real'(MAX_VAL_A),
-                        1.0 / 8.0 * real'(MAX_VAL_A));
+        s = normal_rand(MU_SCALE    * real'(MAX_VAL_A),
+                        SIGMA_SCALE * real'(MAX_VAL_A));
         v = int'($floor(s + 0.5));
         if (v < 0)                           v = 0;
         if (v > (1 << (IN_WIDTH_A - 1)) - 1) v = (1 << (IN_WIDTH_A - 1)) - 1;
@@ -154,8 +160,8 @@ module tb_top_bas_4x8 #(
         int  v;
         if (DIST_TYPE == 0)
             return IN_WIDTH_B'($signed(int'($urandom_range(0, 2 * MAX_VAL_B)) - MAX_VAL_B));
-        s = normal_rand(7.0 / 8.0 * real'(MAX_VAL_B),
-                        1.0 / 8.0 * real'(MAX_VAL_B));
+        s = normal_rand(MU_SCALE    * real'(MAX_VAL_B),
+                        SIGMA_SCALE * real'(MAX_VAL_B));
         v = int'($floor(s + 0.5));
         if (v < 0)                           v = 0;
         if (v > (1 << (IN_WIDTH_B - 1)) - 1) v = (1 << (IN_WIDTH_B - 1)) - 1;

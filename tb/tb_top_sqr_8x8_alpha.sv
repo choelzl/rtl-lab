@@ -14,8 +14,10 @@
 // Parameters:
 //   IS_PIPELINED - forwarded to DUT
 //   IS_SQUARE    - 1 = squaring mode; 0 = accumulate mode
-//   MAX_VAL_A    - max positive value for a inputs (1..2^(IN_WIDTH_A-1)-1, default = 2^(IN_WIDTH_A-1)-1)
-//   DIST_TYPE    - 0 = uniform over [-MAX_VAL, +MAX_VAL], 1 = normal tightly concentrated near max positive with random sign (default = 0)
+//   MAX_VAL_A    - max positive value for a inputs (0..2^(IN_WIDTH_A-1)-1, default = 2^(IN_WIDTH_A-1)-1)
+//   DIST_TYPE    - 0 = uniform over [-MAX_VAL, +MAX_VAL], 1 = bimodal normal at ±MU_SCALE × MAX_VAL with std-dev SIGMA_SCALE × MAX_VAL, random sign per sample (default = 0)
+//   MU_SCALE     - mean of the normal distribution as a fraction of MAX_VAL (default = 1.0/2.0)
+//   SIGMA_SCALE  - std-dev of the normal distribution as a fraction of MAX_VAL (default = 1.0/6.0)
 // -----------------------------------------------------------------------------
 
 /* verilator lint_off UNUSEDSIGNAL */
@@ -24,10 +26,12 @@
 `timescale 1 ns/1 ps
 
 module tb_top_sqr_8x8_alpha #(
-    parameter bit IS_PIPELINED = 1,
-    parameter bit IS_SQUARE    = 0,
-    parameter int MAX_VAL_A    = 127,
-    parameter int DIST_TYPE    = 0
+    parameter bit  IS_PIPELINED = 1,
+    parameter bit  IS_SQUARE    = 0,
+    parameter int  MAX_VAL_A    = 127,
+    parameter int  DIST_TYPE    = 0,
+    parameter real MU_SCALE     = 1.0/2.0,
+    parameter real SIGMA_SCALE  = 1.0/6.0
 );
     localparam int IN_SIZE      = 16;
     localparam int IN_WIDTH_A   = 8;
@@ -123,10 +127,12 @@ module tb_top_sqr_8x8_alpha #(
     function automatic logic [IN_WIDTH_A-1:0] gen_a();
         real s;
         int  v;
+        if (MAX_VAL_A == 0)
+            return '0;
         if (DIST_TYPE == 0)
             return IN_WIDTH_A'($signed(int'($urandom_range(0, 2 * MAX_VAL_A)) - MAX_VAL_A));
-        s = normal_rand(7.0 / 8.0 * real'(MAX_VAL_A),
-                        1.0 / 8.0 * real'(MAX_VAL_A));
+        s = normal_rand(MU_SCALE    * real'(MAX_VAL_A),
+                        SIGMA_SCALE * real'(MAX_VAL_A));
         v = int'($floor(s + 0.5));
         if (v < 0)                           v = 0;
         if (v > (1 << (IN_WIDTH_A - 1)) - 1) v = (1 << (IN_WIDTH_A - 1)) - 1;
