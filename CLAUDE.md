@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See [README.md](README.md) for full documentation: commands, PE architectures, RTL module reference, and parameter tables.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See [README.md](README.md) for the shared EDA flow (commands, make parameters, pipeline). For a project's designs, top-levels, RTL parameters, and module reference, see that project's own README, e.g. [projects/ai-core/README.md](projects/ai-core/README.md).
 
 ## Layout
 
