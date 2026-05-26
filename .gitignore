@@ -2,7 +2,7 @@
 # Author: Simone Machetti
 # -----------------------------------------------------------------------------
 
-/sim
-/imp
-/doc/scratch
+/projects/*/sim
+/projects/*/imp
+/projects/*/doc/scratch
 __pycache__

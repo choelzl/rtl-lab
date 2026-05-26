@@ -2,7 +2,7 @@
 # Author: Simone Machetti
 # -----------------------------------------------------------------------------
 
-set REPORT_DIR $env(CODE_HOME)/ai-core/imp/$env(SEL_OUT_DIR)/report
+set REPORT_DIR $env(CODE_HOME)/rtl-lab/projects/$env(SEL_PROJECT)/imp/$env(SEL_OUT_DIR)/report
 file mkdir $REPORT_DIR
 
 # -----------------------------------------------------------------------------
@@ -17,7 +17,7 @@ read_liberty $env(TOOLS_HOME)/OpenROAD-flow-scripts/flow/platforms/asap7/lib/NLD
 # -----------------------------------------------------------------------------
 # Netlist + top-level linking
 # -----------------------------------------------------------------------------
-read_verilog $env(CODE_HOME)/ai-core/imp/$env(SEL_NETLIST_DIR)/output/netlist.v
+read_verilog $env(CODE_HOME)/rtl-lab/projects/$env(SEL_PROJECT)/imp/$env(SEL_NETLIST_DIR)/output/netlist.v
 link_design  $env(SEL_TOP_LEVEL)
 
 # -----------------------------------------------------------------------------

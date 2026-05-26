@@ -24,7 +24,7 @@ yosys "read_liberty -lib $env(TOOLS_HOME)/OpenROAD-flow-scripts/flow/platforms/a
 # -----------------------------------------------------------------------------
 # Read SystemVerilog sources
 # -----------------------------------------------------------------------------
-set rtl_files [lsort [glob "$env(CODE_HOME)/ai-core/rtl/*.sv"]]
+set rtl_files [lsort [glob "$env(CODE_HOME)/rtl-lab/projects/$env(SEL_PROJECT)/rtl/*.sv"]]
 
 set g_flags ""
 if {$env(SEL_PARAMS) ne "none"} {

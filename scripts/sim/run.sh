@@ -25,12 +25,12 @@ verilator \
     -DVCD \
     -DCLK_PERIOD_NS="${SEL_CLK_PERIOD_NS}" \
     "${g_flags[@]}" \
-    -I"${CODE_HOME}/ai-core/rtl" \
+    -I"${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/rtl" \
     --top-module "tb_${SEL_TOP_LEVEL}" \
-    "${CODE_HOME}/ai-core/tb/tb_${SEL_TOP_LEVEL}.sv" \
-    -Mdir "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/build/obj_dir" \
-    -o "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/build/simv" \
-    | tee "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/output/compile.log"
+    "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/tb/tb_${SEL_TOP_LEVEL}.sv" \
+    -Mdir "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/sim/${SEL_OUT_DIR}/build/obj_dir" \
+    -o "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/sim/${SEL_OUT_DIR}/build/simv" \
+    | tee "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/sim/${SEL_OUT_DIR}/output/compile.log"
 
-exec "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/build/simv" "$@" \
-    | tee "${CODE_HOME}/ai-core/sim/${SEL_OUT_DIR}/output/run.log"
+exec "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/sim/${SEL_OUT_DIR}/build/simv" "$@" \
+    | tee "${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}/sim/${SEL_OUT_DIR}/output/run.log"

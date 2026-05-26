@@ -25,7 +25,7 @@ def repo_root() -> Path:
     code_home = os.environ.get("CODE_HOME")
     if not code_home:
         sys.exit("CODE_HOME is not set; run `source sourceme.sh` first.")
-    return Path(code_home) / "ai-core"
+    return Path(code_home) / "rtl-lab" / "projects" / "ai-core"
 
 
 def load_improvement_pct(wb, sheet: str) -> np.ndarray:

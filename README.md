@@ -1,6 +1,6 @@
-# AI Core
+# RTL Lab
 
-Fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference, implemented in SystemVerilog. The project explores several algorithmic variants — Baseline, Winograd, and Squaring — each available in standard and split-cell configurations, and characterizes them through simulation, logic synthesis, static timing analysis, and dynamic power analysis.
+Multi-project sandbox for prototyping RTL designs. The flow (Verilator simulation, Yosys synthesis, OpenSTA timing & dynamic power) is project-agnostic and lives at the repository root; each design sits under `projects/<name>/`. The reference project is `ai-core` — fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference, implemented in SystemVerilog. It explores several algorithmic variants — Baseline, Winograd, and Squaring — each available in standard and split-cell configurations, and characterizes them through simulation, logic synthesis, static timing analysis, and dynamic power analysis.
 
 ## Quick start
 
@@ -27,34 +27,39 @@ make post-syn-dpa TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_dpa NE
 
 ```
 .
-├── rtl/                # SystemVerilog source modules
-├── tb/                 # Verilator testbenches
-├── scripts/            # EDA flow scripts
-│   ├── sim/            # Pre-synthesis simulation flow
-│   │   └── run.sh      # Verilator compile and run script
-│   ├── syn/            # Logic synthesis flow
-│   │   ├── run.tcl     # Yosys top-level synthesis script (ASAP7)
-│   │   ├── compile.tcl # RTL read and elaboration script
-│   │   └── abc.tcl     # ABC technology mapping script
-│   ├── post-syn-sta/   # Post-synthesis static timing analysis flow
-│   │   └── run.tcl     # OpenSTA timing analysis script
-│   ├── post-syn-sim/   # Post-synthesis gate-level simulation flow
-│   │   ├── run.sh      # Verilator compile and run script
-│   │   └── filelist.f  # Gate-level netlist and cell library filelist
-│   ├── post-syn-dpa/   # Post-synthesis dynamic power analysis flow
-│   │   └── run.tcl     # OpenSTA power analysis script
-│   └── flow/           # End-to-end automation scripts (one subfolder per experiment)
-├── doc/                # Documentation and results
-│   ├── diagrams/       # Block diagrams
-│   ├── formulas/       # Mathematical formulas
-│   ├── charts/         # Comparison charts (<exp>/<chart>.png, generated)
-│   └── data/           # Extracted results (<exp>/results.xlsx, generated)
-├── sim/                # Simulation outputs (generated)
-├── imp/                # Synthesis/STA/DPA outputs (generated)
-├── Makefile            # Build system entry point
-├── sourceme.sh         # Environment setup (tool paths, CODE_HOME)
-└── CLAUDE.md           # AI assistant guidance for this repository
+├── scripts/                  # Project-agnostic EDA flow scripts
+│   ├── sim/                  # Pre-synthesis simulation flow
+│   │   └── run.sh            # Verilator compile and run script
+│   ├── syn/                  # Logic synthesis flow
+│   │   ├── run.tcl           # Yosys top-level synthesis script (ASAP7)
+│   │   ├── compile.tcl       # RTL read and elaboration script
+│   │   └── abc.tcl           # ABC technology mapping script
+│   ├── post-syn-sta/         # Post-synthesis static timing analysis flow
+│   │   └── run.tcl           # OpenSTA timing analysis script
+│   ├── post-syn-sim/         # Post-synthesis gate-level simulation flow
+│   │   ├── run.sh            # Verilator compile and run script
+│   │   └── filelist.f        # Gate-level netlist and cell library filelist
+│   └── post-syn-dpa/         # Post-synthesis dynamic power analysis flow
+│       └── run.tcl           # OpenSTA power analysis script
+├── projects/                 # One subfolder per RTL project
+│   └── ai-core/              # Reference project
+│       ├── rtl/              # SystemVerilog source modules
+│       ├── tb/               # Verilator testbenches
+│       ├── scripts/
+│       │   └── flow/         # End-to-end automation (one subfolder per experiment)
+│       ├── doc/              # Documentation and results
+│       │   ├── diagrams/     # Block diagrams
+│       │   ├── formulas/     # Mathematical formulas
+│       │   ├── charts/       # Comparison charts (<exp>/<chart>.png, generated)
+│       │   └── data/         # Extracted results (<exp>/results.xlsx, generated)
+│       ├── sim/              # Simulation outputs (generated)
+│       └── imp/              # Synthesis/STA/DPA outputs (generated)
+├── Makefile                  # Build system entry point (PROJECT=<name> selects project)
+├── sourceme.sh               # Environment setup (tool paths, CODE_HOME)
+└── CLAUDE.md                 # AI assistant guidance for this repository
 ```
+
+All `make` targets accept `PROJECT=<name>` (default `ai-core`) to select the project they operate on. The flow scripts in `scripts/` resolve project-specific paths through the `SEL_PROJECT` env var exported by the Makefile.
 
 ## Environment setup
 
@@ -74,7 +79,7 @@ The make targets form a pipeline where earlier steps produce artifacts consumed 
 4. `make post-syn-sta` — static timing analysis from the synthesized netlist.
 5. `make post-syn-dpa` — power estimation using the synthesized netlist and the `activity.vcd` from `make post-syn-sim`.
 
-To characterize all PE variants at once, use the automation scripts in `scripts/flow/`.
+To characterize all PE variants at once, use the automation scripts in `projects/ai-core/scripts/flow/`.
 
 ## Commands
 
@@ -211,7 +216,7 @@ Outputs go to `imp/<OUT_DIR>/`.
 
 ### Automation scripts
 
-Each experiment is a subfolder under `scripts/flow/` containing three stage
+Each experiment is a subfolder under `projects/ai-core/scripts/flow/` containing three stage
 scripts plus a `README.md`:
 
 - `run.py` — runs the relevant `make` targets and stores artifacts under `sim/` and `imp/`.
@@ -222,17 +227,17 @@ scripts plus a `README.md`:
 Current experiments:
 
 ```bash
-python3 scripts/flow/regres/run.py    # full flow per PE variant; PASS/FAIL
-python3 scripts/flow/regres/ext.py    # imp/ → doc/data/regres/results.xlsx
-python3 scripts/flow/regres/gen.py    # → doc/charts/regres/*.png
+python3 projects/ai-core/scripts/flow/regres/run.py    # full flow per PE variant; PASS/FAIL
+python3 projects/ai-core/scripts/flow/regres/ext.py    # imp/ → doc/data/regres/results.xlsx
+python3 projects/ai-core/scripts/flow/regres/gen.py    # → doc/charts/regres/*.png
 
-python3 scripts/flow/a_sweep/run.py   # A-magnitude sweep (reuses dyn syn dirs)
-python3 scripts/flow/a_sweep/ext.py   # → doc/data/a_sweep/results.xlsx
-python3 scripts/flow/a_sweep/gen.py   # → doc/charts/a_sweep/improvement.png
+python3 projects/ai-core/scripts/flow/a_sweep/run.py   # A-magnitude sweep (reuses dyn syn dirs)
+python3 projects/ai-core/scripts/flow/a_sweep/ext.py   # → doc/data/a_sweep/results.xlsx
+python3 projects/ai-core/scripts/flow/a_sweep/gen.py   # → doc/charts/a_sweep/improvement.png
 
-python3 scripts/flow/dyn_range/run.py # 2-D dynamic-range sweep, normal dist
-python3 scripts/flow/dyn_range/ext.py # → doc/data/dyn_range/results.xlsx
-python3 scripts/flow/dyn_range/gen.py # → doc/charts/dyn_range/*.png
+python3 projects/ai-core/scripts/flow/dyn_range/run.py # 2-D dynamic-range sweep, normal dist
+python3 projects/ai-core/scripts/flow/dyn_range/ext.py # → doc/data/dyn_range/results.xlsx
+python3 projects/ai-core/scripts/flow/dyn_range/gen.py # → doc/charts/dyn_range/*.png
 ```
 
 ### Cleanup

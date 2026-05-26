@@ -13,7 +13,7 @@ Please carry out the following steps in order.
 
 **1. Review added and modified RTL files**
 
-Read every new or modified file under `rtl/` that is related to `<TOP_LEVEL>`.
+Read every new or modified file under `projects/ai-core/rtl/` that is related to `<TOP_LEVEL>`.
 For each file, check:
 - Correct port connections (no missing commas, no mismatched widths).
 - Localparameters and functions are consistent with the design intent.
@@ -21,17 +21,17 @@ For each file, check:
 
 **2. Execute all `CLAUDE:` requests in the code**
 
-Search all files under `rtl/` for comments starting with `CLAUDE:`.
+Search all files under `projects/ai-core/rtl/` for comments starting with `CLAUDE:`.
 Execute exactly what each comment requests, then remove the comment.
 Typical requests include creating new modules, renaming existing ones, updating
 documentation, or fixing port maps.
 After acting on a request, verify that all references to renamed/created modules
-are updated across the entire `rtl/` tree.
+are updated across the entire `projects/ai-core/rtl/` tree.
 
 **3. Write the testbench**
 
-Create `tb/tb_<TOP_LEVEL>.sv` following the conventions of the existing testbenches
-(see `tb/tb_top_bas_8x8.sv` and `tb/tb_top_sqr_4x8_sc.sv` as primary references).
+Create `projects/ai-core/tb/tb_<TOP_LEVEL>.sv` following the conventions of the existing testbenches
+(see `projects/ai-core/tb/tb_top_bas_8x8.sv` and `projects/ai-core/tb/tb_top_sqr_4x8_sc.sv` as primary references).
 The testbench must:
 - Implement a `run_and_check` task with a software reference model that matches
   the DUT's documented formula exactly.
@@ -62,27 +62,26 @@ Any other Verilator warning or a simulation failure must be investigated and fix
 
 **5. Update the flow scripts**
 
-In `scripts/flow/run_regres.sh`, add a new block for `<TOP_LEVEL>` following the
-same format as the existing blocks, placed in a logical position relative to the
-other architectures. Use `PARAMS="IS_PIPELINED=1"` (omit `MULT_TYPE` for squaring
-variants that do not have that parameter).
+In `projects/ai-core/scripts/flow/regres/run.py`, add a new entry for `<TOP_LEVEL>` to the
+`ARCHES` list following the same format as the existing entries, placed in a logical
+position relative to the other architectures.
 
-In `scripts/flow/ext_results.sh`, add `"<TOP_LEVEL_SHORT>|<LABEL>"` to the `DESIGNS`
-array in the same relative position. The entry will be skipped automatically if
-synthesis results are not yet present (the graceful-skip check is already in place).
+In `projects/ai-core/scripts/flow/regres/ext.py`, add `("<LABEL>", "<SLUG>")` to the
+`DESIGNS` list in the same relative position. Designs with no synthesis results are
+skipped automatically.
 
 **6. Extract results and regenerate charts**
 
-Do NOT run `run_regres.sh` (all other designs already have synthesis data).
+Do NOT run `regres/run.py` (all other designs already have synthesis data).
 Run only:
 
 ```bash
-bash scripts/flow/ext_results.sh
-bash scripts/flow/gen_charts.sh
+python3 projects/ai-core/scripts/flow/regres/ext.py
+python3 projects/ai-core/scripts/flow/regres/gen.py
 ```
 
-Confirm that `<LABEL>` appears in the output CSV files under `doc/data/` and that
-the PE-level charts in `doc/charts/` are regenerated successfully.
+Confirm that `<LABEL>` appears in `projects/ai-core/doc/data/regres/results.xlsx` and that
+the PE-level charts in `projects/ai-core/doc/charts/regres/` are regenerated successfully.
 
 **7. Update documentation**
 
