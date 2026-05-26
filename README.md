@@ -35,6 +35,8 @@ make post-syn-dpa PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DI
 
 ```
 .
+├── .claude/
+│   └── skills/           # Claude Code skills (add-project, add-arch)
 ├── scripts/              # Project-agnostic EDA flow scripts
 │   ├── sim/              # Pre-synthesis simulation flow
 │   │   └── run.sh        # Verilator compile and run script
@@ -88,6 +90,17 @@ The make targets form a pipeline where earlier steps produce artifacts consumed 
 4. `make post-syn-sta` — static timing analysis from the synthesized netlist.
 5. `make post-syn-dpa` — power estimation using the synthesized netlist and the `activity.vcd` from `make post-syn-sim`.
 
+## Skills
+
+This repository ships [Claude Code](https://claude.com/claude-code) skills under [.claude/skills/](.claude/skills/). They automate the repetitive parts of working in this sandbox — scaffolding a project and integrating a new design through the full EDA flow. Invoke a skill by name (e.g. `/add-project my-accel`) in a Claude Code session.
+
+| Skill                                                | Purpose                                                                                                                                                                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`add-project`](.claude/skills/add-project/SKILL.md) | Scaffold a new empty project under `projects/<name>/`: creates the `rtl/`, `tb/`, `scripts/flow/`, and `doc/` skeleton, runs `make init`, writes a stub project README, and registers the project in this README's `Projects:` list.  |
+| [`add-arch`](.claude/skills/add-arch/SKILL.md)       | Integrate a new top-level architecture into an existing project: review its RTL, act on `CLAUDE:` code comments, write the testbench, run the full sim → syn → post-syn flow, wire it into the project's automation, and update docs. |
+
+A typical greenfield flow is `/add-project` to create the skeleton, then populate `rtl/` and `tb/` (or hand the new top-level to `/add-arch`) to verify, characterize, and document it.
+
 ## Commands
 
 The `TOP_LEVEL` values and `PARAMS` keys are project-specific; the syntax below is the shared interface. See the project README for the available top-levels and elaboration parameters.
@@ -98,12 +111,12 @@ The `TOP_LEVEL` values and `PARAMS` keys are project-specific; the syntax below 
 make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=VAL ..."]
 ```
 
-| Parameter       | Required | Description                                       |
-| --------------- | -------- | ------------------------------------------------- |
-| `TOP_LEVEL`     | yes      | RTL module to simulate                            |
-| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds                       |
-| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                  |
-| `PARAMS`        | no       | Project-specific RTL elaboration parameters       |
+| Parameter       | Required | Description                                 |
+| --------------- | -------- | ------------------------------------------- |
+| `TOP_LEVEL`     | yes      | RTL module to simulate                      |
+| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds                 |
+| `OUT_DIR`       | yes      | Output subdirectory under `sim/`            |
+| `PARAMS`        | no       | Project-specific RTL elaboration parameters |
 
 Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd` waveform.
 
