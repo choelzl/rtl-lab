@@ -2,21 +2,21 @@
 # Author: Simone Machetti
 # -----------------------------------------------------------------------------
 
-TOP_LEVEL        ?= pe_top
-OUT_DIR          ?= no_name
-NETLIST_DIR      ?= no_name
-VCD_DIR          ?= no_name
-CLK_PERIOD_NS    ?= 1
-PARAMS           ?= none
-KEEP_HIERARCHY   ?= 0
+TOP_LEVEL      ?= pe_top
+OUT_DIR        ?= no_name
+NETLIST_DIR    ?= no_name
+VCD_DIR        ?= no_name
+CLK_PERIOD_NS  ?= 1
+PARAMS         ?= none
+KEEP_HIERARCHY ?= 0
 
-export SEL_TOP_LEVEL       := $(TOP_LEVEL)
-export SEL_OUT_DIR         := $(OUT_DIR)
-export SEL_NETLIST_DIR     := $(NETLIST_DIR)
-export SEL_VCD_DIR         := $(VCD_DIR)
-export SEL_CLK_PERIOD_NS   := $(CLK_PERIOD_NS)
-export SEL_PARAMS          := $(PARAMS)
-export SEL_KEEP_HIERARCHY  := $(KEEP_HIERARCHY)
+export SEL_TOP_LEVEL      := $(TOP_LEVEL)
+export SEL_OUT_DIR        := $(OUT_DIR)
+export SEL_NETLIST_DIR    := $(NETLIST_DIR)
+export SEL_VCD_DIR        := $(VCD_DIR)
+export SEL_CLK_PERIOD_NS  := $(CLK_PERIOD_NS)
+export SEL_PARAMS         := $(PARAMS)
+export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 
 .PHONY: init
 
@@ -66,13 +66,13 @@ post-syn-dpa: clean-imp
 	sta -no_splash -exit $(CODE_HOME)/ai-core/scripts/post-syn-dpa/run.tcl | tee $(CODE_HOME)/ai-core/imp/$(OUT_DIR)/output/opensta.log
 
 run-regres:
-	bash $(CODE_HOME)/ai-core/scripts/flow/run_regres.sh
+	python3 $(CODE_HOME)/ai-core/scripts/flow/regres/run.py
 
 ext-results:
-	bash $(CODE_HOME)/ai-core/scripts/flow/ext_results.sh
+	python3 $(CODE_HOME)/ai-core/scripts/flow/regres/ext.py
 
 gen-charts:
-	bash $(CODE_HOME)/ai-core/scripts/flow/gen_charts.sh
+	python3 $(CODE_HOME)/ai-core/scripts/flow/regres/gen.py
 
 clean-all:
 	rm -rf $(CODE_HOME)/ai-core/sim

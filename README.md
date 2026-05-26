@@ -27,42 +27,33 @@ make post-syn-dpa TOP_LEVEL=top_bas_4x8 CLK_PERIOD_NS=1.0 OUT_DIR=bas_4x8_dpa NE
 
 ```
 .
-├── rtl/                        SystemVerilog source modules
-├── tb/                         Verilator testbenches
-├── scripts/                    EDA flow scripts
-│   ├── sim/                    Pre-synthesis simulation flow
-│   │   └── run.sh              Verilator compile and run script
-│   ├── syn/                    Logic synthesis flow
-│   │   ├── run.tcl             Yosys top-level synthesis script (ASAP7)
-│   │   ├── compile.tcl         RTL read and elaboration script
-│   │   └── abc.tcl             ABC technology mapping script
-│   ├── post-syn-sta/           Post-synthesis static timing analysis flow
-│   │   └── run.tcl             OpenSTA timing analysis script
-│   ├── post-syn-sim/           Post-synthesis gate-level simulation flow
-│   │   ├── run.sh              Verilator compile and run script
-│   │   └── filelist.f          Gate-level netlist and cell library filelist
-│   ├── post-syn-dpa/           Post-synthesis dynamic power analysis flow
-│   │   └── run.tcl             OpenSTA power analysis script
-│   └── flow/                   End-to-end automation scripts
-│       ├── run_regres.sh       Full regression runner across all PE variants
-│       ├── ext_results.sh      Result extraction from synthesis/STA/DPA reports
-│       └── gen_charts.sh       Chart generation from extracted results
-├── doc/                        Documentation and results
-│   ├── diagrams/               Block diagrams
-│   ├── formulas/               Mathematical formulas
-│   ├── charts/                 Comparison charts
-│   │   ├── area/               Area charts (Python scripts + PNG outputs)
-│   │   ├── freq/               Maximum frequency charts
-│   │   └── power/              Dynamic power charts
-│   └── data/                   Extracted results in tabular form (generated)
-│       ├── area/               area.csv, area.md
-│       ├── freq/               freq.csv, freq.md
-│       └── power/              power.csv, power.md
-├── sim/                        Simulation outputs (generated)
-├── imp/                        Synthesis/STA/DPA outputs (generated)
-├── Makefile                    Build system entry point
-├── sourceme.sh                 Environment setup (tool paths, CODE_HOME)
-└── CLAUDE.md                   AI assistant guidance for this repository
+├── rtl/                # SystemVerilog source modules
+├── tb/                 # Verilator testbenches
+├── scripts/            # EDA flow scripts
+│   ├── sim/            # Pre-synthesis simulation flow
+│   │   └── run.sh      # Verilator compile and run script
+│   ├── syn/            # Logic synthesis flow
+│   │   ├── run.tcl     # Yosys top-level synthesis script (ASAP7)
+│   │   ├── compile.tcl # RTL read and elaboration script
+│   │   └── abc.tcl     # ABC technology mapping script
+│   ├── post-syn-sta/   # Post-synthesis static timing analysis flow
+│   │   └── run.tcl     # OpenSTA timing analysis script
+│   ├── post-syn-sim/   # Post-synthesis gate-level simulation flow
+│   │   ├── run.sh      # Verilator compile and run script
+│   │   └── filelist.f  # Gate-level netlist and cell library filelist
+│   ├── post-syn-dpa/   # Post-synthesis dynamic power analysis flow
+│   │   └── run.tcl     # OpenSTA power analysis script
+│   └── flow/           # End-to-end automation scripts (one subfolder per experiment)
+├── doc/                # Documentation and results
+│   ├── diagrams/       # Block diagrams
+│   ├── formulas/       # Mathematical formulas
+│   ├── charts/         # Comparison charts (<exp>/<chart>.png, generated)
+│   └── data/           # Extracted results (<exp>/results.xlsx, generated)
+├── sim/                # Simulation outputs (generated)
+├── imp/                # Synthesis/STA/DPA outputs (generated)
+├── Makefile            # Build system entry point
+├── sourceme.sh         # Environment setup (tool paths, CODE_HOME)
+└── CLAUDE.md           # AI assistant guidance for this repository
 ```
 
 ## Environment setup
@@ -123,21 +114,21 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 **Accepted `PARAMS`:**
 
 
-| Key            | Values        | Description                                                                |
-| -------------- | ------------- | -------------------------------------------------------------------------- |
-| `MULT_TYPE`    | `0`, `1`      | Booth Radix-4 (`0`) or Radix-8 (`1`)                                       |
-| `IS_PIPELINED` | `0`, `1`      | 2-cycle (`0`) or 3-cycle (`1`) latency                                     |
-| `IS_SQUARE`    | `0`, `1`      | Squaring (`1`) or passthrough (`0`) — alpha variants only                  |
+| Key            | Values                    | Description                                                                                                                                                                   |
+| -------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MULT_TYPE`    | `0`, `1`                  | Booth Radix-4 (`0`) or Radix-8 (`1`)                                                                                                                                          |
+| `IS_PIPELINED` | `0`, `1`                  | 2-cycle (`0`) or 3-cycle (`1`) latency                                                                                                                                        |
+| `IS_SQUARE`    | `0`, `1`                  | Squaring (`1`) or passthrough (`0`) — alpha variants only                                                                                                                     |
 | `MAX_VAL_A`    | `0`..`2^(IN_WIDTH_A-1)-1` | Max positive value for `a` test inputs; values are drawn symmetrically in `[-MAX_VAL_A, +MAX_VAL_A]` (default: `2^(IN_WIDTH_A-1)-1`; setting it to `0` collapses `a` to zero) |
-| `MAX_VAL_B`    | `0`..`2^(IN_WIDTH_B-1)-1` | Max positive value for `b` test inputs; values are drawn symmetrically in `[-MAX_VAL_B, +MAX_VAL_B]` (default: `2^(IN_WIDTH_B-1)-1`; not available on alpha variants) |
-| `DIST_TYPE`    | `0`, `1`      | Input distribution: uniform (`0`) or bimodal normal at `±MU_SCALE × MAX_VAL` with random sign (`1`) |
-| `MU_SCALE`     | real          | Mean of the normal distribution as a fraction of `MAX_VAL` (default: `1/2`) |
-| `SIGMA_SCALE`  | real          | Std-dev of the normal distribution as a fraction of `MAX_VAL` (default: `1/6`) |
+| `MAX_VAL_B`    | `0`..`2^(IN_WIDTH_B-1)-1` | Max positive value for `b` test inputs; values are drawn symmetrically in `[-MAX_VAL_B, +MAX_VAL_B]` (default: `2^(IN_WIDTH_B-1)-1`; not available on alpha variants)         |
+| `DIST_TYPE`    | `0`, `1`                  | Input distribution: uniform (`0`) or bimodal normal at `±MU_SCALE × MAX_VAL` with random sign (`1`)                                                                           |
+| `MU_SCALE`     | real                      | Mean of the normal distribution as a fraction of `MAX_VAL` (default: `1/2`)                                                                                                   |
+| `SIGMA_SCALE`  | real                      | Std-dev of the normal distribution as a fraction of `MAX_VAL` (default: `1/6`)                                                                                                |
 
 
 **Testbench structure:** all testbenches share the same pattern — clock/reset generation with a configurable period, 1000 iterations of randomized inputs and accumulator values, corner cases (max-positive, min-negative, mixed-sign, zero), and self-checking via a software reference model that calls `$fatal` on any mismatch. Outputs go to `sim/<OUT_DIR>/`. A `activity.vcd` waveform is produced for debugging and power analysis purposes.
 
-Random inputs are generated by `gen_a()` / `gen_b()` helper functions controlled by `MAX_VAL_A`, `MAX_VAL_B`, `DIST_TYPE`, `MU_SCALE`, and `SIGMA_SCALE`. `MAX_VAL_*` is the maximum positive value (in the signed-positive range) directly — e.g. for 4-bit signed inputs the valid range is `0..7`, and for 8-bit signed inputs it is `0..127` (setting `MAX_VAL_* = 0` collapses the input to zero). This permits arbitrary linear sweeps of the input dynamic range. When `DIST_TYPE=0` (uniform), values are drawn uniformly over the symmetric range `[-MAX_VAL_*, +MAX_VAL_*]`. When `DIST_TYPE=1` (normal), a Box-Muller transform produces a Gaussian with mean `MU_SCALE × MAX_VAL_*` and std-dev `SIGMA_SCALE × MAX_VAL_*`; samples are clamped to the absolute signed range of the full input width and then randomly negated, yielding a bimodal cluster at `±MU_SCALE × MAX_VAL_*`. With the defaults (`MU_SCALE=1/2`, `SIGMA_SCALE=1/6`) the `3σ` window of each lobe just spans `[0, MAX_VAL_*]`, giving a balanced bounded-Gaussian fill; the `dyn_range_normal.sh` / `a_sweep.sh` flows override to `MU_SCALE=7/8`, `SIGMA_SCALE=1/8` for a tight near-max cluster. Corner cases (`verify_with_corner`) test `±MAX_VAL_*` directly.
+Random inputs are generated by `gen_a()` / `gen_b()` helper functions controlled by `MAX_VAL_A`, `MAX_VAL_B`, `DIST_TYPE`, `MU_SCALE`, and `SIGMA_SCALE`. `MAX_VAL_*` is the maximum positive value (in the signed-positive range) directly — e.g. for 4-bit signed inputs the valid range is `0..7`, and for 8-bit signed inputs it is `0..127` (setting `MAX_VAL_* = 0` collapses the input to zero). This permits arbitrary linear sweeps of the input dynamic range. When `DIST_TYPE=0` (uniform), values are drawn uniformly over the symmetric range `[-MAX_VAL_*, +MAX_VAL_*]`. When `DIST_TYPE=1` (normal), a Box-Muller transform produces a Gaussian with mean `MU_SCALE × MAX_VAL_*` and std-dev `SIGMA_SCALE × MAX_VAL_*`; samples are clamped to the absolute signed range of the full input width and then randomly negated, yielding a bimodal cluster at `±MU_SCALE × MAX_VAL_*`. With the defaults (`MU_SCALE=1/2`, `SIGMA_SCALE=1/6`) the `3σ` window of each lobe just spans `[0, MAX_VAL_*]`, giving a balanced bounded-Gaussian fill; the `dyn_range` / `a_sweep` flows override to `MU_SCALE=7/8`, `SIGMA_SCALE=1/8` for a tight near-max cluster. Corner cases (`verify_with_corner`) test `±MAX_VAL_*` directly.
 
 ### Logic synthesis (Yosys + ABC, ASAP7 target)
 
@@ -220,22 +211,36 @@ Outputs go to `imp/<OUT_DIR>/`.
 
 ### Automation scripts
 
-```bash
-bash scripts/flow/run_regres.sh    # full flow across all PE variants
-bash scripts/flow/ext_results.sh   # extract results into doc/data/
-bash scripts/flow/gen_charts.sh    # generate comparison charts in doc/charts/
-```
+Each experiment is a subfolder under `scripts/flow/` containing three stage
+scripts plus a `README.md`:
 
-- `run_regres.sh` — runs `make sim`, `make syn`, `make post-syn-sta`, and `make post-syn-dpa` for every PE variant and some parameter combination, reporting pass/fail per run.
-- `ext_results.sh` — parses synthesis, STA, and DPA reports from `imp/` and writes area, frequency, and power tables to `doc/data/` in CSV and Markdown format.
-- `gen_charts.sh` — runs the Python scripts in `doc/charts/` to generate PNG comparison charts from the data in `doc/data/`.
+- `run.py` — runs the relevant `make` targets and stores artifacts under `sim/` and `imp/`.
+- `ext.py` — reads `sim/` and `imp/` and writes `doc/data/<exp>/results.xlsx`.
+- `gen.py` — reads the xlsx and writes `doc/charts/<exp>/<chart>.png`.
+- `README.md` — sweep parameters, architectures, formulas, and outputs.
+
+Current experiments:
+
+```bash
+python3 scripts/flow/regres/run.py    # full flow per PE variant; PASS/FAIL
+python3 scripts/flow/regres/ext.py    # imp/ → doc/data/regres/results.xlsx
+python3 scripts/flow/regres/gen.py    # → doc/charts/regres/*.png
+
+python3 scripts/flow/a_sweep/run.py   # A-magnitude sweep (reuses dyn syn dirs)
+python3 scripts/flow/a_sweep/ext.py   # → doc/data/a_sweep/results.xlsx
+python3 scripts/flow/a_sweep/gen.py   # → doc/charts/a_sweep/improvement.png
+
+python3 scripts/flow/dyn_range/run.py # 2-D dynamic-range sweep, normal dist
+python3 scripts/flow/dyn_range/ext.py # → doc/data/dyn_range/results.xlsx
+python3 scripts/flow/dyn_range/gen.py # → doc/charts/dyn_range/*.png
+```
 
 ### Cleanup
 
 ```bash
-make clean-sim OUT_DIR=<name>   # remove one simulation run
-make clean-imp OUT_DIR=<name>   # remove one synthesis/STA/DPA run
-make clean-all                  # remove all sim/ and imp/ directories
+make clean-sim OUT_DIR=<name> # remove one simulation run
+make clean-imp OUT_DIR=<name> # remove one synthesis/STA/DPA run
+make clean-all                # remove all sim/ and imp/ directories
 ```
 
 ### Command parameters reference
@@ -257,17 +262,17 @@ make clean-all                  # remove all sim/ and imp/ directories
 **RTL elaboration parameters (passed via `PARAMS="..."`):**
 
 
-| Key            | Applies to                                  | Values                  | Description                                                                                    |
-| -------------- | ------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `MULT_TYPE`    | BAS and WIN top-levels                      | `0` (R4), `1` (R8)      | Booth encoding radix                                                                           |
-| `IS_PIPELINED` | all top-levels                              | `0`, `1`                | 2-cycle (`0`) or 3-cycle (`1`) latency                                                         |
-| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha`, `top_sqr_8x8_alpha` | `0`, `1`                | Squaring (`1`) or passthrough (`0`) inputs                                                     |
-| `SQR_TYPE`     | `top_sqr_4x8_sc`                            | `0`, `1`                | `0` = `sqr_s_5_bit_v0` (structural via HA chain), `1` = `sqr_s_5_bit_v1` (flat KMap-minimized) |
-| `MAX_VAL_A`    | sim and post-syn-sim, all top-levels        | `0`..`2^(IN_WIDTH_A-1)-1` | Max positive value for `a` test inputs; values drawn from `[-MAX_VAL_A, +MAX_VAL_A]` (default: `2^(IN_WIDTH_A-1)-1`; `0` collapses `a` to zero) |
-| `MAX_VAL_B`    | sim and post-syn-sim, non-alpha top-levels  | `0`..`2^(IN_WIDTH_B-1)-1` | Max positive value for `b` test inputs; values drawn from `[-MAX_VAL_B, +MAX_VAL_B]` (default: `2^(IN_WIDTH_B-1)-1`) |
+| Key            | Applies to                                  | Values                      | Description                                                                                                                                                                                 |
+| -------------- | ------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MULT_TYPE`    | BAS and WIN top-levels                      | `0` (R4), `1` (R8)          | Booth encoding radix                                                                                                                                                                        |
+| `IS_PIPELINED` | all top-levels                              | `0`, `1`                    | 2-cycle (`0`) or 3-cycle (`1`) latency                                                                                                                                                      |
+| `IS_SQUARE`    | `top_sqr_4x8_sc_alpha`, `top_sqr_8x8_alpha` | `0`, `1`                    | Squaring (`1`) or passthrough (`0`) inputs                                                                                                                                                  |
+| `SQR_TYPE`     | `top_sqr_4x8_sc`                            | `0`, `1`                    | `0` = `sqr_s_5_bit_v0` (structural via HA chain), `1` = `sqr_s_5_bit_v1` (flat KMap-minimized)                                                                                              |
+| `MAX_VAL_A`    | sim and post-syn-sim, all top-levels        | `0`..`2^(IN_WIDTH_A-1)-1`   | Max positive value for `a` test inputs; values drawn from `[-MAX_VAL_A, +MAX_VAL_A]` (default: `2^(IN_WIDTH_A-1)-1`; `0` collapses `a` to zero)                                             |
+| `MAX_VAL_B`    | sim and post-syn-sim, non-alpha top-levels  | `0`..`2^(IN_WIDTH_B-1)-1`   | Max positive value for `b` test inputs; values drawn from `[-MAX_VAL_B, +MAX_VAL_B]` (default: `2^(IN_WIDTH_B-1)-1`)                                                                        |
 | `DIST_TYPE`    | sim and post-syn-sim, all top-levels        | `0` (uniform), `1` (normal) | Random input distribution: uniform over `[-MAX_VAL_*, +MAX_VAL_*]` or bimodal normal at `±MU_SCALE × MAX_VAL_*` with std-dev `SIGMA_SCALE × MAX_VAL_*`, random sign per sample (Box-Muller) |
-| `MU_SCALE`     | sim and post-syn-sim, all top-levels        | real                    | Mean of the normal distribution as a fraction of `MAX_VAL_*` (default: `1/2`; flow scripts override to `7/8`) |
-| `SIGMA_SCALE`  | sim and post-syn-sim, all top-levels        | real                    | Std-dev of the normal distribution as a fraction of `MAX_VAL_*` (default: `1/6`; flow scripts override to `1/8`) |
+| `MU_SCALE`     | sim and post-syn-sim, all top-levels        | real                        | Mean of the normal distribution as a fraction of `MAX_VAL_*` (default: `1/2`; flow scripts override to `7/8`)                                                                               |
+| `SIGMA_SCALE`  | sim and post-syn-sim, all top-levels        | real                        | Std-dev of the normal distribution as a fraction of `MAX_VAL_*` (default: `1/6`; flow scripts override to `1/8`)                                                                            |
 
 
 ## PE architectures
