@@ -5,6 +5,7 @@ Multi-project sandbox for prototyping RTL designs. The flow (Verilator simulatio
 Projects:
 
 - [`ai-core`](projects/ai-core/README.md) — fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference. The reference project.
+- [`sc-demo`](projects/sc-demo/README.md) — minimal SystemC co-simulation example (`make sim-sc`): a Verilated SV multiplier driving a native SystemC accumulator.
 
 This README documents the shared EDA flow: the `make` targets, their parameters, and the typical pipeline. For a project's designs, top-levels, RTL parameters, and experiments, see that project's own README.
 
@@ -102,6 +103,8 @@ make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_
 ├── scripts/              # Project-agnostic EDA flow scripts
 │   ├── sim/              # Pre-synthesis simulation flow
 │   │   └── run.sh        # Verilator compile and run script
+│   ├── sim-sc/           # SystemC simulation flow (Verilator --sc)
+│   │   └── run.sh        # Verilator --sc compile and run script
 │   ├── syn/              # Logic synthesis flow
 │   │   ├── run.tcl       # Yosys top-level synthesis script (ASAP7)
 │   │   ├── compile.tcl   # RTL read and elaboration script
@@ -117,7 +120,7 @@ make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_
 │   └── <name>/           # An RTL project (see its README.md)
 │       ├── README.md     # Project-specific documentation
 │       ├── rtl/          # SystemVerilog source modules
-│       ├── tb/           # Verilator testbenches
+│       ├── tb/           # Verilator SV testbenches (tb/systemc/ holds SystemC harnesses)
 │       ├── scripts/      # Project-specific scripts
 │       │   └── flow/     # End-to-end automation (one subfolder per experiment)
 │       ├── doc/          # Documentation and results
@@ -136,11 +139,13 @@ All `make` targets require `PROJECT=<name>` to select the project they operate o
 
 ## Environment setup
 
-Source the environment script once before running any command. It sets tool paths for Verilator, Yosys, Yosys-Slang, OpenSTA, OpenROAD, and sets `CODE_HOME`:
+Source the environment script once before running any command. It sets tool paths for Verilator, Yosys, Yosys-Slang, OpenSTA, OpenROAD, SystemC, and sets `CODE_HOME`:
 
 ```bash
 source sourceme.sh
 ```
+
+The SystemC simulation mode (`make sim-sc`) additionally requires the Accellera SystemC library installed at `$SYSTEMC_HOME` (default `/my_tools/systemc`), built with the same C++ standard Verilator compiles the model with (C++17). The other flows do not depend on it.
 
 ## Typical workflow
 
@@ -181,6 +186,24 @@ make sim TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=V
 | `PARAMS`        | no       | Project-specific RTL elaboration parameters |
 
 Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd` waveform.
+
+### SystemC simulation (Verilator --sc)
+
+A second, parallel simulation mode for designs that involve SystemC. The top is C++ `sc_main` (not an SV testbench), so it can instantiate both Verilated SV modules and native SystemC modules and simulate them together under the SystemC kernel. Simulation only — SystemC is never synthesized, and the `make sim`/`syn`/post-syn flows are unaffected.
+
+```bash
+make sim-sc TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=VAL ..."] [TB_DEFS="KEY=VAL ..."]
+```
+
+| Parameter       | Required | Description                                                          |
+| --------------- | -------- | -------------------------------------------------------------------- |
+| `TOP_LEVEL`     | yes      | SV module to Verilate into an `sc_module` (the SV DUT the harness wires up) |
+| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)          |
+| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                     |
+| `PARAMS`        | no       | RTL elaboration parameters; passed to the DUT as `-G` and mirrored to the harness as `-D` (kept in sync) |
+| `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D` |
+
+Requires the SystemC library (see Environment setup). Each `TOP_LEVEL` has a matching C++/SystemC harness at `projects/<PROJECT>/tb/systemc/tb_<top_level>.cpp` (which defines `sc_main`); reusable SystemC models live under `tb/systemc/models/`. Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd`. The harness reads `PARAMS`/`TB_DEFS` as compile-time defines with in-file defaults, so it needs no hand-editing; widths must keep the DUT's ports within the SystemC port type the harness binds (Verilator's `uint32_t` for ≤32-bit ports).
 
 ### Logic synthesis (Yosys + ABC, ASAP7 target)
 

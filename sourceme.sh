@@ -24,6 +24,15 @@ export PATH=$OPENSTA_HOME/bin:$PATH
 export OPENROAD_HOME=/my_tools/openroad
 export PATH=$OPENROAD_HOME/bin:$PATH
 
+# SystemC
+export SYSTEMC_HOME=/my_tools/systemc
+export SYSTEMC_INCLUDE=$SYSTEMC_HOME/include
+if [ -d "$SYSTEMC_HOME/lib64" ]; then
+    export SYSTEMC_LIBDIR=$SYSTEMC_HOME/lib64
+else
+    export SYSTEMC_LIBDIR=$SYSTEMC_HOME/lib
+fi
+
 # Code
 export CODE_HOME=/home/simone/work/my_code
 

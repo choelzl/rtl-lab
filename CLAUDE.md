@@ -6,9 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a multi-project RTL sandbox.
 
-- `scripts/` — project-agnostic EDA flow wrappers (`sim`, `syn`, `post-syn-{sta,sim,dpa}`).
+- `scripts/` — project-agnostic EDA flow wrappers (`sim`, `sim-sc`, `syn`, `post-syn-{sta,sim,dpa}`).
 - `projects/<name>/` — one RTL project; contains `rtl/`, `tb/`, `sim/`, `imp/`, `doc/`, and `scripts/flow/` (project-specific automation).
 - Select a project with `make <target> PROJECT=<name>`; `PROJECT` is required (no default) and so is `TOP_LEVEL`. The available projects are listed in [README.md](README.md).
+
+## Simulation modes
+
+There are two independent simulation flows:
+
+- `make sim` — the default SV flow. Verilator `--binary --timing`, with a self-contained SV testbench (`tb/tb_<top>.sv`) as the top module. This is what `syn` and the post-syn flows build on.
+- `make sim-sc` — the SystemC flow. Verilator `--sc --exe`, with C++ `sc_main` as the top (`tb/systemc/tb_<top>.cpp`), able to host both Verilated SV modules and native SystemC modules together under the SystemC kernel. Simulation only — SystemC is never synthesized. Requires `$SYSTEMC_HOME`. Reusable SC models live in `tb/systemc/models/`.
+
+**Naming:** the `_sc` suffix on RTL/top-levels (e.g. `top_bas_4x8_sc`) is a *split-cell design variant*, **not** SystemC. Keep SystemC sources under `tb/systemc/` and never use an `_sc` filename suffix for them.
 
 ## Partial / sparse clones
 
@@ -22,4 +31,4 @@ Always source the environment script before running any command:
 source sourceme.sh
 ```
 
-This sets `CODE_HOME` (the parent of this repo) and the paths for Verilator, Yosys, Yosys-Slang, OpenSTA, and OpenROAD. Paths inside the flow are resolved as `$CODE_HOME/rtl-lab/projects/$PROJECT/...`.
+This sets `CODE_HOME` (the parent of this repo) and the paths for Verilator, Yosys, Yosys-Slang, OpenSTA, OpenROAD, and SystemC (`SYSTEMC_HOME`/`SYSTEMC_INCLUDE`/`SYSTEMC_LIBDIR`, used only by `make sim-sc`). Paths inside the flow are resolved as `$CODE_HOME/rtl-lab/projects/$PROJECT/...`.

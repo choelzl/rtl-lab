@@ -9,6 +9,7 @@ NETLIST_DIR    ?= no_name
 VCD_DIR        ?= no_name
 CLK_PERIOD_NS  ?= 1
 PARAMS         ?= none
+TB_DEFS        ?= none
 KEEP_HIERARCHY ?= 0
 EXP            ?=
 
@@ -21,6 +22,7 @@ export SEL_NETLIST_DIR    := $(NETLIST_DIR)
 export SEL_VCD_DIR        := $(VCD_DIR)
 export SEL_CLK_PERIOD_NS  := $(CLK_PERIOD_NS)
 export SEL_PARAMS         := $(PARAMS)
+export SEL_TB_DEFS        := $(TB_DEFS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 
 .PHONY: _check_project _check_exp init flow-list flow-run flow-ext flow-gen
@@ -50,6 +52,16 @@ sim: _check_project clean-sim
 	./run.sh && \
 	if [ -f $(CODE_HOME)/rtl-lab/scripts/sim/activity.vcd ]; then \
 	mv $(CODE_HOME)/rtl-lab/scripts/sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
+	fi
+
+sim-sc: _check_project clean-sim
+	cd $(CODE_HOME)/rtl-lab/scripts/sim-sc && \
+	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
+	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
+	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/output && \
+	./run.sh && \
+	if [ -f $(CODE_HOME)/rtl-lab/scripts/sim-sc/activity.vcd ]; then \
+	mv $(CODE_HOME)/rtl-lab/scripts/sim-sc/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
 syn: _check_project clean-imp
