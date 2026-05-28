@@ -4,9 +4,71 @@ Multi-project sandbox for prototyping RTL designs. The flow (Verilator simulatio
 
 Projects:
 
-- [`ai-core`](projects/ai-core/README.md) — fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference. The reference project and the default.
+- [`ai-core`](projects/ai-core/README.md) — fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference. The reference project.
 
 This README documents the shared EDA flow: the `make` targets, their parameters, and the typical pipeline. For a project's designs, top-levels, RTL parameters, and experiments, see that project's own README.
+
+## Cloning — selecting projects
+
+This is a multi-project repo, but you don't have to download every project. A **partial clone** (`--filter=blob:none`) skips file contents until you check them out, and **sparse-checkout** controls which `projects/<name>/` directories land in your working tree. The shared tooling — the top-level files — is always included. Pick one of the options below; consult the `Projects:` list above for the `<name>` of each project.
+
+> Your git host must support partial clone (`uploadpack.allowFilter=true`). GitHub and GitLab enable it by default.
+
+### One project
+
+```bash
+git clone --filter=blob:none --no-checkout <repo-url> rtl-lab
+cd rtl-lab
+git sparse-checkout init --cone
+git sparse-checkout set scripts projects/<name>
+git checkout main
+```
+
+### Multiple projects
+
+List every project you want after `scripts` (space-separated):
+
+```bash
+git clone --filter=blob:none --no-checkout <repo-url> rtl-lab
+cd rtl-lab
+git sparse-checkout init --cone
+git sparse-checkout set scripts projects/<name-1> projects/<name-2>
+git checkout main
+```
+
+### No project (shared tooling only)
+
+Use this to start a brand-new project, or when you only need the flow scripts. `projects/` stays empty until you create or add one.
+
+```bash
+git clone --filter=blob:none --no-checkout <repo-url> rtl-lab
+cd rtl-lab
+git sparse-checkout init --cone
+git sparse-checkout set scripts
+git checkout main
+```
+
+### All projects
+
+A normal full clone gives you everything:
+
+```bash
+git clone <repo-url> rtl-lab
+cd rtl-lab
+```
+
+### Changing your selection later
+
+No re-clone needed — adjust the working set at any time (files are fetched on demand):
+
+```bash
+git sparse-checkout add projects/<name>         # add another project to the current set
+git sparse-checkout set scripts projects/<name> # replace the whole selection
+git sparse-checkout list                        # show what is currently checked out
+git sparse-checkout disable                     # materialize all projects (switch to full)
+```
+
+The `Projects:` list at the top of this README is the catalog of everything that exists — including projects you have not checked out — and is the one shared file every new project edits, so it is where collaborators coordinate.
 
 ## Quick start
 
@@ -14,22 +76,22 @@ This README documents the shared EDA flow: the `make` targets, their parameters,
 source sourceme.sh
 
 # Pre-synthesis simulation
-make sim PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name>
+make sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name>
 
 # Logic synthesis
-make syn PROJECT=ai-core TOP_LEVEL=<top_level> OUT_DIR=<name>
+make syn PROJECT=<project> TOP_LEVEL=<top_level> OUT_DIR=<name>
 
 # Post-synthesis gate-level simulation
-make post-syn-sim PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
+make post-syn-sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
 
 # Post-synthesis static timing analysis
-make post-syn-sta PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
+make post-syn-sta PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
 
 # Post-synthesis dynamic power analysis
-make post-syn-dpa PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name> VCD_DIR=<name>
+make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name> VCD_DIR=<name>
 ```
 
-`PROJECT` defaults to `ai-core` and can be omitted. See [projects/ai-core/README.md](projects/ai-core/README.md) for the available `TOP_LEVEL` values and runnable examples.
+`PROJECT` and `TOP_LEVEL` are required on every command — there is no default. See `projects/<project>/README.md` for the available `TOP_LEVEL` values and runnable examples.
 
 ## Repository structure
 
@@ -52,7 +114,7 @@ make post-syn-dpa PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DI
 │   └── post-syn-dpa/     # Post-synthesis dynamic power analysis flow
 │       └── run.tcl       # OpenSTA power analysis script
 ├── projects/             # One subfolder per RTL project
-│   └── ai-core/          # Reference project (see its README.md)
+│   └── <name>/           # An RTL project (see its README.md)
 │       ├── README.md     # Project-specific documentation
 │       ├── rtl/          # SystemVerilog source modules
 │       ├── tb/           # Verilator testbenches
@@ -70,7 +132,7 @@ make post-syn-dpa PROJECT=ai-core TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DI
 └── CLAUDE.md             # AI assistant guidance for this repository
 ```
 
-All `make` targets accept `PROJECT=<name>` (default `ai-core`) to select the project they operate on. The flow scripts in `scripts/` resolve project-specific paths through the `SEL_PROJECT` env var exported by the Makefile.
+All `make` targets require `PROJECT=<name>` to select the project they operate on (there is no default; targets fail fast if it is unset or names a project that is not in your checkout). The flow scripts in `scripts/` resolve project-specific paths through the `SEL_PROJECT` env var exported by the Makefile.
 
 ## Environment setup
 
@@ -195,7 +257,7 @@ make clean-all                # remove all sim/ and imp/ directories
 
 | Parameter        | Make targets                                       | Values                          | Description                                                      |
 | ---------------- | -------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
-| `PROJECT`        | all                                                | project name                    | Project under `projects/` to operate on (default `ai-core`)      |
+| `PROJECT`        | all                                                | project name                    | Required. Project under `projects/` to operate on (no default)   |
 | `TOP_LEVEL`      | sim, syn, post-syn-sta, post-syn-sim, post-syn-dpa | module name                     | RTL module to build/simulate; can be any module in the hierarchy |
 | `CLK_PERIOD_NS`  | sim, post-syn-sta, post-syn-sim, post-syn-dpa      | e.g. `1.0`                      | Clock period in nanoseconds                                      |
 | `OUT_DIR`        | all except clean-all                               | directory name                  | Output subdirectory under `sim/` or `imp/`                       |

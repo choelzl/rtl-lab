@@ -19,6 +19,14 @@ Use `<name>` below to mean the resolved name.
 
 ## 2. Create the directory skeleton
 
+If this is a sparse checkout (`git config core.sparseCheckout` returns `true`), first add the new project to the checkout cone so the files you are about to create fall inside the sparse set and git tracks them:
+
+```bash
+git sparse-checkout add projects/<name>
+```
+
+Skip this in a full clone — running `git sparse-checkout add` there would switch the clone into sparse mode and hide the other projects.
+
 Create these directories under `projects/<name>/`:
 
 ```
