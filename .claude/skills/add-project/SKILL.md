@@ -41,7 +41,7 @@ doc/data/           # Extracted results (generated)
 
 Add an empty `.gitkeep` file inside each of `rtl/`, `tb/`, `scripts/flow/`, `doc/diagrams/`, `doc/formulas/`, `doc/charts/`, and `doc/data/` so git tracks the otherwise-empty folders.
 
-Do NOT scaffold any design-specific automation (no `regres`/sweep scripts) — `scripts/flow/` is intentionally left empty for the user to populate.
+Do NOT scaffold any design-specific automation (no `regres`/sweep scripts) — `scripts/flow/` is intentionally left empty for the user to populate. When the user later adds experiments, each goes in its own subfolder under `scripts/flow/<experiment>/` providing the conventional trio `run.py`, `ext.py`, `gen.py` so it is drivable by the generic `make flow-run` / `flow-ext` / `flow-gen EXP=<experiment>` targets.
 
 ## 3. Create the generated output dirs
 

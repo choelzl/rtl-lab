@@ -245,6 +245,25 @@ make post-syn-dpa TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> NETLI
 
 Outputs go to `projects/<PROJECT>/imp/<OUT_DIR>/`.
 
+### Experiment automation
+
+Each project keeps its end-to-end automation under `projects/<PROJECT>/scripts/flow/`, with **one subfolder per experiment**. By convention every experiment folder provides the same trio of scripts, which the generic `flow-*` targets drive:
+
+| Script   | Target           | Purpose                                          |
+| -------- | ---------------- | ------------------------------------------------ |
+| `run.py` | `make flow-run`  | Run the experiment (drives the `make` flow)      |
+| `ext.py` | `make flow-ext`  | Extract results from the run outputs             |
+| `gen.py` | `make flow-gen`  | Generate charts/tables from the extracted data   |
+
+Select the experiment with `EXP=<experiment>` (required — there is no default):
+
+```bash
+make flow-list                 # list the experiments available in the project
+make flow-run EXP=<experiment> # then flow-ext / flow-gen
+```
+
+Experiments are project-specific; see the project's own README for what each one does. The targets fail fast if `EXP` is unset or names an experiment the project doesn't have.
+
 ### Cleanup
 
 ```bash
@@ -265,3 +284,4 @@ make clean-all                # remove all sim/ and imp/ directories
 | `VCD_DIR`        | post-syn-dpa                                       | e.g. `top_bas_4x8_post-syn-sim` | Directory containing `activity.vcd` from `make post-syn-sim`     |
 | `PARAMS`         | sim, syn, post-syn-sim                             | `"KEY=VAL ..."`                 | Project-specific RTL elaboration parameters                      |
 | `KEEP_HIERARCHY` | syn, post-syn-dpa                                  | `0` (default), `1`              | Preserve module boundaries in the netlist                        |
+| `EXP`            | flow-run, flow-ext, flow-gen                       | experiment name                 | Required. Experiment subfolder under `scripts/flow/` (no default) |

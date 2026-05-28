@@ -10,6 +10,7 @@ VCD_DIR        ?= no_name
 CLK_PERIOD_NS  ?= 1
 PARAMS         ?= none
 KEEP_HIERARCHY ?= 0
+EXP            ?=
 
 PROJ_DIR := $(CODE_HOME)/rtl-lab/projects/$(PROJECT)
 
@@ -22,7 +23,7 @@ export SEL_CLK_PERIOD_NS  := $(CLK_PERIOD_NS)
 export SEL_PARAMS         := $(PARAMS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 
-.PHONY: _check_project init
+.PHONY: _check_project _check_exp init flow-list flow-run flow-ext flow-gen
 
 _check_project:
 	@if [ -z "$(PROJECT)" ]; then \
@@ -82,14 +83,32 @@ post-syn-dpa: _check_project clean-imp
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
 	sta -no_splash -exit $(CODE_HOME)/rtl-lab/scripts/post-syn-dpa/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
 
-run-regres: _check_project
-	python3 $(PROJ_DIR)/scripts/flow/regres/run.py
+flow-list: _check_project
+	@echo "Experiments in project '$(PROJECT)':"
+	@ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/  - /' || true
 
-ext-results: _check_project
-	python3 $(PROJ_DIR)/scripts/flow/regres/ext.py
+_check_exp: _check_project
+	@if [ -z "$(EXP)" ]; then \
+		echo "error: EXP is not set. Pass EXP=<experiment>, e.g. 'make $(MAKECMDGOALS) EXP=<experiment> PROJECT=$(PROJECT)'."; \
+		echo "       Experiments available in project '$(PROJECT)':"; \
+		ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/         - /' || true; \
+		exit 1; \
+	fi; \
+	if [ ! -d "$(PROJ_DIR)/scripts/flow/$(EXP)" ]; then \
+		echo "error: experiment '$(EXP)' does not exist in project '$(PROJECT)'."; \
+		echo "       Experiments available:"; \
+		ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/         - /' || true; \
+		exit 1; \
+	fi
 
-gen-charts: _check_project
-	python3 $(PROJ_DIR)/scripts/flow/regres/gen.py
+flow-run: _check_exp
+	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/run.py
+
+flow-ext: _check_exp
+	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/ext.py
+
+flow-gen: _check_exp
+	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/gen.py
 
 clean-all: _check_project
 	rm -rf $(PROJ_DIR)/sim

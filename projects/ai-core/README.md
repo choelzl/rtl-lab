@@ -90,7 +90,7 @@ python3 scripts/flow/dyn_range/ext.py # → doc/data/dyn_range/results.xlsx
 python3 scripts/flow/dyn_range/gen.py # → doc/charts/dyn_range/*.png
 ```
 
-The `run-regres`, `ext-results`, and `gen-charts` make targets are shortcuts for the `regres` experiment.
+Each experiment can also be driven through the root Makefile with `make flow-run EXP=<experiment>` (and likewise `flow-ext` / `flow-gen`), where `<experiment>` is `regres`, `a_sweep`, or `dyn_range`. Run `make flow-list PROJECT=ai-core` to list them.
 
 ## PE architectures
 
