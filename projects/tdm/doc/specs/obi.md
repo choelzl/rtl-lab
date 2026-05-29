@@ -1,6 +1,6 @@
 # Simplified OBI link
 
-A reduced **single-channel** subset of the Open Bus Interface (OBI) v1.6.0 — see [OBI-v1.6.0.pdf](OBI-v1.6.0.pdf) — shared by all designs in this project (the [crossbar](../diagrams/crossbar.md) and the [TDM](../diagrams/tdm.md) interconnects).
+A reduced **single-channel** subset of the Open Bus Interface (OBI) v1.6.0 — see [OBI-v1.6.0.pdf](../protocols/OBI-v1.6.0.pdf) — shared by all designs in this project (the [crossbar](crossbar.md) and the [TDM](tdm.md) interconnects).
 
 OBI is a point-to-point, request/grant **manager↔subordinate** protocol. We collapse it to a **single channel** carrying both request and response, using only these signals (plus the global `clk` / `reset_n`):
 
