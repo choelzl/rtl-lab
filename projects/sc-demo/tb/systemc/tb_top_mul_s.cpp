@@ -4,18 +4,19 @@
 // Description:
 //   SystemC demo harness for the `make sim-sc` flow. Demonstrates a Verilated
 //   SystemVerilog DUT and a native SystemC module simulating together under the
-//   SystemC kernel:
+//   SystemC kernel, bundled inside the top_mul_s design top:
 //
 //     sc_main
-//       |- sc_clock clk
-//       |- driver   (SC testbench: stimulus + checker)
-//       |- Vmul_s   (Verilated SV combinational signed multiplier)
-//       |- acc      (native SystemC clocked accumulator)
+//       |- sc_clock  clk
+//       |- driver    (SC testbench: stimulus + checker)
+//       |- top_mul_s (SystemC design top)
+//            |- Vmul_s dut   (Verilated SV combinational signed multiplier)
+//            |- acc    accu  (native SystemC clocked accumulator)
 //
-//   The driver feeds random signed operands to the multiplier; the multiplier's
-//   product feeds the SystemC accumulator; the driver checks the accumulator's
-//   running sum against an independently computed reference and reports
-//   PASS/FAIL, then stops the simulation.
+//   The driver feeds random signed operands to the top; inside it the
+//   multiplier's product feeds the SystemC accumulator; the driver checks the
+//   accumulator's running sum against an independently computed reference and
+//   reports PASS/FAIL, then stops the simulation.
 //
 //   Widths below must match the mul_s elaboration parameters. They are fixed to
 //   the DUT defaults (8x8); overriding IN_WIDTH_A/IN_WIDTH_B via PARAMS requires
@@ -29,9 +30,8 @@
 
 #include "verilated.h"
 #include "verilated_vcd_sc.h"
-#include "Vmul_s.h"
 
-#include "models/acc.hpp"
+#include "top_mul_s.hpp"
 
 #ifndef CLK_PERIOD_NS
 #define CLK_PERIOD_NS 1.0
@@ -95,10 +95,10 @@ SC_MODULE(driver) {
 
         const long got = sum_i.read();
         if (got == expected) {
-            std::cout << "[tb_mul_s] PASS: " << N_TESTS
+            std::cout << "[tb_top_mul_s] PASS: " << N_TESTS
                       << " products accumulated, sum = " << got << std::endl;
         } else {
-            std::cout << "[tb_mul_s] FAIL: sum = " << got
+            std::cout << "[tb_top_mul_s] FAIL: sum = " << got
                       << ", expected = " << expected << std::endl;
         }
         sc_stop();
@@ -118,19 +118,7 @@ int sc_main(int argc, char* argv[]) {
     sc_signal<bool>     rst;
     sc_signal<uint32_t> a;
     sc_signal<uint32_t> b;
-    sc_signal<uint32_t> prod;
     sc_signal<int>      sum;
-
-    Vmul_s dut("dut");
-    dut.a_i  (a);
-    dut.b_i  (b);
-    dut.out_o(prod);
-
-    acc<OUT_W> accu("acc");
-    accu.clk_i (clk);
-    accu.rst_i (rst);
-    accu.prod_i(prod);
-    accu.sum_o (sum);
 
     driver drv("drv");
     drv.clk_i(clk);
@@ -139,10 +127,17 @@ int sc_main(int argc, char* argv[]) {
     drv.b_o  (b);
     drv.sum_i(sum);
 
+    top_mul_s<OUT_W> top("top");
+    top.clk_i(clk);
+    top.rst_i(rst);
+    top.a_i  (a);
+    top.b_i  (b);
+    top.sum_o(sum);
+
     sc_start(SC_ZERO_TIME);
 
     VerilatedVcdSc* tfp = new VerilatedVcdSc;
-    dut.trace(tfp, 99);
+    top.dut.trace(tfp, 99);
     tfp->open("activity.vcd");
 
     sc_start();

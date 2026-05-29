@@ -15,9 +15,9 @@ This is a multi-project RTL sandbox.
 There are two independent simulation flows:
 
 - `make sim` — the default SV flow. Verilator `--binary --timing`, with a self-contained SV testbench (`tb/tb_<top>.sv`) as the top module. This is what `syn` and the post-syn flows build on.
-- `make sim-sc` — the SystemC flow. Verilator `--sc --exe`, with C++ `sc_main` as the top (`tb/systemc/tb_<top>.cpp`), able to host both Verilated SV modules and native SystemC modules together under the SystemC kernel. Simulation only — SystemC is never synthesized. Requires `$SYSTEMC_HOME`. Reusable SC models live in `tb/systemc/models/`.
+- `make sim-sc` — the SystemC flow. Verilator `--sc --exe`, with C++ `sc_main` as the top (`tb/systemc/tb_<top>.cpp`), able to host both Verilated SV modules and native SystemC modules together under the SystemC kernel. Simulation only — SystemC is never synthesized. Requires `$SYSTEMC_HOME`. Native SystemC design modules (the non-testbench half — e.g. accumulators, design tops) live under `rtl/systemc/`; the `sc_main` harness stays under `tb/systemc/`. Both directories are on the harness include path.
 
-**Naming:** the `_sc` suffix on RTL/top-levels (e.g. `top_bas_4x8_sc`) is a *split-cell design variant*, **not** SystemC. Keep SystemC sources under `tb/systemc/` and never use an `_sc` filename suffix for them.
+**Naming:** the `_sc` suffix on RTL/top-levels (e.g. `top_bas_4x8_sc`) is a *split-cell design variant*, **not** SystemC. Keep the SystemC harness under `tb/systemc/`, native SystemC design modules under `rtl/systemc/`, and never use an `_sc` filename suffix for any of them.
 
 ## Partial / sparse clones
 

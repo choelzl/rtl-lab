@@ -119,7 +119,7 @@ make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_
 ├── projects/             # One subfolder per RTL project
 │   └── <name>/           # An RTL project (see its README.md)
 │       ├── README.md     # Project-specific documentation
-│       ├── rtl/          # SystemVerilog source modules
+│       ├── rtl/          # SystemVerilog source modules (rtl/systemc/ holds native SystemC design modules)
 │       ├── tb/           # Verilator SV testbenches (tb/systemc/ holds SystemC harnesses)
 │       ├── scripts/      # Project-specific scripts
 │       │   └── flow/     # End-to-end automation (one subfolder per experiment)
@@ -197,13 +197,15 @@ make sim-sc TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KE
 
 | Parameter       | Required | Description                                                          |
 | --------------- | -------- | -------------------------------------------------------------------- |
-| `TOP_LEVEL`     | yes      | SV module to Verilate into an `sc_module` (the SV DUT the harness wires up) |
+| `TOP_LEVEL`     | yes      | SystemC design top the harness instantiates (`rtl/systemc/<top_level>.hpp`); the SV DUT(s) it wraps are verilated from `rtl/*.sv` |
 | `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)          |
 | `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                     |
-| `PARAMS`        | no       | RTL elaboration parameters; passed to the DUT as `-G` and mirrored to the harness as `-D` (kept in sync) |
+| `PARAMS`        | no       | RTL elaboration parameters; passed to the verilated SV DUT(s) as `-G` and mirrored to the harness as `-D` (kept in sync) |
 | `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D` |
 
-Requires the SystemC library (see Environment setup). Each `TOP_LEVEL` has a matching C++/SystemC harness at `projects/<PROJECT>/tb/systemc/tb_<top_level>.cpp` (which defines `sc_main`); reusable SystemC models live under `tb/systemc/models/`. Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd`. The harness reads `PARAMS`/`TB_DEFS` as compile-time defines with in-file defaults, so it needs no hand-editing; widths must keep the DUT's ports within the SystemC port type the harness binds (Verilator's `uint32_t` for ≤32-bit ports).
+Like `make sim`, `TOP_LEVEL` names the **design top** — here a SystemC `SC_MODULE` at `projects/<PROJECT>/rtl/systemc/<top_level>.hpp` — and the matching harness that instantiates it is `projects/<PROJECT>/tb/systemc/tb_<top_level>.cpp` (which defines `sc_main`). The harness wires the design top to the `driver` stimulus; the design top in turn wraps the Verilated SV DUT(s), which Verilator compiles directly from `projects/<PROJECT>/rtl/*.sv` (picking the SV top itself — no separate parameter). Other native SystemC design modules live alongside the top under `rtl/systemc/`, and both `rtl/systemc/` and `tb/systemc/` are on the harness include path.
+
+Requires the SystemC library (see Environment setup). Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd`. The harness reads `PARAMS`/`TB_DEFS` as compile-time defines with in-file defaults, so it needs no hand-editing; widths must keep the DUT's ports within the SystemC port type the harness binds (Verilator's `uint32_t` for ≤32-bit ports).
 
 ### Logic synthesis (Yosys + ABC, ASAP7 target)
 

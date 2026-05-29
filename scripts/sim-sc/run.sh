@@ -3,11 +3,13 @@
 # -----------------------------------------------------------------------------
 # Author: Simone Machetti
 #
-# SystemC simulation flow. Verilates the SV DUT named by SEL_TOP_LEVEL into an
-# sc_module and links it against the per-top-level C++/SystemC harness
-# (tb/systemc/tb_<top>.cpp), which becomes sc_main. The harness wires the
-# Verilated DUT to native SystemC modules and drives the simulation under the
-# SystemC kernel. Simulation only -- the SystemC parts are never synthesized.
+# SystemC simulation flow. Verilates the project's SV sources (rtl/*.sv) into
+# sc_modules and links them against the C++/SystemC harness named by
+# SEL_TOP_LEVEL (tb/systemc/tb_<top>.cpp), which becomes sc_main. SEL_TOP_LEVEL
+# names the SystemC design top (rtl/systemc/<top>.hpp) that the harness
+# instantiates; that top wires the Verilated SV DUT(s) to native SystemC design
+# modules (rtl/systemc/). Verilator picks the SV top automatically from the
+# given sources. Simulation only -- the SystemC parts are never synthesized.
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -16,7 +18,7 @@ PROJ="${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}"
 SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 
 g_flags=()
-cflags="-std=c++17 -I${PROJ}/tb/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
+cflags="-std=c++17 -I${PROJ}/tb/systemc -I${PROJ}/rtl/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
 
 if [ "${SEL_PARAMS}" != "none" ]; then
     for param in ${SEL_PARAMS}; do
@@ -31,6 +33,8 @@ if [ "${SEL_TB_DEFS}" != "none" ]; then
     done
 fi
 
+rtl_files=("${PROJ}"/rtl/*.sv)
+
 verilator \
     --sc \
     --exe \
@@ -44,8 +48,7 @@ verilator \
     -CFLAGS "${cflags}" \
     "${g_flags[@]}" \
     -I"${PROJ}/rtl" \
-    --top-module "${SEL_TOP_LEVEL}" \
-    "${PROJ}/rtl/${SEL_TOP_LEVEL}.sv" \
+    "${rtl_files[@]}" \
     "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
     -Mdir "${SIM}/build/obj_dir" \
     -o "${SIM}/build/simv" \
