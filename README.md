@@ -6,6 +6,7 @@ Projects:
 
 - [`ai-core`](projects/ai-core/README.md) — fixed-point multiply-accumulate Processing Elements (PEs) for AI/ML inference. The reference project.
 - [`sc-demo`](projects/sc-demo/README.md) — minimal SystemC co-simulation example (`make sim-sc`): a Verilated SV multiplier driving a native SystemC accumulator.
+- [`tdm`](projects/tdm/README.md) — time-division multiplexing designs.
 
 This README documents the shared EDA flow: the `make` targets, their parameters, and the typical pipeline. For a project's designs, top-levels, RTL parameters, and experiments, see that project's own README.
 
