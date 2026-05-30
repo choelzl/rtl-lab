@@ -83,7 +83,7 @@ Notes / assumptions:
 
 ## Datapath & registers
 
-The path is registered at **two stages only**; the 8×8 crossbar between them is combinational routing (plus the per-bank round-robin arbiter) and adds no register of its own:
+The path is registered at **two stages only** (AGU and bank); the 8×8 crossbar between them is combinational routing plus a per-bank round-robin arbiter. It adds **no data-path pipeline register** — only small per-bank *control* state (the round-robin pointer and a response-owner pipeline that steers each bank's response back to the manager that won it):
 
 - **AGU registers** — each AGU stores `addr`, `we`, `be`, `wdata` for each request and captures the returned `rdata`. These drive the request into the crossbar.
 - **Bank registers** — the next stage. Each bank registers the incoming OBI request; its logic then converts the request into an access to the bank's internal memory array (a read when `we=0`, a write when `we=1`) and returns `rdata`.
