@@ -3,13 +3,13 @@
 # -----------------------------------------------------------------------------
 # Author: Simone Machetti
 #
-# SystemC simulation flow. Verilates the project's SV sources (rtl/*.sv) into
-# sc_modules and links them against the C++/SystemC harness named by
-# SEL_TOP_LEVEL (tb/systemc/tb_<top>.cpp), which becomes sc_main. SEL_TOP_LEVEL
-# names the SystemC design top (rtl/systemc/<top>.hpp) that the harness
-# instantiates; that top wires the Verilated SV DUT(s) to native SystemC design
-# modules (rtl/systemc/). Verilator picks the SV top automatically from the
-# given sources. Simulation only -- the SystemC parts are never synthesized.
+# SystemC simulation flow. If the project has SV sources (rtl/*.sv), they are
+# Verilated into sc_modules and linked against the C++/SystemC harness named by
+# SEL_TOP_LEVEL (tb/systemc/tb_<top>.cpp), which becomes sc_main; that harness
+# instantiates the SystemC design top (rtl/systemc/<top>.hpp) wiring the
+# Verilated SV DUT(s) to native SystemC modules. If the project has no SV (a
+# pure-SystemC design), the harness is instead built directly with g++ against
+# the SystemC library. Either way it is simulation only -- never synthesized.
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -33,26 +33,38 @@ if [ "${SEL_TB_DEFS}" != "none" ]; then
     done
 fi
 
+shopt -s nullglob
 rtl_files=("${PROJ}"/rtl/*.sv)
+shopt -u nullglob
 
-verilator \
-    --sc \
-    --exe \
-    --build \
-    -sv \
-    --trace \
-    --trace-max-array 0 \
-    --trace-max-width 0 \
-    -Wall \
-    -Wno-fatal \
-    -CFLAGS "${cflags}" \
-    "${g_flags[@]}" \
-    -I"${PROJ}/rtl" \
-    "${rtl_files[@]}" \
-    "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
-    -Mdir "${SIM}/build/obj_dir" \
-    -o "${SIM}/build/simv" \
-    | tee "${SIM}/output/compile.log"
+if [ "${#rtl_files[@]}" -gt 0 ]; then
+    verilator \
+        --sc \
+        --exe \
+        --build \
+        -sv \
+        --trace \
+        --trace-max-array 0 \
+        --trace-max-width 0 \
+        -Wall \
+        -Wno-fatal \
+        -CFLAGS "${cflags}" \
+        "${g_flags[@]}" \
+        -I"${PROJ}/rtl" \
+        "${rtl_files[@]}" \
+        "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
+        -Mdir "${SIM}/build/obj_dir" \
+        -o "${SIM}/build/simv" \
+        | tee "${SIM}/output/compile.log"
+else
+    # shellcheck disable=SC2086
+    g++ ${cflags} \
+        -I"${SYSTEMC_INCLUDE}" \
+        "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
+        -o "${SIM}/build/simv" \
+        -L"${SYSTEMC_LIBDIR}" -Wl,-rpath,"${SYSTEMC_LIBDIR}" -lsystemc -pthread \
+        | tee "${SIM}/output/compile.log"
+fi
 
 exec "${SIM}/build/simv" "$@" \
     | tee "${SIM}/output/run.log"

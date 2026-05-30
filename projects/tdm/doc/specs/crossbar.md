@@ -83,7 +83,7 @@ Notes / assumptions:
 
 ## Datapath & registers
 
-The path is registered at **two stages only** (AGU and bank); the 8×8 crossbar between them is combinational routing plus a per-bank round-robin arbiter. It adds **no data-path pipeline register** — only small per-bank *control* state (the round-robin pointer and a response-owner pipeline that steers each bank's response back to the manager that won it):
+The path is registered at **two stages only** (AGU and bank); the 8×8 crossbar between them is combinational routing plus a per-bank round-robin arbiter. It adds **no data-path pipeline register** — only small per-bank *control* state (the round-robin pointer and a one-deep response-owner register that steers each bank's response, which arrives one cycle after the grant, back to the manager that won it):
 
 - **AGU registers** — each AGU stores `addr`, `we`, `be`, `wdata` for each request and captures the returned `rdata`. These drive the request into the crossbar.
 - **Bank registers** — the next stage. Each bank registers the incoming OBI request; its logic then converts the request into an access to the bank's internal memory array (a read when `we=0`, a write when `we=1`) and returns `rdata`.
@@ -101,7 +101,7 @@ The `N_REQ` addresses an AGU issues are **independent**, so collisions on a bank
 For now verification is **inspection-based**, not self-checking:
 
 - Each trace is a **write phase** (writes with random `data`) followed by a **read phase** that reads the same addresses back.
-- Each AGU dumps its completed accesses to an **output log** (`out_0.log` / `out_1.log`) as `cycle,addr,we,data`, where `data` is the value written (writes) or the value returned (reads). Because the read phase targets the addresses written earlier, a correct run shows each read returning the value of the matching write — you confirm this by inspecting the output logs.
+- Each AGU dumps its completed accesses to an **output log** in the run's output dir (`sim/<OUT_DIR>/output/out_0.log` / `out_1.log`) as `cycle,addr,we,data`, where `data` is the value written (writes) or the value returned (reads). Because the read phase targets the addresses written earlier, a correct run shows each read returning the value of the matching write — you confirm this by inspecting the output logs.
 - After the run the testbench prints **statistics only** (cycle count, accesses, conflicts / delay penalty); there is **no automated correctness assertion**.
 
 An automated golden-model scoreboard can be added later, but is intentionally out of scope for now.

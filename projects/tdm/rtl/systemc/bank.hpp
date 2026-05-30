@@ -60,8 +60,6 @@ SC_MODULE(bank) {
     static_assert(WORD_BYTES >= 1, "WORD_BYTES must be >= 1");
 
     std::vector<uint64_t> mem;
-    bool                  pend_valid_;
-    uint64_t              pend_rdata_;
 
     static uint64_t apply_be(uint64_t old_w, uint64_t new_w, uint32_t be) {
         uint64_t out = old_w;
@@ -78,16 +76,13 @@ SC_MODULE(bank) {
         if (!rst_ni.read()) {
             rvalid_o.write(false);
             rdata_o.write(0);
-            pend_valid_ = false;
-            pend_rdata_ = 0;
             return;
         }
 
-        rvalid_o.write(pend_valid_);
-        rdata_o.write(pend_rdata_);
-
-        bool     next_valid = false;
-        uint64_t next_rdata = 0;
+        // Sample the request this edge and register the response directly for
+        // the next cycle (1-cycle access latency, one request handled / cycle).
+        bool     rv = false;
+        uint64_t rd = 0;
         if (req_i.read()) {
             const uint64_t word = addr_i.read() / WORD_BYTES;
             if (word >= static_cast<uint64_t>(DEPTH_WORDS)) {
@@ -99,17 +94,17 @@ SC_MODULE(bank) {
             if (we_i.read()) {
                 mem[word] = apply_be(mem[word], wdata_i.read(), be_i.read());
             } else {
-                next_rdata = mem[word];
+                rd = mem[word];
             }
-            next_valid = true;
+            rv = true;
         }
-        pend_valid_ = next_valid;
-        pend_rdata_ = next_rdata;
+        rvalid_o.write(rv);
+        rdata_o.write(rd);
     }
 
     void comb_gnt() { gnt_o.write(req_i.read()); }
 
-    SC_CTOR(bank) : mem(DEPTH_WORDS, 0), pend_valid_(false), pend_rdata_(0) {
+    SC_CTOR(bank) : mem(DEPTH_WORDS, 0) {
         SC_METHOD(step);
         sensitive << clk_i.pos();
         dont_initialize();

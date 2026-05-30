@@ -26,11 +26,11 @@
 //       forwarded to the bank and its grant returned; losing managers keep
 //       their request asserted (the AGU holds it) until their turn — the source
 //       of the conflict penalty.
-//     - Connection / response routing: banks have a fixed grant->response
-//       latency, so the manager that won bank b is remembered in a 2-deep
-//       per-bank owner pipeline (owner_s1, owner_s2). When the bank raises
-//       rvalid, its response is steered back to owner_s2 — the manager granted
-//       the matching number of cycles earlier. No transaction IDs are needed.
+//     - Connection / response routing: the bank's response arrives one cycle
+//       after its grant (1-cycle bank latency), so the manager that won bank b
+//       is remembered in a per-bank owner register. When the bank raises rvalid
+//       the next cycle, its response is steered back to that owner. No
+//       transaction IDs are needed.
 //
 //   Reset is active-low (rst_ni). Banks are always-ready (gnt = req), so the
 //   arbiter winner is effectively granted every cycle.
@@ -71,10 +71,9 @@ SC_MODULE(crossbar) {
     sc_in<bool>      b_rvalid_i[N_BANK];
     sc_in<uint64_t>  b_rdata_i[N_BANK];
 
-    sc_signal<int>   rr_ptr[N_BANK];
-    sc_signal<int>   win_[N_BANK];
-    sc_signal<int>   owner_s1[N_BANK];
-    sc_signal<int>   owner_s2[N_BANK];
+    sc_signal<int>   rr_ptr[N_BANK];    // round-robin start index
+    sc_signal<int>   win_[N_BANK];      // this cycle's winner (-1 = none)
+    sc_signal<int>   owner[N_BANK];     // last cycle's winner (grant->response)
 
     static int bank_of(uint64_t a) {
         return static_cast<int>((a / WORD_BYTES) % N_BANK);
@@ -118,7 +117,7 @@ SC_MODULE(crossbar) {
                 m_gnt_o[winner].write(b_gnt_i[b].read());
             }
 
-            const int ow = owner_s2[b].read();
+            const int ow = owner[b].read();
             if (ow >= 0 && b_rvalid_i[b].read()) {
                 m_rvalid_o[ow].write(true);
                 m_rdata_o[ow].write(b_rdata_i[b].read());
@@ -130,15 +129,13 @@ SC_MODULE(crossbar) {
         if (!rst_ni.read()) {
             for (int b = 0; b < N_BANK; ++b) {
                 rr_ptr[b].write(0);
-                owner_s1[b].write(-1);
-                owner_s2[b].write(-1);
+                owner[b].write(-1);
             }
             return;
         }
         for (int b = 0; b < N_BANK; ++b) {
             const int w = win_[b].read();
-            owner_s2[b].write(owner_s1[b].read());
-            owner_s1[b].write(w);
+            owner[b].write(w);                             // 1-cycle grant->resp
             if (w >= 0) rr_ptr[b].write((w + 1) % N_MGR);
         }
     }
@@ -150,7 +147,7 @@ SC_MODULE(crossbar) {
                       << m_wdata_i[m];
         for (int b = 0; b < N_BANK; ++b)
             sensitive << b_gnt_i[b] << b_rvalid_i[b] << b_rdata_i[b] << rr_ptr[b]
-                      << owner_s2[b];
+                      << owner[b];
 
         SC_METHOD(seq);
         sensitive << clk_i.pos();
