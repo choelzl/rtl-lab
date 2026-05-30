@@ -59,28 +59,24 @@ The design described above is the **default**; every size is an RTL parameter, s
 | `N_REQ`      | requests (ports) issued per AGU per cycle  | 4          |
 | `WORD_BYTES` | size of one word / OBI data beat, in bytes | 4 (32-bit) |
 | `N_BANK`     | number of memory banks                     | 8          |
-| `N_ROW`      | rows per bank                              | 1024       |
-| `ROW_BYTES`  | size of one bank row, in bytes             | 4          |
+| `N_ROW`      | rows per bank (one word each)              | 1024       |
 
 Derived quantities:
 
 - **Crossbar size** = `(N_AGU × N_REQ)` request ports × `N_BANK` bank ports (default **8×8**).
-- **Total capacity** = `N_BANK × N_ROW × ROW_BYTES` bytes (default 8 × 1024 × 4 = **32 KiB**).
-- **Words per row** = `ROW_BYTES / WORD_BYTES` (default **1** — one word per row).
+- **Total capacity** = `N_BANK × N_ROW × WORD_BYTES` bytes (default 8 × 1024 × 4 = **32 KiB**).
 
 Address decode for a byte address `a` (word-interleaved across banks):
 
 ```
-word = a / WORD_BYTES                  // word index
-bank = word % N_BANK                   // low bits select the bank (interleave)
-wib  = word / N_BANK                   // word index within that bank
-row  = wib  / (ROW_BYTES / WORD_BYTES)
-col  = wib  % (ROW_BYTES / WORD_BYTES) // word offset inside the row (0 when ROW_BYTES == WORD_BYTES)
+word = a / WORD_BYTES   // global word index
+bank = word % N_BANK    // low bits select the bank (interleave)
+row  = word / N_BANK    // bank-local index (= the bank's row), one word per row
 ```
 
-Notes / assumptions:
+The crossbar routes the request to `bank` and presents the **bank-local** byte address `row × WORD_BYTES` to the selected bank (the bank-select field stripped); each bank holds `N_ROW` words.
 
-- **Row vs word:** `ROW_BYTES` is a multiple of `WORD_BYTES`; a row stores `ROW_BYTES / WORD_BYTES` whole words and an OBI access still moves **one word** (`col` picks the word inside the row). At the default the two are equal, so one word per row and `col` is always 0.
+Notes / assumptions:
 - **Independent requests:** the `N_REQ` addresses an AGU issues are **independent** (arbitrary, not assumed consecutive or distinct in any particular way). So two of an AGU's own requests can decode to the same bank — **self-conflicts (within one AGU) and cross-AGU conflicts are both possible** and are handled identically by the per-bank round-robin arbiter.
 - **Capacity / range:** a trace byte-address that falls outside the total capacity is an **error (assert)**.
 - **Banks** are zero-initialised; **bank access latency is 1 cycle**; write accesses store incremental values `1, 2, 3, …` (TB-generated — the trace carries no write data), so a write phase followed by a read phase (or any interleave driven by the trace's `we` column) self-checks the data path against the TB's golden model.
