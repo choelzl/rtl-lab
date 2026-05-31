@@ -2,29 +2,28 @@
 // Author: Simone Machetti
 //
 // Description:
-//   Native SystemC memory bank for the crossbar design — a single-port OBI
-//   subordinate wrapping a word-addressable RAM array. It implements the
-//   simplified single-channel OBI protocol (see doc/specs/obi.md):
+//   Native SystemC single-port memory bank — an OBI subordinate wrapping a
+//   word-addressable RAM array. It implements the simplified single-channel OBI
+//   protocol (see doc/specs/obi.md):
 //
 //     request  (manager -> bank) : req_i, addr_i, we_i, be_i, wdata_i
 //     response (bank -> manager) : gnt_o, rvalid_o, rdata_o
 //
 //   Behaviour (all sampled / driven on the rising edge of clk_i):
 //     - gnt_o follows req_i combinationally: the bank accepts whenever a
-//       request is present. Contention between masters is resolved upstream by
-//       the crossbar's per-bank arbiter, which forwards only the winning
-//       master's req to this single bank port, so the bank never back-pressures.
+//       request is present and never back-pressures. Any contention for the
+//       bank is resolved by the upstream interconnect, which presents at most
+//       one request to this single port per cycle.
 //     - 1-cycle access latency: a request accepted at cycle T (req_i & gnt_o)
 //       produces its response (rvalid_o, and rdata_o on reads) at cycle T+1.
 //       One request is accepted per cycle (no outstanding/pipelined depth > 1).
 //     - Reads return mem[word]; writes update the byte lanes selected by be_i.
 //     - The array is zero-initialised at construction.
 //
-//   Addressing: addr_i is a BANK-LOCAL byte address — the crossbar has already
-//   stripped the bank-select field, so here word = addr_i / BYTES_PER_WORD indexes
+//   Addressing: addr_i is a BANK-LOCAL byte address — the bank-select field has
+//   already been stripped upstream, so word = addr_i / BYTES_PER_WORD indexes
 //   directly into this bank's array (capacity NUM_ROW words, one word per row).
 //   An access outside that range is a fatal error (SC_REPORT_FATAL).
-//   See doc/specs/crossbar.md "Configuration parameters".
 //
 //   Reset is active-low (rst_ni), matching OBI reset_n directly.
 //

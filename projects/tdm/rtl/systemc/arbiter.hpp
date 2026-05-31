@@ -2,33 +2,24 @@
 // Author: Simone Machetti
 //
 // Description:
-//   Native SystemC round-robin arbiter for the TDM design. It is a free-running
-//   scheduler — a strict round-robin counter over the NUM_AGU AGUs that advances
-//   EVERY clock cycle regardless of whether any AGU has a request that cycle
-//   (0, 1, ..., NUM_AGU-1, 0, 1, ...). It takes no req/gnt inputs; it is the
-//   single owner of the time-slot schedule that the OBI mux/demux follow.
+//   Native SystemC strict round-robin selector — a free-running counter over
+//   NUM_AGU indices that advances EVERY clock cycle, independent of any request
+//   or grant (0, 1, ..., NUM_AGU-1, 0, 1, ...). It has no data inputs; it is
+//   purely a cyclic index generator.
 //
-//   It exposes two registered selection outputs:
-//     - sel_req_o : the AGU served THIS cycle — steers the request path
-//                   (obi_mux selects buffer[sel_req] toward the mapping/banks).
-//     - sel_rsp_o : sel_req delayed by ONE cycle — steers the response path
-//                   (obi_mux routes the bank response back to buffer[sel_rsp]).
+//   Two registered index outputs:
+//     - sel_req_o : the index selected THIS cycle.
+//     - sel_rsp_o : the index selected the PREVIOUS cycle (sel_req_o delayed by
+//                   one clock). Useful for a consumer whose return path lags its
+//                   forward path by one cycle and must be steered with the prior
+//                   selection.
 //
-//   Why the response lag: a request issued at cycle T reaches the bank at T and
-//   the bank answers at T+1 (1-cycle bank latency), by which point sel_req has
-//   already advanced. Routing the response therefore needs the selection from
-//   the previous cycle, hence sel_rsp = sel_req delayed one register.
-//
-//   TIMING ASSUMPTION: the 1-cycle response lag holds only while the datapath
-//   between the mux and the banks (TDM mapping + conflicts checker) stays
-//   combinational and bank latency is 1. If that path is pipelined deeper later,
-//   sel_rsp's delay must grow to match.
-//
-//   sel_req_o counts from 0 on the first cycle after reset release. Reset is
+//   sel_req_o starts at 0 on the first cycle after reset release; sel_rsp_o then
+//   trails it by exactly one cycle (sel_rsp_o(T) = sel_req_o(T-1)). Reset is
 //   active-low (rst_ni): while asserted both outputs are held at 0.
 //
-// Template parameters (NUM_AGU from the PARAMS macro N_AGU):
-//   NUM_AGU - number of AGUs / round-robin slots (default 2)
+// Template parameters:
+//   NUM_AGU - number of indices in the round-robin cycle (default 2)
 // -----------------------------------------------------------------------------
 
 #ifndef ARBITER_HPP
