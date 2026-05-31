@@ -51,7 +51,7 @@ Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults bel
 
 | Testbench         | File                                                             | Drives                                                                                                              |
 | ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/agu.hpp), runs to completion, prints statistics. |
+| `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/cros_agu.hpp), runs to completion, prints statistics. |
 
 **Traces** ([tb/traces/](tb/traces/)): `mem_<i>.log`, one CSV per AGU — `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The sample traces write random data to a set of addresses then read them back.
 
