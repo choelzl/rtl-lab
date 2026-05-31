@@ -7,7 +7,9 @@
 //   tb/systemc/). The TDM design has its own driver, tdm_agu.hpp. It is an
 //   OBI manager with NUM_REQ request ports that replays a CSV memory trace
 //   (addr,we,data) and drives the simplified single-channel OBI protocol (see
-//   doc/specs/obi.md):
+//   doc/specs/obi.md). The trace's first non-empty line is metadata (the shared
+//   format carries the TDM mapping parameters there) and is skipped — the crossbar
+//   does not use it:
 //
 //     request  (AGU -> crossbar) : req_o, addr_o, we_o, be_o, wdata_o   [NUM_REQ]
 //     response (crossbar -> AGU) : gnt_i, rvalid_i, rdata_i             [NUM_REQ]
@@ -103,6 +105,8 @@ SC_MODULE(cros_agu) {
         std::ifstream f(path.c_str());
         if (!f) SC_REPORT_FATAL(name(), ("cannot open trace: " + path).c_str());
         std::string line;
+        while (std::getline(f, line))
+            if (!trim(line).empty()) break;
         while (std::getline(f, line)) {
             const std::size_t c1 = line.find(',');
             if (c1 == std::string::npos) continue;

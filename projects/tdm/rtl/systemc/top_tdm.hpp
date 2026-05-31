@@ -6,19 +6,20 @@
 //   TDM datapath and the memory banks:
 //
 //     AGU(ext) --x-OBI--> buf[NUM_AGU] --> x_obi_mux --> tdm --> crossbar --> bank[NUM_BANK]
-//                              ^ arbiter (sel_req/sel_rsp)   ^ tdm_mux (stride)
+//                              ^ arbiter (sel_req/sel_rsp)   ^ tdm_mux (map params)
 //
 //   - buf[a]            : per-AGU x-OBI buffer / 4<->8 width converter.
 //   - arbiter           : round-robin slot scheduler (sel_req + delayed sel_rsp).
 //   - x_obi_mux         : x-OBI mux+demux time-sharing the 8-wide port.
-//   - tdm_mux           : selects the active AGU's stride for the mapping.
-//   - tdm               : maps the group's base+stride to 8 word addresses.
+//   - tdm_mux           : selects the active AGU's mapping parameters.
+//   - tdm               : maps the group's base + parameters to 8 bank/row
+//                         placements, emitted as 8 word addresses.
 //   - crossbar + bank[] : REUSED from the crossbar design — bank/row decode and
 //                         per-bank round-robin arbitration (the conflict resolver).
 //
-//   External ports are the AGU-facing x-OBI group channels (one base/we/be/stride
-//   per AGU, NUM_REQ per-word req/wdata/gnt/rvalid/rdata), which the harness
-//   (tb/systemc/tb_top_tdm.cpp) connects to the AGUs.
+//   External ports are the AGU-facing x-OBI group channels (one base/we/be per
+//   AGU, NUM_REQ per-word req/wdata/gnt/rvalid/rdata) plus the per-AGU mapping
+//   parameters, which the harness (tb/systemc/tb_top_tdm.cpp) connects to the AGUs.
 //
 //   Sizes: NUM_WORD = NUM_AGU*NUM_REQ words per slot = crossbar managers; the
 //   crossbar is NUM_WORD x NUM_BANK.
@@ -29,7 +30,7 @@
 // N_ROW, WORD_BYTES):
 //   NUM_AGU        - number of AGUs (default 2)
 //   NUM_REQ        - AGU-side group width (default 4)
-//   NUM_BANK       - number of memory banks (default 8)
+//   NUM_BANK       - number of memory banks (default 32; the mapping needs >= 32)
 //   NUM_ROW        - rows (words) per bank (default 1024)
 //   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
 // -----------------------------------------------------------------------------
@@ -49,7 +50,7 @@
 #include "tdm_mux.hpp"
 #include "x_obi_mux.hpp"
 
-template <int NUM_AGU = 2, int NUM_REQ = 4, int NUM_BANK = 8, int NUM_ROW = 1024,
+template <int NUM_AGU = 2, int NUM_REQ = 4, int NUM_BANK = 32, int NUM_ROW = 1024,
           int BYTES_PER_WORD = 4>
 SC_MODULE(top_tdm) {
     static constexpr int NUM_WORD = NUM_AGU * NUM_REQ;
@@ -68,7 +69,12 @@ SC_MODULE(top_tdm) {
     sc_in<uint64_t>     a_addr_i[NUM_AGU];
     sc_in<bool>         a_we_i[NUM_AGU];
     sc_in<uint32_t>     a_be_i[NUM_AGU];
-    sc_in<uint64_t>     a_stride_i[NUM_AGU];
+    sc_in<uint64_t>     a_num_banks_i[NUM_AGU];
+    sc_in<uint64_t>     a_bank_width_i[NUM_AGU];
+    sc_in<uint64_t>     a_r_i[NUM_AGU];
+    sc_in<uint64_t>     a_c_i[NUM_AGU];
+    sc_in<uint64_t>     a_l_i[NUM_AGU];
+    sc_in<uint64_t>     a_store_mode_i[NUM_AGU];
 
     sc_signal<bool>     bx_req[NUM_IN], bx_gnt[NUM_IN], bx_rvalid[NUM_IN];
     sc_signal<uint64_t> bx_wdata[NUM_IN], bx_rdata[NUM_IN];
@@ -91,13 +97,13 @@ SC_MODULE(top_tdm) {
     sc_signal<uint32_t> cb_be[NUM_BANK];
 
     sc_signal<int>      sel_req, sel_rsp;
-    sc_signal<uint64_t> stride_sel;
+    sc_signal<uint64_t> map_num_banks, map_bank_width, map_r, map_c, map_l, map_store_mode;
 
     sc_vector<buf<NUM_REQ, NUM_WORD>>            bufs;
     arbiter<NUM_AGU>                             arb;
     x_obi_mux<NUM_AGU, NUM_WORD>                 xmux;
     tdm_mux<NUM_AGU>                             tmux;
-    tdm<NUM_WORD>                                mapf;
+    tdm<NUM_WORD, NUM_BANK, BYTES_PER_WORD>      mapf;
     crossbar<NUM_MGR, NUM_BANK, BYTES_PER_WORD>  xbar;
     sc_vector<bank<NUM_ROW, BYTES_PER_WORD>>     banks;
 
@@ -165,13 +171,30 @@ SC_MODULE(top_tdm) {
         }
 
         tmux.sel_i(sel_req);
-        for (int a = 0; a < NUM_AGU; ++a) tmux.stride_i[a](a_stride_i[a]);
-        tmux.stride_o(stride_sel);
+        for (int a = 0; a < NUM_AGU; ++a) {
+            tmux.num_banks_i[a](a_num_banks_i[a]);
+            tmux.bank_width_i[a](a_bank_width_i[a]);
+            tmux.r_i[a](a_r_i[a]);
+            tmux.c_i[a](a_c_i[a]);
+            tmux.l_i[a](a_l_i[a]);
+            tmux.store_mode_i[a](a_store_mode_i[a]);
+        }
+        tmux.num_banks_o(map_num_banks);
+        tmux.bank_width_o(map_bank_width);
+        tmux.r_o(map_r);
+        tmux.c_o(map_c);
+        tmux.l_o(map_l);
+        tmux.store_mode_o(map_store_mode);
 
         mapf.g_addr_i(xt_addr);
         mapf.g_we_i(xt_we);
         mapf.g_be_i(xt_be);
-        mapf.stride_i(stride_sel);
+        mapf.num_banks_i(map_num_banks);
+        mapf.bank_width_i(map_bank_width);
+        mapf.r_i(map_r);
+        mapf.c_i(map_c);
+        mapf.l_i(map_l);
+        mapf.store_mode_i(map_store_mode);
         for (int w = 0; w < NUM_WORD; ++w) {
             mapf.g_req_i[w](xt_req[w]);
             mapf.g_wdata_i[w](xt_wdata[w]);

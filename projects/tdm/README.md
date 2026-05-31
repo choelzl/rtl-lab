@@ -53,7 +53,7 @@ Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults bel
 | ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/cros_agu.hpp), runs to completion, prints statistics. |
 
-**Traces** ([tb/traces/](tb/traces/)): `mem_<i>.log`, one CSV per AGU — `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The sample traces write random data to a set of addresses then read them back.
+**Traces** ([tb/traces/](tb/traces/)): `mem_<i>.log`, one CSV per AGU. The **first line** carries the TDM mapping parameters (`num_banks,bank_width,C,R,L,store_mode`; consumed by the TDM AGU, skipped by the crossbar AGU); the access rows follow as `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The sample traces write random data to a set of addresses then read them back.
 
 **Outputs** (in `sim/<OUT_DIR>/output/`): `out_<i>.log` (per-AGU completed accesses `cycle,addr,we,data` for inspection — a read should return the value of its matching write), plus `compile.log` / `run.log`.
 

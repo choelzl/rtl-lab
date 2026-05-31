@@ -37,7 +37,7 @@
 #define N_REQ 4
 #endif
 #ifndef N_BANK
-#define N_BANK 8
+#define N_BANK 32
 #endif
 #ifndef N_ROW
 #define N_ROW 1024
@@ -75,9 +75,11 @@ int sc_main(int, char*[]) {
 
     sc_signal<bool>     m_req[kNumMgr], m_gnt[kNumMgr], m_rvalid[kNumMgr];
     sc_signal<uint64_t> m_wdata[kNumMgr], m_rdata[kNumMgr];
-    sc_signal<uint64_t> m_addr[N_AGU], m_stride[N_AGU];
+    sc_signal<uint64_t> m_addr[N_AGU];
     sc_signal<bool>     m_we[N_AGU];
     sc_signal<uint32_t> m_be[N_AGU];
+    sc_signal<uint64_t> m_num_banks[N_AGU], m_bank_width[N_AGU];
+    sc_signal<uint64_t> m_r[N_AGU], m_c[N_AGU], m_l[N_AGU], m_store_mode[N_AGU];
     sc_signal<bool>     done[N_AGU];
 
     top_tdm<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
@@ -90,7 +92,11 @@ int sc_main(int, char*[]) {
     }
     for (int a = 0; a < N_AGU; ++a) {
         dut.a_addr_i[a](m_addr[a]);   dut.a_we_i[a](m_we[a]);
-        dut.a_be_i[a](m_be[a]);       dut.a_stride_i[a](m_stride[a]);
+        dut.a_be_i[a](m_be[a]);
+        dut.a_num_banks_i[a](m_num_banks[a]);
+        dut.a_bank_width_i[a](m_bank_width[a]);
+        dut.a_r_i[a](m_r[a]);         dut.a_c_i[a](m_c[a]);
+        dut.a_l_i[a](m_l[a]);         dut.a_store_mode_i[a](m_store_mode[a]);
     }
 
     tdm_agu<N_REQ, WORD_BYTES>* agus[N_AGU];
@@ -103,7 +109,11 @@ int sc_main(int, char*[]) {
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);
         agus[a]->addr_o(m_addr[a]);   agus[a]->we_o(m_we[a]);
-        agus[a]->be_o(m_be[a]);       agus[a]->stride_o(m_stride[a]);
+        agus[a]->be_o(m_be[a]);
+        agus[a]->num_banks_o(m_num_banks[a]);
+        agus[a]->bank_width_o(m_bank_width[a]);
+        agus[a]->r_o(m_r[a]);         agus[a]->c_o(m_c[a]);
+        agus[a]->l_o(m_l[a]);         agus[a]->store_mode_o(m_store_mode[a]);
         for (int p = 0; p < N_REQ; ++p) {
             const int m = a * N_REQ + p;
             agus[a]->req_o[p](m_req[m]);     agus[a]->wdata_o[p](m_wdata[m]);

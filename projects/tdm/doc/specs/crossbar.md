@@ -33,7 +33,7 @@ Testbench  (tb_top_crossbar.cpp)
 
 - **Protocol:** a simplified single-channel OBI on every link — see [obi.md](obi.md) (in-order, pipelined depth ≤ 2; each bank response returns one cycle after the grant via a per-bank owner register).
 - **Granularity:** 32-bit (1 word) per bank access.
-- **Traces:** `mem_N.log` (stored under `tb/traces/`) is a **CSV**, one row per access, with three columns: `addr` (hexadecimal byte address), `we` (`1` = write, `0` = read), and `data` (the value written on a write; left empty on a read). R/W and write data are carried **per access** in the trace — the testbench no longer forces a uniform mode — so reads and writes can be interleaved for future experiments. Each AGU consumes **4 rows/cycle** (one per request port).
+- **Traces:** `mem_N.log` (stored under `tb/traces/`) is a **CSV**, one row per access, with three columns: `addr` (hexadecimal byte address), `we` (`1` = write, `0` = read), and `data` (the value written on a write; left empty on a read). The file's **first line is metadata** (the shared format carries the TDM mapping parameters there); the crossbar AGU **skips it** and does not use it. R/W and write data are carried **per access** in the trace — the testbench no longer forces a uniform mode — so reads and writes can be interleaved for future experiments. Each AGU consumes **4 rows/cycle** (one per request port).
 - **AGU output:** each AGU drives **4 words** as **4 request ports** into the crossbar. (Unlike TDM, the four words are *not* grouped; they stay independent ports.)
 - **Crossbar:** 2 AGUs × 4 words = **8 request ports in**, **8 bank ports out** (hence 8×8). Each of the 8 requests is routed to one of the 8 banks in the same cycle.
 - **Banking:** word-interleaved across the 8 banks.
