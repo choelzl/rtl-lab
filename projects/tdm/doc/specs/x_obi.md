@@ -8,16 +8,16 @@ It keeps base OBI's request/grant manager↔subordinate model and its in-order, 
 
 Width `N` = words per group. Plus the global `clk` / `reset_n`.
 
-| Signal   | Dir         | Width   | Purpose                                                                                                                              |
-| -------- | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `req`    | manager→sub | `[N]`   | **Per-word** request valid. A manager may assert only a subset — e.g. re-request just the words a conflict left outstanding.         |
-| `addr`   | manager→sub | scalar  | **Base** address of the group (a single reference point — see *Address reconstruction*).                                             |
-| `we`     | manager→sub | scalar  | **1 = write, 0 = read**, uniform for the whole group.                                                                                |
-| `be`     | manager→sub | scalar  | Byte enables, uniform for the whole group.                                                                                           |
-| `wdata`  | manager→sub | `[N]`   | **Per-word** write data (used when `we = 1`).                                                                                        |
-| `gnt`    | sub→manager | `[N]`   | **Per-word** grant. Word `w`'s request is accepted on the rising `clk` where `req[w] && gnt[w]`. A subset may be granted in a cycle. |
-| `rvalid` | sub→manager | `[N]`   | **Per-word** response/completion valid (asserted for both reads and writes).                                                         |
-| `rdata`  | sub→manager | `[N]`   | **Per-word** read data (valid only when `we = 0`).                                                                                   |
+| Signal   | Dir         | Width  | Purpose                                                                                                                              |
+| -------- | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `req`    | manager→sub | `[N]`  | **Per-word** request valid. A manager may assert only a subset — e.g. re-request just the words a conflict left outstanding.         |
+| `addr`   | manager→sub | scalar | **Base** address of the group (a single reference point — see *Address reconstruction*).                                             |
+| `we`     | manager→sub | scalar | **1 = write, 0 = read**, uniform for the whole group.                                                                                |
+| `be`     | manager→sub | scalar | Byte enables, uniform for the whole group.                                                                                           |
+| `wdata`  | manager→sub | `[N]`  | **Per-word** write data (used when `we = 1`).                                                                                        |
+| `gnt`    | sub→manager | `[N]`  | **Per-word** grant. Word `w`'s request is accepted on the rising `clk` where `req[w] && gnt[w]`. A subset may be granted in a cycle. |
+| `rvalid` | sub→manager | `[N]`  | **Per-word** response/completion valid (asserted for both reads and writes).                                                         |
+| `rdata`  | sub→manager | `[N]`  | **Per-word** read data (valid only when `we = 0`).                                                                                   |
 
 ## Handshake & rules
 
@@ -39,9 +39,9 @@ Width `N` = words per group. Plus the global `clk` / `reset_n`.
 
 ## Widths on the TDM datapath
 
-| Link                     | `N`                         |
-| ------------------------ | --------------------------- |
-| AGU ↔ Buffer             | `N_REQ` (default 4)         |
-| Buffer ↔ OBI Mux ↔ TDM   | `N_AGU · N_REQ` (default 8) |
+| Link                   | `N`                         |
+| ---------------------- | --------------------------- |
+| AGU ↔ Buffer           | `N_REQ` (default 4)         |
+| Buffer ↔ OBI Mux ↔ TDM | `N_AGU · N_REQ` (default 8) |
 
 The Buffer is therefore a width converter between the two (e.g. 4 ↔ 8) — see [tdm.md](tdm.md).
