@@ -19,6 +19,8 @@ There are two independent simulation flows:
 
 **Naming:** the `_sc` suffix on RTL/top-levels (e.g. `top_bas_4x8_sc`) is a *split-cell design variant*, **not** SystemC. Keep the SystemC harness under `tb/systemc/`, native SystemC design modules under `rtl/systemc/`, and never use an `_sc` filename suffix for any of them.
 
+**SystemC template-parameter naming (any project):** `PARAMS`/`TB_DEFS` reach the harness as ALL-CAPS `-D` config macros (e.g. `N_BANK`, `WORD_BYTES`) — these are the user-facing knobs. SystemC module template parameters are ALL-CAPS too, but named **distinctly from every config macro** (counts use a `NUM_` prefix, e.g. `NUM_BANK`; other dimensions are spelled out, e.g. `BYTES_PER_WORD`). The harness passes the macros (or values derived from them) as positional template arguments. Because no template-parameter token ever equals a `-D` macro, a `PARAMS=...` override can never textually rewrite a template declaration. Do **not** name a template parameter the same as its knob macro.
+
 ## Partial / sparse clones
 
 The repo supports partial clone + sparse-checkout (see the README "Cloning" section), so **a working copy may contain only a subset of `projects/*`** — sometimes none. Do not assume every project is present: never glob `projects/*` expecting it to be exhaustive, and check the project directory exists before operating on it. The `Projects:` list in the root README is the authoritative catalog of what exists. To work on a project that is not checked out, materialize it with `git sparse-checkout add projects/<name>`.

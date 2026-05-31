@@ -10,13 +10,14 @@
 //
 //   Statistics:
 //     - actual cycles : measured cycles (reset release -> all AGUs done).
-//     - ideal cycles  : conflict-free analytical estimate. With lock-step
-//                       groups of N_REQ requests and a fixed pipeline latency
-//                       L = 2 cycles per group (address phase = 1, then the
-//                       bank's 1-cycle response, observed the next edge;
-//                       measured, independent of N_REQ/N_BANK), a single AGU
-//                       finishes in L*G + 1 cycles; with no conflicts the AGUs
-//                       overlap, so ideal = L*G_max + 1, G_a = ceil(len_a/N_REQ).
+//     - ideal cycles  : conflict-free analytical estimate. The AGU is pipelined
+//                       and group-synchronized: with no conflict it issues one
+//                       group of N_REQ requests every cycle (throughput 1
+//                       group/cycle), plus a fixed PIPE_FILL = 2 cycles to drain
+//                       the last group (issue -> grant -> response; measured,
+//                       independent of N_REQ/N_BANK). A single AGU finishes in
+//                       G + PIPE_FILL cycles; with no conflicts the AGUs overlap,
+//                       so ideal = G_max + PIPE_FILL, G_a = ceil(len_a / N_REQ).
 //     - delay penalty : 100 * (actual - ideal) / ideal  [%].
 //
 //   Paths are resolved from the environment so the binary works under the flow
@@ -24,7 +25,12 @@
 //   $CODE_HOME/rtl-lab/projects/$SEL_PROJECT/tb/traces/mem_<i>.log, output logs
 //   into the run's output dir ($.../sim/$SEL_OUT_DIR/output/out_<i>.log).
 //
-//   Configuration via -D (the flow's PARAMS mechanism), defaults below.
+//   Configuration via -D (the flow's PARAMS mechanism), defaults below. The
+//   config knobs are ALL-CAPS macros (N_AGU, …); the design headers name their
+//   template parameters in ALL-CAPS too but deliberately distinct from those
+//   macros (counts NUM_*, e.g. NUM_AGU; other dims spelled out, e.g.
+//   BYTES_PER_WORD), so a -D override can never rewrite a template declaration.
+//   The macros pass straight through as positional template arguments below.
 // -----------------------------------------------------------------------------
 
 #include <systemc.h>
@@ -57,10 +63,8 @@
 #define CLK_PERIOD_NS 10
 #endif
 
-// Conflict-free pipeline latency per lock-step group (measured: address phase 1
-// + 1-cycle bank response). Update if the module timing changes.
-static const int LAT_PER_GROUP = 2;
-static const int STARTUP       = 1;
+static const int kCyclesPerGroup = 1;
+static const int kPipeFill       = 2;
 
 static std::string env_or(const char* key, const std::string& dflt) {
     const char* v = std::getenv(key);
@@ -68,7 +72,7 @@ static std::string env_or(const char* key, const std::string& dflt) {
 }
 
 int sc_main(int, char*[]) {
-    static const int N_MGR = N_AGU * N_REQ;
+    static const int kNumMgr = N_AGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
     const char* ch = std::getenv("CODE_HOME");
@@ -83,15 +87,15 @@ int sc_main(int, char*[]) {
     sc_clock clk("clk", CLK_PERIOD_NS, SC_NS);
     sc_signal<bool> rst_ni;
 
-    sc_signal<bool>     m_req[N_MGR], m_we[N_MGR], m_gnt[N_MGR], m_rvalid[N_MGR];
-    sc_signal<uint64_t> m_addr[N_MGR], m_wdata[N_MGR], m_rdata[N_MGR];
-    sc_signal<uint32_t> m_be[N_MGR];
+    sc_signal<bool>     m_req[kNumMgr], m_we[kNumMgr], m_gnt[kNumMgr], m_rvalid[kNumMgr];
+    sc_signal<uint64_t> m_addr[kNumMgr], m_wdata[kNumMgr], m_rdata[kNumMgr];
+    sc_signal<uint32_t> m_be[kNumMgr];
     sc_signal<bool>     done[N_AGU];
 
     top_crossbar<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
     dut.clk_i(clk);
     dut.rst_ni(rst_ni);
-    for (int m = 0; m < N_MGR; ++m) {
+    for (int m = 0; m < kNumMgr; ++m) {
         dut.m_req_i[m](m_req[m]);   dut.m_addr_i[m](m_addr[m]);
         dut.m_we_i[m](m_we[m]);     dut.m_be_i[m](m_be[m]);
         dut.m_wdata_i[m](m_wdata[m]);
@@ -122,9 +126,9 @@ int sc_main(int, char*[]) {
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
     rst_ni.write(true);
 
-    const int MAX_CYCLES = 1000000;
+    const int kMaxCycles = 1000000;
     int actual = 0;
-    while (actual < MAX_CYCLES) {
+    while (actual < kMaxCycles) {
         bool all = true;
         for (int a = 0; a < N_AGU; ++a) all = all && done[a].read();
         if (all) break;
@@ -141,7 +145,7 @@ int sc_main(int, char*[]) {
         total_acc += agus[a]->log_.size();
         for (const auto& e : agus[a]->log_) if (!e.we) ++total_rd;
     }
-    const int ideal = LAT_PER_GROUP * g_max + STARTUP;
+    const int ideal = kCyclesPerGroup * g_max + kPipeFill;
     const double penalty = ideal > 0 ? 100.0 * (actual - ideal) / ideal : 0.0;
 
     printf("\n");
@@ -152,7 +156,7 @@ int sc_main(int, char*[]) {
     printf(" groups (max) : %d\n", g_max);
     printf(" actual cycles: %d\n", actual);
     printf(" ideal cycles : %d   (conflict-free: %d*%d + %d)\n",
-           ideal, LAT_PER_GROUP, g_max, STARTUP);
+           ideal, kCyclesPerGroup, g_max, kPipeFill);
     printf(" delay penalty: %.2f %%\n", penalty);
     printf("===========================================\n");
 

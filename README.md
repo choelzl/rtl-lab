@@ -196,17 +196,19 @@ A second, parallel simulation mode for designs that involve SystemC. The top is 
 make sim-sc TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=VAL ..."] [TB_DEFS="KEY=VAL ..."]
 ```
 
-| Parameter       | Required | Description                                                          |
-| --------------- | -------- | -------------------------------------------------------------------- |
+| Parameter       | Required | Description                                                                                                                       |
+| --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `TOP_LEVEL`     | yes      | SystemC design top the harness instantiates (`rtl/systemc/<top_level>.hpp`); the SV DUT(s) it wraps are verilated from `rtl/*.sv` |
-| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)          |
-| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                     |
-| `PARAMS`        | no       | RTL elaboration parameters; passed to the verilated SV DUT(s) as `-G` and mirrored to the harness as `-D` (kept in sync) |
-| `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D` |
+| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)                                                                       |
+| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                                                                                  |
+| `PARAMS`        | no       | RTL elaboration parameters; passed to the verilated SV DUT(s) as `-G` and mirrored to the harness as `-D` (kept in sync)          |
+| `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D`                                                        |
 
 Like `make sim`, `TOP_LEVEL` names the **design top** — here a SystemC `SC_MODULE` at `projects/<PROJECT>/rtl/systemc/<top_level>.hpp` — and the matching harness that instantiates it is `projects/<PROJECT>/tb/systemc/tb_<top_level>.cpp` (which defines `sc_main`). The harness wires the design top to the `driver` stimulus; the design top in turn wraps the Verilated SV DUT(s), which Verilator compiles directly from `projects/<PROJECT>/rtl/*.sv` (picking the SV top itself — no separate parameter). Other native SystemC design modules live alongside the top under `rtl/systemc/`, and both `rtl/systemc/` and `tb/systemc/` are on the harness include path.
 
 Requires the SystemC library (see Environment setup). Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd`. The harness reads `PARAMS`/`TB_DEFS` as compile-time defines with in-file defaults, so it needs no hand-editing; widths must keep the DUT's ports within the SystemC port type the harness binds (Verilator's `uint32_t` for ≤32-bit ports).
+
+`PARAMS`/`TB_DEFS` arrive as ALL-CAPS `-D` config macros (e.g. `N_BANK`, `WORD_BYTES`). Name native SystemC module template parameters in ALL-CAPS too, but **distinct from those macros** — counts as `NUM_*` (e.g. `NUM_BANK`), other dimensions spelled out (e.g. `BYTES_PER_WORD`) — and pass the macros as positional template arguments. Sharing a name between a parameter and its knob macro lets a `PARAMS=...` override rewrite the template declaration and breaks the build.
 
 ### Logic synthesis (Yosys + ABC, ASAP7 target)
 
@@ -275,11 +277,11 @@ Outputs go to `projects/<PROJECT>/imp/<OUT_DIR>/`.
 
 Each project keeps its end-to-end automation under `projects/<PROJECT>/scripts/flow/`, with **one subfolder per experiment**. By convention every experiment folder provides the same trio of scripts, which the generic `flow-*` targets drive:
 
-| Script   | Target           | Purpose                                          |
-| -------- | ---------------- | ------------------------------------------------ |
-| `run.py` | `make flow-run`  | Run the experiment (drives the `make` flow)      |
-| `ext.py` | `make flow-ext`  | Extract results from the run outputs             |
-| `gen.py` | `make flow-gen`  | Generate charts/tables from the extracted data   |
+| Script   | Target          | Purpose                                        |
+| -------- | --------------- | ---------------------------------------------- |
+| `run.py` | `make flow-run` | Run the experiment (drives the `make` flow)    |
+| `ext.py` | `make flow-ext` | Extract results from the run outputs           |
+| `gen.py` | `make flow-gen` | Generate charts/tables from the extracted data |
 
 Select the experiment with `EXP=<experiment>` (required — there is no default):
 
@@ -300,14 +302,14 @@ make clean-all                # remove all sim/ and imp/ directories
 
 ### Make-level parameters reference
 
-| Parameter        | Make targets                                       | Values                          | Description                                                      |
-| ---------------- | -------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
-| `PROJECT`        | all                                                | project name                    | Required. Project under `projects/` to operate on (no default)   |
-| `TOP_LEVEL`      | sim, syn, post-syn-sta, post-syn-sim, post-syn-dpa | module name                     | RTL module to build/simulate; can be any module in the hierarchy |
-| `CLK_PERIOD_NS`  | sim, post-syn-sta, post-syn-sim, post-syn-dpa      | e.g. `1.0`                      | Clock period in nanoseconds                                      |
-| `OUT_DIR`        | all except clean-all                               | directory name                  | Output subdirectory under `sim/` or `imp/`                       |
-| `NETLIST_DIR`    | post-syn-sta, post-syn-sim, post-syn-dpa           | e.g. `top_bas_4x8_syn`          | Directory containing the synthesized netlist from `make syn`     |
-| `VCD_DIR`        | post-syn-dpa                                       | e.g. `top_bas_4x8_post-syn-sim` | Directory containing `activity.vcd` from `make post-syn-sim`     |
-| `PARAMS`         | sim, syn, post-syn-sim                             | `"KEY=VAL ..."`                 | Project-specific RTL elaboration parameters                      |
-| `KEEP_HIERARCHY` | syn, post-syn-dpa                                  | `0` (default), `1`              | Preserve module boundaries in the netlist                        |
+| Parameter        | Make targets                                       | Values                          | Description                                                       |
+| ---------------- | -------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------- |
+| `PROJECT`        | all                                                | project name                    | Required. Project under `projects/` to operate on (no default)    |
+| `TOP_LEVEL`      | sim, syn, post-syn-sta, post-syn-sim, post-syn-dpa | module name                     | RTL module to build/simulate; can be any module in the hierarchy  |
+| `CLK_PERIOD_NS`  | sim, post-syn-sta, post-syn-sim, post-syn-dpa      | e.g. `1.0`                      | Clock period in nanoseconds                                       |
+| `OUT_DIR`        | all except clean-all                               | directory name                  | Output subdirectory under `sim/` or `imp/`                        |
+| `NETLIST_DIR`    | post-syn-sta, post-syn-sim, post-syn-dpa           | e.g. `top_bas_4x8_syn`          | Directory containing the synthesized netlist from `make syn`      |
+| `VCD_DIR`        | post-syn-dpa                                       | e.g. `top_bas_4x8_post-syn-sim` | Directory containing `activity.vcd` from `make post-syn-sim`      |
+| `PARAMS`         | sim, syn, post-syn-sim                             | `"KEY=VAL ..."`                 | Project-specific RTL elaboration parameters                       |
+| `KEEP_HIERARCHY` | syn, post-syn-dpa                                  | `0` (default), `1`              | Preserve module boundaries in the netlist                         |
 | `EXP`            | flow-run, flow-ext, flow-gen                       | experiment name                 | Required. Experiment subfolder under `scripts/flow/` (no default) |

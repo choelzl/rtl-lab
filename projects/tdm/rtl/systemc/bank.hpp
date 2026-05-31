@@ -21,16 +21,16 @@
 //     - The array is zero-initialised at construction.
 //
 //   Addressing: addr_i is a BANK-LOCAL byte address — the crossbar has already
-//   stripped the bank-select field, so here word = addr_i / WORD_BYTES indexes
-//   directly into this bank's array (capacity N_ROW words, one word per row).
+//   stripped the bank-select field, so here word = addr_i / BYTES_PER_WORD indexes
+//   directly into this bank's array (capacity NUM_ROW words, one word per row).
 //   An access outside that range is a fatal error (SC_REPORT_FATAL).
 //   See doc/specs/crossbar.md "Configuration parameters".
 //
 //   Reset is active-low (rst_ni), matching OBI reset_n directly.
 //
-// Template parameters:
-//   N_ROW      - rows (words) per bank          (default 1024)
-//   WORD_BYTES - bytes per word / OBI data beat (default 4)
+// Template parameters (set from PARAMS macros N_ROW, WORD_BYTES):
+//   NUM_ROW    - rows (words) per bank (default 1024)
+//   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
 // -----------------------------------------------------------------------------
 
 #ifndef BANK_HPP
@@ -42,7 +42,7 @@
 #include <sstream>
 #include <vector>
 
-template <int N_ROW = 1024, int WORD_BYTES = 4>
+template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4>
 SC_MODULE(bank) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
@@ -55,15 +55,15 @@ SC_MODULE(bank) {
     sc_out<bool>     rvalid_o;
     sc_out<uint64_t> rdata_o;
 
-    static constexpr int DEPTH_WORDS = N_ROW;
+    static constexpr int kDepthWords = NUM_ROW;
 
-    static_assert(WORD_BYTES >= 1, "WORD_BYTES must be >= 1");
+    static_assert(BYTES_PER_WORD >= 1, "BYTES_PER_WORD must be >= 1");
 
     std::vector<uint64_t> mem;
 
     static uint64_t apply_be(uint64_t old_w, uint64_t new_w, uint32_t be) {
         uint64_t out = old_w;
-        for (int l = 0; l < WORD_BYTES; ++l) {
+        for (int l = 0; l < BYTES_PER_WORD; ++l) {
             if (be & (1u << l)) {
                 const uint64_t m = static_cast<uint64_t>(0xFF) << (8 * l);
                 out = (out & ~m) | (new_w & m);
@@ -79,16 +79,14 @@ SC_MODULE(bank) {
             return;
         }
 
-        // Sample the request this edge and register the response directly for
-        // the next cycle (1-cycle access latency, one request handled / cycle).
         bool     rv = false;
         uint64_t rd = 0;
         if (req_i.read()) {
-            const uint64_t word = addr_i.read() / WORD_BYTES;
-            if (word >= static_cast<uint64_t>(DEPTH_WORDS)) {
+            const uint64_t word = addr_i.read() / BYTES_PER_WORD;
+            if (word >= static_cast<uint64_t>(kDepthWords)) {
                 std::ostringstream os;
                 os << "OBI access out of range: bank-local word " << word
-                   << " >= DEPTH_WORDS " << DEPTH_WORDS;
+                   << " >= capacity " << kDepthWords;
                 SC_REPORT_FATAL(name(), os.str().c_str());
             }
             if (we_i.read()) {
@@ -104,7 +102,7 @@ SC_MODULE(bank) {
 
     void comb_gnt() { gnt_o.write(req_i.read()); }
 
-    SC_CTOR(bank) : mem(DEPTH_WORDS, 0) {
+    SC_CTOR(bank) : mem(kDepthWords, 0) {
         SC_METHOD(step);
         sensitive << clk_i.pos();
         dont_initialize();

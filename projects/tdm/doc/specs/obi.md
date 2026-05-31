@@ -19,7 +19,7 @@ OBI is a point-to-point, request/grant **manager↔subordinate** protocol. We co
 
 - A request is accepted on the rising `clk` where `req=1 && gnt=1`.
 - The subordinate later raises `rvalid` to signal completion; `rdata` is valid for reads. **There is no `rready`** — the manager is always ready (equivalent to `rready` tied high). A manager treats `rvalid` as "this request is done".
-- **No outstanding / pipelined transactions:** a granted request **holds its connection open until the response closes it**; the next request on that path is issued only afterwards. When an interconnect connects a manager to a subordinate, the connection stays open from grant until the response is delivered, then frees. Responses therefore return over the already-established path — **no transaction IDs, queues, or outstanding-request tracking are needed**.
+- **In-order, pipelined (depth ≤ 2):** phases overlap — a manager may start the **address phase of its next request while the previous request's response phase is still completing**. Transactions stay strictly **in order**, and at most **two** are in flight on a path at once (one being responded, one being requested); there is no deeper queue and no out-of-order or multi-outstanding support. Responses therefore return in order over the established path — **no transaction IDs, queues, or deep tracking are needed** (the subordinate registers one response; the interconnect remembers one owner per subordinate).
 - **Read vs. write is just the `we` bit on the same link**; a given run uses one mode (uniform R/W). 1 word = 32 bits, `be` = 4 bits.
 
 ## Dropped vs. full OBI

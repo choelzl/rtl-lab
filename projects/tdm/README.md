@@ -27,8 +27,8 @@ make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=big \
 
 ## Top-level modules
 
-| Top-level | File | Description |
-| --- | --- | --- |
+| Top-level      | File                                                         | Description                                                                                                                                    |
+| -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `top_crossbar` | [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | DUT: the `N_MGR × N_BANK` crossbar interconnect plus `N_BANK` memory banks. Exposes the manager-side OBI ports; the harness attaches the AGUs. |
 
 DUT submodules: [crossbar.hpp](rtl/systemc/crossbar.hpp) (round-robin per-bank arbiter, word-interleaved routing) and [bank.hpp](rtl/systemc/bank.hpp) (single-port OBI RAM, 1-cycle latency).
@@ -37,20 +37,20 @@ DUT submodules: [crossbar.hpp](rtl/systemc/crossbar.hpp) (round-robin per-bank a
 
 Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults below.
 
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `N_AGU` | number of AGUs (managers) | 2 |
-| `N_REQ` | request ports per AGU | 4 |
-| `N_BANK` | number of memory banks | 8 |
-| `N_ROW` | rows (words) per bank | 1024 |
-| `WORD_BYTES` | bytes per word / OBI data beat | 4 |
+| Parameter    | Meaning                        | Default |
+| ------------ | ------------------------------ | ------- |
+| `N_AGU`      | number of AGUs (managers)      | 2       |
+| `N_REQ`      | request ports per AGU          | 4       |
+| `N_BANK`     | number of memory banks         | 8       |
+| `N_ROW`      | rows (words) per bank          | 1024    |
+| `WORD_BYTES` | bytes per word / OBI data beat | 4       |
 
 `N_MGR = N_AGU · N_REQ` request ports; total capacity `N_BANK · N_ROW · WORD_BYTES` bytes. See [doc/specs/crossbar.md](doc/specs/crossbar.md#configuration-parameters) for the address decode and full semantics.
 
 ## Testbenches
 
-| Testbench | File | Drives |
-| --- | --- | --- |
+| Testbench         | File                                                             | Drives                                                                                                              |
+| ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/agu.hpp), runs to completion, prints statistics. |
 
 **Traces** ([tb/traces/](tb/traces/)): `mem_<i>.log`, one CSV per AGU — `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The sample traces write random data to a set of addresses then read them back.
@@ -67,21 +67,17 @@ The harness reports:
 
 ### How the ideal (conflict-free) cycles are computed
 
-The AGU runs in lock-step **groups** of `N_REQ` requests: it issues all `N_REQ` at once and waits for every response before issuing the next group. With no bank conflict, all `N_REQ` requests of a group hit distinct banks, are granted in the same cycle, and complete together — so a group has a **fixed pipeline latency**:
+The AGU is **pipelined and group-synchronized**: it issues a group of `N_REQ` requests and advances to the next group as soon as all `N_REQ` ports are **granted** — it does *not* wait for the responses, which return one cycle later and overlap the next group's address phase. With no bank conflict every port is granted each cycle, so it issues **one group per cycle** (throughput 1 group/cycle).
 
-```
-L = (address phase) + (1-cycle bank response) = 1 + 1 = 2 cycles
-```
-
-`L` is independent of `N_REQ`/`N_BANK` (all ports are parallel). The first group is issued one cycle after reset (+1 startup). Groups are serial (lock-step), so a single AGU with `G` groups finishes at `L·G + 1 = 2G + 1` (measured exactly: G=2→5, G=4→9, G=8→17).
+A single AGU with `G` groups therefore finishes in `G + 2` cycles: `G` to stream the groups (1/cycle), plus a fixed 2-cycle pipeline fill to drain the last group (issue → grant → response). Measured exactly: G=2→4, G=4→6, G=8→10.
 
 In the conflict-free ideal the AGUs never interfere, so they run fully in parallel and the run ends with the slowest one:
 
 ```
-ideal = L · G_max + 1 = 2 · G_max + 1,   G_a = ceil(len_a / N_REQ),  G_max = max_a G_a
+ideal = G_max + 2,   G_a = ceil(len_a / N_REQ),  G_max = max_a G_a
 ```
 
-Any cycles beyond `ideal` are arbitration stalls — the conflict penalty. (`L` is a property of the module timing; it is a named constant in the harness and must be updated if that timing changes.)
+Any cycles beyond `ideal` are arbitration stalls — the conflict penalty. (The `+2` fill is a property of the module timing; it is a named constant in the harness and must be updated if that timing changes.)
 
 ## Experiments (automation scripts)
 

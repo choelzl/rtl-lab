@@ -4,36 +4,42 @@
 // Description:
 //   Native SystemC Address Generation Unit (AGU) — a non-synthesizable
 //   verification driver for the crossbar DUT (lives under tb/systemc/). It is an
-//   OBI manager with N_REQ request ports that replays a CSV memory trace
+//   OBI manager with NUM_REQ request ports that replays a CSV memory trace
 //   (addr,we,data) and drives the simplified single-channel OBI protocol (see
 //   doc/specs/obi.md):
 //
-//     request  (AGU -> crossbar) : req_o, addr_o, we_o, be_o, wdata_o   [N_REQ]
-//     response (crossbar -> AGU) : gnt_i, rvalid_i, rdata_i             [N_REQ]
+//     request  (AGU -> crossbar) : req_o, addr_o, we_o, be_o, wdata_o   [NUM_REQ]
+//     response (crossbar -> AGU) : gnt_i, rvalid_i, rdata_i             [NUM_REQ]
 //
-//   Operation:
-//     - The trace is consumed in groups of N_REQ rows — one row per port. The
-//       AGU issues the whole group at once, one independent OBI request per
-//       port (addr_o is the GLOBAL byte address from the trace; the crossbar
-//       decodes bank/row).
-//     - Lock-step: the AGU does NOT load/issue the next group until ALL ports
-//       of the current group have completed (their rvalid received). A port
-//       held off by arbitration simply keeps its request asserted until granted.
-//     - Per-port handshake: drive req until gnt (accept), then wait for rvalid.
-//       Address-phase signals are held stable (registered) until granted.
-//     - Writes (we==1) drive the trace's `data` column as wdata, with all byte
+//   Operation (pipelined, group-synchronized):
+//     - The trace is consumed in groups of NUM_REQ rows — one row per port. All
+//       NUM_REQ requests of a group are presented at once (addr_o is the GLOBAL
+//       byte address from the trace; the crossbar decodes bank/row).
+//     - A port keeps its request asserted until granted. The group advances to
+//       the next group as soon as ALL NUM_REQ ports are granted — it does NOT
+//       wait for the responses. With no conflict every port is granted each
+//       cycle, so a new group issues every cycle (throughput 1 group/cycle).
+//       Under conflict the granted ports hold while the stalled ports retry,
+//       and the group advances once all are granted.
+//     - Pipelining stays strictly in order and shallow: the address phase of
+//       the next group overlaps the response phase of the previous one, so at
+//       most two transactions are in flight on a port at once (one being
+//       responded, one being requested) — not real multi-outstanding. Each port
+//       keeps a 1-deep in-flight record so it can log a response that arrives
+//       after it has moved on to the next request.
+//     - Writes (we==1) drive the trace's `data` column as wdata, all byte
 //       enables set; reads (we==0) ignore wdata.
-//     - Every completed access is recorded (cycle, addr, we, data) and, at end
-//       of simulation, dumped to the output log given to the constructor
-//       (e.g. out_N.log) for manual inspection — writes show the value written,
-//       reads the value returned, so read-back can be checked by eye.
-//     - `done_o` is raised once the whole trace has been consumed.
+//     - Every completed access is recorded (cycle, addr, we, data) and dumped at
+//       end of simulation to the output log (out_N.log) for inspection — writes
+//       show the value written, reads the value returned.
+//     - done_o is raised once the whole trace has been consumed (all groups
+//       advanced and all responses collected).
 //
 //   Reset is active-low (rst_ni).
 //
-// Template parameters:
-//   N_REQ      - request ports issued per cycle (group size) (default 4)
-//   WORD_BYTES - bytes per word / OBI data beat              (default 4)
+// Template parameters (set from PARAMS macros N_REQ, WORD_BYTES):
+//   NUM_REQ    - request ports / group size (default 4)
+//   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
 // -----------------------------------------------------------------------------
 
 #ifndef AGU_HPP
@@ -48,38 +54,42 @@
 #include <string>
 #include <vector>
 
-template <int N_REQ = 4, int WORD_BYTES = 4>
+template <int NUM_REQ = 4, int BYTES_PER_WORD = 4>
 SC_MODULE(agu) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
-    sc_out<bool>     req_o[N_REQ];
-    sc_out<uint64_t> addr_o[N_REQ];
-    sc_out<bool>     we_o[N_REQ];
-    sc_out<uint32_t> be_o[N_REQ];
-    sc_out<uint64_t> wdata_o[N_REQ];
-    sc_in<bool>      gnt_i[N_REQ];
-    sc_in<bool>      rvalid_i[N_REQ];
-    sc_in<uint64_t>  rdata_i[N_REQ];
+    sc_out<bool>     req_o[NUM_REQ];
+    sc_out<uint64_t> addr_o[NUM_REQ];
+    sc_out<bool>     we_o[NUM_REQ];
+    sc_out<uint32_t> be_o[NUM_REQ];
+    sc_out<uint64_t> wdata_o[NUM_REQ];
+    sc_in<bool>      gnt_i[NUM_REQ];
+    sc_in<bool>      rvalid_i[NUM_REQ];
+    sc_in<uint64_t>  rdata_i[NUM_REQ];
     sc_out<bool>     done_o;
 
     struct access_t { uint64_t cycle; uint64_t addr; bool we; uint64_t data; };
     std::vector<access_t> log_;
 
-    static constexpr uint32_t BE_FULL =
-        (WORD_BYTES >= 32) ? ~0u : ((1u << WORD_BYTES) - 1);
+    static constexpr uint32_t kBeFull =
+        (BYTES_PER_WORD >= 32) ? ~0u : ((1u << BYTES_PER_WORD) - 1);
 
     std::string                out_path_;
     struct trace_entry_t { uint64_t addr; bool we; uint64_t data; };
     std::vector<trace_entry_t> trace_;
-    std::size_t                next_row_;
+    std::size_t                n_groups_;
+    std::size_t                group_;
     uint64_t                   cycle_;
-    bool                       finished_;
 
-    enum port_state_t { ISSUE, WAITRESP, DONE };
-    port_state_t st_[N_REQ];
-    uint64_t     addr_cur_[N_REQ];
-    bool         we_cur_[N_REQ];
-    uint64_t     wdata_cur_[N_REQ];
+    bool     granted_[NUM_REQ];
+    bool     if_valid_[NUM_REQ];
+    uint64_t if_addr_[NUM_REQ];
+    bool     if_we_[NUM_REQ];
+    uint64_t if_data_[NUM_REQ];
+
+    bool has_row(std::size_t g, int p) const {
+        return g * static_cast<std::size_t>(NUM_REQ) + p < trace_.size();
+    }
 
     static std::string trim(const std::string& s) {
         const std::size_t b = s.find_first_not_of(" \t\r\n");
@@ -112,20 +122,20 @@ SC_MODULE(agu) {
     }
 
     void reset_state() {
-        for (int p = 0; p < N_REQ; ++p) {
+        for (int p = 0; p < NUM_REQ; ++p) {
             req_o[p].write(false);
             addr_o[p].write(0);
             we_o[p].write(false);
             be_o[p].write(0);
             wdata_o[p].write(0);
-            st_[p]        = DONE;
-            addr_cur_[p]  = 0;
-            we_cur_[p]    = false;
-            wdata_cur_[p] = 0;
+            granted_[p]  = false;
+            if_valid_[p] = false;
+            if_addr_[p]  = 0;
+            if_we_[p]    = false;
+            if_data_[p]  = 0;
         }
-        next_row_ = 0;
-        cycle_    = 0;
-        finished_ = false;
+        group_ = 0;
+        cycle_ = 0;
         done_o.write(false);
         log_.clear();
     }
@@ -138,54 +148,56 @@ SC_MODULE(agu) {
 
         ++cycle_;
 
-        for (int p = 0; p < N_REQ; ++p) {
-            if (st_[p] == ISSUE) {
-                if (gnt_i[p].read()) {
-                    req_o[p].write(false);
-                    st_[p] = WAITRESP;
-                }
-            } else if (st_[p] == WAITRESP) {
-                if (rvalid_i[p].read()) {
-                    const uint64_t data = we_cur_[p] ? wdata_cur_[p] : rdata_i[p].read();
-                    access_t rec;
-                    rec.cycle = cycle_;
-                    rec.addr  = addr_cur_[p];
-                    rec.we    = we_cur_[p];
-                    rec.data  = data;
-                    log_.push_back(rec);
-                    st_[p] = DONE;
-                }
+        for (int p = 0; p < NUM_REQ; ++p) {
+            if (if_valid_[p] && rvalid_i[p].read()) {
+                const uint64_t data = if_we_[p] ? if_data_[p] : rdata_i[p].read();
+                access_t rec;
+                rec.cycle = cycle_;
+                rec.addr  = if_addr_[p];
+                rec.we    = if_we_[p];
+                rec.data  = data;
+                log_.push_back(rec);
+                if_valid_[p] = false;
             }
         }
 
-        bool all_done = true;
-        for (int p = 0; p < N_REQ; ++p)
-            if (st_[p] != DONE) { all_done = false; break; }
+        for (int p = 0; p < NUM_REQ; ++p) {
+            if (req_o[p].read() && gnt_i[p].read()) {
+                const trace_entry_t e = trace_[group_ * NUM_REQ + p];
+                granted_[p]  = true;
+                if_valid_[p] = true;
+                if_addr_[p]  = e.addr;
+                if_we_[p]    = e.we;
+                if_data_[p]  = e.we ? e.data : 0;
+            }
+        }
 
-        if (all_done && !finished_) {
-            if (next_row_ >= trace_.size()) {
-                finished_ = true;
-                done_o.write(true);
+        if (group_ < n_groups_) {
+            bool group_granted = true;
+            for (int p = 0; p < NUM_REQ; ++p)
+                if (has_row(group_, p) && !granted_[p]) { group_granted = false; break; }
+            if (group_granted) {
+                ++group_;
+                for (int p = 0; p < NUM_REQ; ++p) granted_[p] = false;
+            }
+        }
+
+        for (int p = 0; p < NUM_REQ; ++p) {
+            if (group_ < n_groups_ && has_row(group_, p) && !granted_[p]) {
+                const trace_entry_t e = trace_[group_ * NUM_REQ + p];
+                addr_o[p].write(e.addr);
+                we_o[p].write(e.we);
+                be_o[p].write(kBeFull);
+                wdata_o[p].write(e.we ? e.data : 0);
+                req_o[p].write(true);
             } else {
-                for (int p = 0; p < N_REQ; ++p) {
-                    if (next_row_ < trace_.size()) {
-                        const trace_entry_t e = trace_[next_row_++];
-                        addr_cur_[p]  = e.addr;
-                        we_cur_[p]    = e.we;
-                        wdata_cur_[p] = e.we ? e.data : 0;
-                        addr_o[p].write(e.addr);
-                        we_o[p].write(e.we);
-                        be_o[p].write(BE_FULL);
-                        wdata_o[p].write(wdata_cur_[p]);
-                        req_o[p].write(true);
-                        st_[p] = ISSUE;
-                    } else {
-                        req_o[p].write(false);
-                        st_[p] = DONE;
-                    }
-                }
+                req_o[p].write(false);
             }
         }
+
+        bool inflight = false;
+        for (int p = 0; p < NUM_REQ; ++p) if (if_valid_[p]) { inflight = true; break; }
+        done_o.write(group_ >= n_groups_ && !inflight);
     }
 
     void end_of_simulation() override {
@@ -208,10 +220,10 @@ SC_MODULE(agu) {
         : sc_module(nm), out_path_(out_path) {
         load_trace(trace_path);
 
-        for (int p = 0; p < N_REQ; ++p) st_[p] = DONE;
-        next_row_ = 0;
+        n_groups_ = (trace_.size() + NUM_REQ - 1) / NUM_REQ;
+        group_    = 0;
         cycle_    = 0;
-        finished_ = false;
+        for (int p = 0; p < NUM_REQ; ++p) { granted_[p] = false; if_valid_[p] = false; }
 
         SC_METHOD(step);
         sensitive << clk_i.pos();

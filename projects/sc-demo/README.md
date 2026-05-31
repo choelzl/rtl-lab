@@ -40,9 +40,9 @@ The driver feeds 1000 random signed operand pairs to the top; inside it the mult
 
 ## Top-level modules
 
-| Top level   | Harness                          | Description                                                                        |
-| ----------- | -------------------------------- | ---------------------------------------------------------------------------------- |
-| `top_mul_s` | `tb/systemc/tb_top_mul_s.cpp`    | SystemC design top: signed multiplier feeding a SystemC accumulator; sum self-checked |
+| Top level   | Harness                       | Description                                                                           |
+| ----------- | ----------------------------- | ------------------------------------------------------------------------------------- |
+| `top_mul_s` | `tb/systemc/tb_top_mul_s.cpp` | SystemC design top: signed multiplier feeding a SystemC accumulator; sum self-checked |
 
 ## RTL elaboration parameters
 
@@ -64,8 +64,8 @@ Widths are still bound at build time (SystemC port widths are compile-time), and
 
 Testbench settings that are not DUT parameters are passed as compile-time defines via `TB_DEFS` (forwarded to the harness as `-D`), again with defaults baked into the cpp:
 
-| Define    | Default | Description                  |
-| --------- | ------- | ---------------------------- |
+| Define    | Default | Description                   |
+| --------- | ------- | ----------------------------- |
 | `N_TESTS` | `1000`  | Number of random test vectors |
 | `SEED`    | `1`     | PRNG seed for the stimulus    |
 
