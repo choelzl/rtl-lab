@@ -17,8 +17,8 @@ Testbench  (tb_top_tdm.cpp)
 └── DUT  (top_tdm.cpp)
     ├── Buffer[0] (buf.hpp)        ◀── AGU[0]   (4 words)
     ├── Buffer[1] (buf.hpp)        ◀── AGU[1]   (4 words)
-    ├── OBI Mux (obi_mux.hpp)      ◀── Buffer[0]/Buffer[1] (8 words each)   [OBI request mux]
-    ├── Arbiter – Round Robin (arbiter.hpp)   ── drives obi_mux / tdm_mux / buf_demux
+    ├── OBI Mux (x_obi_mux.hpp)      ◀── Buffer[0]/Buffer[1] (8 words each)   [OBI request mux]
+    ├── Arbiter – Round Robin (arbiter.hpp)   ── drives x_obi_mux / tdm_mux / buf_demux
     ├── TDM Mux (tdm_mux.hpp)      ◀── AGU[0]/AGU[1]                        [access-pattern config mux]
     ├── TDM Mapping Function (tdm.hpp)         ── emits Mapping Vector (16 elements)
     ├── Conflicts Checker (conf_check.hpp)
@@ -36,7 +36,7 @@ Testbench  (tb_top_tdm.cpp)
 | AGU[0], AGU[1]        | `tdm_agu.hpp`    | Address Generation Units (OBI managers). The TDM design's **own** driver — currently a copy of the crossbar's `cros_agu.hpp`, to be specialized. Each replays its CSV trace, issuing a group of `N_REQ = 4` words per cycle. In the TDM path the group is carried forward as a **base address** (the words of a group share one base), so the mapping function works from one base address per group rather than four independent ports.       |
 | DUT                   | `top_tdm.cpp`    | Device under test: the full TDM datapath plus the eight banks. Exposes the manager-side OBI ports the harness attaches the AGUs to (mirrors `top_crossbar.cpp`).                                                                                                                                                                                                  |
 | Buffer[0], Buffer[1]  | `buf.hpp`        | One **8-deep** buffer per AGU. The AGU pushes 4 words/cycle; the buffer **accumulates two cycles' worth (8 words)** and drains them in the single slot the arbiter grants this AGU, so the AGU never stalls during the cycle its slot belongs to the *other* AGU. Tracks which words remain outstanding after a conflict and **re-requests them in the AGU's next slot**. |
-| OBI Mux               | `obi_mux.hpp`    | Selects the active buffer's **8-word** OBI request (one base address) and forwards it to the mapping function; controlled by the arbiter. Output: **8 words** over OBI.                                                                                                                                                                                            |
+| OBI Mux               | `x_obi_mux.hpp`    | Selects the active buffer's **8-word** OBI request (one base address) and forwards it to the mapping function; controlled by the arbiter. Output: **8 words** over OBI.                                                                                                                                                                                            |
 | Arbiter – Round Robin | `arbiter.hpp`    | Grants a **time slot to one AGU per cycle**, alternating round-robin between the two AGUs (so each AGU is served every 2 cycles). Drives the OBI mux, the TDM-config mux, and the buffer demux (the latter steered by the slot whose response is now returning).                                                                                                    |
 | TDM Mux               | `tdm_mux.hpp`    | A **separate** mux (not an OBI path): selects the `AGU[0]`/`AGU[1]` **access-pattern configuration** that parametrizes the mapping function (stride/mode/descriptor — see *Open*); controlled by the arbiter.                                                                                                                                                      |
 | TDM Mapping Function  | `tdm.hpp`        | Core scheduler. From the group's **base address** (OBI mux) and its **access pattern** (TDM mux), computes where each of the 8 words lands and emits the **Mapping Vector (16 elements)**: `{BID0, RID0, … , BID7, RID7}` (bank ID + row ID per word). It places words **to minimize same-bank collisions**; this is **not** the crossbar's fixed word-interleave. **Internals are a black box for now.** |
@@ -46,7 +46,7 @@ Testbench  (tb_top_tdm.cpp)
 
 ## Interfaces & data flow
 
-- **Protocol:** simplified single-channel OBI on the request/response links — see [obi.md](obi.md). 32-bit (1 word) at each bank.
+- **Protocol:** the AGU/Buffer/Mux/TDM datapath uses the multi-word [x-OBI](x_obi.md) extension (groups of `N` words; base OBI is in [obi.md](obi.md)); each bank is a single-word [OBI](obi.md) subordinate. 32-bit (1 word) per bank access.
 - **Word counts on the diagram:** AGU → Buffer = **4 words**; Buffer → OBI Mux = **8 words**; OBI Mux → TDM Mapping Function = **8 words**; TDM Mapping Function → Conflicts Checker = **Mapping Vector (16 elements)** = 8 × `{bank ID, row ID}`; Conflicts Checker → Banks = **1 word** each (up to 8 banks); Banks → Buffer Demux → Buffers = **per-word completion ack** (+ `rdata` on reads).
 
 End-to-end pipeline (per slot, one AGU served per cycle, alternating):
@@ -71,13 +71,13 @@ So a conflicting group's fetch is **split across two of that AGU's slots**. The 
 
 - **Sizing — aligned to the crossbar baseline / diagram:** 8 banks (`N_BANK = 8`), 4 words/AGU/cycle (`N_REQ = 4`), buffer drains **8 words/slot**, Mapping Vector **16 elements**. ✔
 - **Buffer:** depth 8; accumulates two cycles' production (8 words) to cover the AGU's skipped slot; tracks outstanding words after a conflict and re-requests them next slot. ✔
-- **Arbiter:** round-robin, one AGU per cycle (each served every 2 cycles); drives `obi_mux`, `tdm_mux`, `buf_demux`. ✔
+- **Arbiter:** round-robin, one AGU per cycle (each served every 2 cycles); drives `x_obi_mux`, `tdm_mux`, `buf_demux`. ✔
 - **Mapping Vector (16 elements):** 8 words × `{bank ID, row ID}`. ✔
 - **Bank placement:** decided by the TDM mapping function to minimize collisions — **not** fixed word-interleave (that is the crossbar's scheme). ✔
 - **Conflict source:** residual same-bank collisions among a slot's 8 words after the mapping (intra-slot); extensible later. ✔
 - **Conflict penalty:** 2 cycles per deferral (split fetch across two of the AGU's slots), scaling with worst-case bank over-subscription. ✔
 - **Response/feedback:** **Buffer Demux** (`buf_demux.hpp`) acks each buffer which of its words actually read/written this slot, so it can wait on and re-request the conflicted ones. ✔
-- **Muxes — three distinct modules:** `obi_mux.hpp` (OBI request path), `tdm_mux.hpp` (access-pattern config), `buf_demux.hpp` (per-word completion ack back to buffers). ✔
+- **Muxes — three distinct modules:** `x_obi_mux.hpp` (x-OBI request + response mux/demux), `tdm_mux.hpp` (access-pattern config), `buf_demux.hpp` (per-word completion ack back to buffers). ✔
 - **Metric:** % delay penalty from conflicts vs. ideal conflict-free execution. ✔
 - **Banks / traces:** banks shared with the crossbar (`bank.hpp`, single-port 1-cycle OBI RAM); trace format identical (CSV `addr,we,data`). **AGU:** the TDM design's own `tdm_agu.hpp` (starts as a copy of `cros_agu.hpp`, to be specialized for the single-base-address group). ✔
 

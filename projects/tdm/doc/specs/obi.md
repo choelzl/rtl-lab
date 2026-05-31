@@ -2,6 +2,8 @@
 
 A reduced **single-channel** subset of the Open Bus Interface (OBI) v1.6.0 — see [OBI-v1.6.0.pdf](../protocols/OBI-v1.6.0.pdf) — shared by all designs in this project (the [crossbar](crossbar.md) and the [TDM](tdm.md) interconnects).
 
+> **Multi-word variant.** The TDM design's internal datapath carries a **group of `N` words** per channel; that extension (per-word handshake, scalar base address) is documented separately in [x_obi.md](x_obi.md).
+
 OBI is a point-to-point, request/grant **manager↔subordinate** protocol. We collapse it to a **single channel** carrying both request and response, using only these signals (plus the global `clk` / `reset_n`):
 
 | Signal   | Dir         | Purpose                                                                            |
