@@ -5,3 +5,5 @@
 /projects/*/sim
 /projects/*/imp
 __pycache__
+.direnv
+.envrc

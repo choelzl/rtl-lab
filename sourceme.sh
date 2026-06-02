@@ -1,40 +1,22 @@
 #!/bin/bash
 
 # -----------------------------------------------------------------------------
-# Author: Simone Machetti
+# Author: Simone Machetti, Cedric Hoelzl
+# Description: This script sets up environment variables for EDA tools used in the RTL lab.
 # -----------------------------------------------------------------------------
 
-# Verilator
-export VERILATOR_HOME=/my_tools/verilator
-export PATH=$VERILATOR_HOME/bin:$PATH
+# CODE_HOME: parent of this repo (derived from the script's own location).
+# Pre-set it in your .envrc to override.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export CODE_HOME="${CODE_HOME:-$(dirname "$_SCRIPT_DIR")}"
 
-# Yosys
-export YOSYS_HOME=/my_tools/yosys
-export PATH=$YOSYS_HOME/bin:$PATH
-
-# Yosys Slang
-export YOSYS_SLANG_HOME=/my_tools/yosys-slang
-export PATH=$YOSYS_SLANG_HOME/bin:$PATH
-
-# OpenSTA
-export OPENSTA_HOME=/my_tools/opensta
-export PATH=$OPENSTA_HOME/bin:$PATH
-
-# OpenROAD
-export OPENROAD_HOME=/my_tools/openroad
-export PATH=$OPENROAD_HOME/bin:$PATH
-
-# SystemC
-export SYSTEMC_HOME=/my_tools/systemc
-export SYSTEMC_INCLUDE=$SYSTEMC_HOME/include
-if [ -d "$SYSTEMC_HOME/lib64" ]; then
-    export SYSTEMC_LIBDIR=$SYSTEMC_HOME/lib64
-else
-    export SYSTEMC_LIBDIR=$SYSTEMC_HOME/lib
+# When sourced outside a direnv shell (e.g. by a coding agent or CI), bootstrap the
+# .envrc so Nix-provided tool paths (SystemC, Verilator, …) are available.
+if [ -z "${DIRENV_DIR:-}" ] && command -v direnv &>/dev/null && [ -f "$_SCRIPT_DIR/.envrc" ]; then
+    eval "$(cd "$_SCRIPT_DIR" && direnv export bash 2>/dev/null)"
+else 
+    source $HOME/.bashrc
 fi
 
-# Code
-export CODE_HOME=/home/simone/work/my_code
+unset _SCRIPT_DIR
 
-# Tools
-export TOOLS_HOME=/home/simone/work/my_tools
