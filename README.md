@@ -10,6 +10,49 @@ Projects:
 
 This README documents the shared EDA flow: the `make` targets, their parameters, and the typical pipeline. For a project's designs, top-levels, RTL parameters, and experiments, see that project's own README.
 
+## Repository structure
+
+```
+.
+├── .claude/
+│   └── skills/           # Claude Code skills (add-project, add-arch)
+├── scripts/              # Project-agnostic EDA flow scripts
+│   ├── sim/              # Pre-synthesis simulation flow
+│   │   └── run.sh        # Verilator compile and run script
+│   ├── sim-sc/           # SystemC simulation flow (Verilator --sc)
+│   │   └── run.sh        # Verilator --sc compile and run script
+│   ├── syn/              # Logic synthesis flow
+│   │   ├── run.tcl       # Yosys top-level synthesis script (ASAP7)
+│   │   ├── compile.tcl   # RTL read and elaboration script
+│   │   └── abc.tcl       # ABC technology mapping script
+│   ├── post-syn-sta/     # Post-synthesis static timing analysis flow
+│   │   └── run.tcl       # OpenSTA timing analysis script
+│   ├── post-syn-sim/     # Post-synthesis gate-level simulation flow
+│   │   ├── run.sh        # Verilator compile and run script
+│   │   └── filelist.f    # Gate-level netlist and cell library filelist
+│   └── post-syn-dpa/     # Post-synthesis dynamic power analysis flow
+│       └── run.tcl       # OpenSTA power analysis script
+├── projects/             # One subfolder per RTL project
+│   └── <name>/           # An RTL project (see its README.md)
+│       ├── README.md     # Project-specific documentation
+│       ├── rtl/          # SystemVerilog source modules
+│       ├── tb/           # Verilator SV testbenches
+│       ├── scripts/      # Project-specific scripts
+│       │   └── flow/     # End-to-end automation (one subfolder per experiment)
+│       ├── doc/          # Documentation and results
+│       │   ├── diagrams/ # Block diagrams
+│       │   ├── formulas/ # Mathematical formulas
+│       │   ├── charts/   # Comparison charts (<exp>/<chart>.png, generated)
+│       │   └── data/     # Extracted results (<exp>/results.xlsx, generated)
+│       ├── sim/          # Simulation outputs (generated)
+│       └── imp/          # Synthesis/STA/DPA outputs (generated)
+├── Makefile              # Build system entry point (PROJECT=<name> selects project)
+├── sourceme.sh           # Environment setup (sources ~/.bashrc, derives RTL_LAB_HOME)
+└── CLAUDE.md             # AI assistant guidance for this repository
+```
+
+All `make` targets require `PROJECT=<name>` to select the project they operate on (there is no default; targets fail fast if it is unset or names a project that is not in your checkout). The flow scripts in `scripts/` resolve project-specific paths through the `SEL_PROJECT` env var exported by the Makefile.
+
 ## Cloning — selecting projects
 
 This is a multi-project repo, but you don't have to download every project. A **partial clone** (`--filter=blob:none`) skips file contents until you check them out, and **sparse-checkout** controls which `projects/<name>/` directories land in your working tree. The shared tooling — the top-level files — is always included. Pick one of the options below; consult the `Projects:` list above for the `<name>` of each project.
@@ -72,72 +115,6 @@ git sparse-checkout disable                     # materialize all projects (swit
 
 The `Projects:` list at the top of this README is the catalog of everything that exists — including projects you have not checked out — and is the one shared file every new project edits, so it is where collaborators coordinate.
 
-## Quick start
-
-```bash
-source sourceme.sh
-
-# Pre-synthesis simulation
-make sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name>
-
-# Logic synthesis
-make syn PROJECT=<project> TOP_LEVEL=<top_level> OUT_DIR=<name>
-
-# Post-synthesis gate-level simulation
-make post-syn-sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
-
-# Post-synthesis static timing analysis
-make post-syn-sta PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
-
-# Post-synthesis dynamic power analysis
-make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name> VCD_DIR=<name>
-```
-
-`PROJECT` and `TOP_LEVEL` are required on every command — there is no default. See `projects/<project>/README.md` for the available `TOP_LEVEL` values and runnable examples.
-
-## Repository structure
-
-```
-.
-├── .claude/
-│   └── skills/           # Claude Code skills (add-project, add-arch)
-├── scripts/              # Project-agnostic EDA flow scripts
-│   ├── sim/              # Pre-synthesis simulation flow
-│   │   └── run.sh        # Verilator compile and run script
-│   ├── sim-sc/           # SystemC simulation flow (Verilator --sc)
-│   │   └── run.sh        # Verilator --sc compile and run script
-│   ├── syn/              # Logic synthesis flow
-│   │   ├── run.tcl       # Yosys top-level synthesis script (ASAP7)
-│   │   ├── compile.tcl   # RTL read and elaboration script
-│   │   └── abc.tcl       # ABC technology mapping script
-│   ├── post-syn-sta/     # Post-synthesis static timing analysis flow
-│   │   └── run.tcl       # OpenSTA timing analysis script
-│   ├── post-syn-sim/     # Post-synthesis gate-level simulation flow
-│   │   ├── run.sh        # Verilator compile and run script
-│   │   └── filelist.f    # Gate-level netlist and cell library filelist
-│   └── post-syn-dpa/     # Post-synthesis dynamic power analysis flow
-│       └── run.tcl       # OpenSTA power analysis script
-├── projects/             # One subfolder per RTL project
-│   └── <name>/           # An RTL project (see its README.md)
-│       ├── README.md     # Project-specific documentation
-│       ├── rtl/          # SystemVerilog source modules (rtl/systemc/ holds native SystemC design modules)
-│       ├── tb/           # Verilator SV testbenches (tb/systemc/ holds SystemC harnesses)
-│       ├── scripts/      # Project-specific scripts
-│       │   └── flow/     # End-to-end automation (one subfolder per experiment)
-│       ├── doc/          # Documentation and results
-│       │   ├── diagrams/ # Block diagrams
-│       │   ├── formulas/ # Mathematical formulas
-│       │   ├── charts/   # Comparison charts (<exp>/<chart>.png, generated)
-│       │   └── data/     # Extracted results (<exp>/results.xlsx, generated)
-│       ├── sim/          # Simulation outputs (generated)
-│       └── imp/          # Synthesis/STA/DPA outputs (generated)
-├── Makefile              # Build system entry point (PROJECT=<name> selects project)
-├── sourceme.sh           # Environment setup (sources ~/.bashrc, derives RTL_LAB_HOME)
-└── CLAUDE.md             # AI assistant guidance for this repository
-```
-
-All `make` targets require `PROJECT=<name>` to select the project they operate on (there is no default; targets fail fast if it is unset or names a project that is not in your checkout). The flow scripts in `scripts/` resolve project-specific paths through the `SEL_PROJECT` env var exported by the Makefile.
-
 ## Environment setup
 
 Tool and PDK install locations are **per-user**: you declare them in your `~/.bashrc`, and `sourceme.sh` sources that file and derives everything else. Run this once per shell before any `make` command:
@@ -177,6 +154,29 @@ Notes:
 - `ASAP7_HOME` defaults to `$PDK_HOME/OpenROAD-flow-scripts/flow/platforms/asap7`; export it in `~/.bashrc` to target a different platform/technology.
 
 The SystemC simulation mode (`make sim-sc`) additionally requires the Accellera SystemC library installed at `$SYSTEMC_HOME`, built with the same C++ standard Verilator compiles the model with (C++17). The other flows do not depend on it.
+
+## Quick start
+
+```bash
+source sourceme.sh
+
+# Pre-synthesis simulation
+make sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name>
+
+# Logic synthesis
+make syn PROJECT=<project> TOP_LEVEL=<top_level> OUT_DIR=<name>
+
+# Post-synthesis gate-level simulation
+make post-syn-sim PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
+
+# Post-synthesis static timing analysis
+make post-syn-sta PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name>
+
+# Post-synthesis dynamic power analysis
+make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name> VCD_DIR=<name>
+```
+
+`PROJECT` and `TOP_LEVEL` are required on every command — there is no default. See `projects/<project>/README.md` for the available `TOP_LEVEL` values and runnable examples.
 
 ## Typical workflow
 
