@@ -61,9 +61,9 @@ int sc_main(int, char*[]) {
     static const int kNumMgr = N_AGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
-    const char* ch = std::getenv("CODE_HOME");
+    const char* ch = std::getenv("RTL_LAB_HOME");
     const std::string proj_dir =
-        ch ? (std::string(ch) + "/rtl-lab/projects/" + project)
+        ch ? (std::string(ch) + "/projects/" + project)
            : ("projects/" + project);
     const std::string trace_dir = proj_dir + "/tb/traces";
     const char* od = std::getenv("SEL_OUT_DIR");

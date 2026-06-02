@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-PROJ="${CODE_HOME}/rtl-lab/projects/${SEL_PROJECT}"
+PROJ="${RTL_LAB_HOME}/projects/${SEL_PROJECT}"
 SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 
 g_flags=()

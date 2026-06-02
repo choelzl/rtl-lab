@@ -13,7 +13,7 @@ TB_DEFS        ?= none
 KEEP_HIERARCHY ?= 0
 EXP            ?=
 
-PROJ_DIR := $(CODE_HOME)/rtl-lab/projects/$(PROJECT)
+PROJ_DIR := $(RTL_LAB_HOME)/projects/$(PROJECT)
 
 export SEL_PROJECT        := $(PROJECT)
 export SEL_TOP_LEVEL      := $(TOP_LEVEL)
@@ -31,7 +31,7 @@ _check_project:
 	@if [ -z "$(PROJECT)" ]; then \
 		echo "error: PROJECT is not set. Pass PROJECT=<name>, e.g. 'make $(MAKECMDGOALS) PROJECT=ai-core'."; \
 		echo "       Projects currently in your checkout:"; \
-		ls -1 $(CODE_HOME)/rtl-lab/projects 2>/dev/null | sed 's/^/         - /' || true; \
+		ls -1 $(RTL_LAB_HOME)/projects 2>/dev/null | sed 's/^/         - /' || true; \
 		exit 1; \
 	fi; \
 	if [ ! -d "$(PROJ_DIR)" ]; then \
@@ -45,55 +45,55 @@ init: _check_project
 	mkdir -p $(PROJ_DIR)/imp
 
 sim: _check_project clean-sim
-	cd $(CODE_HOME)/rtl-lab/scripts/sim && \
+	cd $(RTL_LAB_HOME)/scripts/sim && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/output && \
 	./run.sh && \
-	if [ -f $(CODE_HOME)/rtl-lab/scripts/sim/activity.vcd ]; then \
-	mv $(CODE_HOME)/rtl-lab/scripts/sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
+	if [ -f $(RTL_LAB_HOME)/scripts/sim/activity.vcd ]; then \
+	mv $(RTL_LAB_HOME)/scripts/sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
 sim-sc: _check_project clean-sim
-	cd $(CODE_HOME)/rtl-lab/scripts/sim-sc && \
+	cd $(RTL_LAB_HOME)/scripts/sim-sc && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/output && \
 	./run.sh && \
-	if [ -f $(CODE_HOME)/rtl-lab/scripts/sim-sc/activity.vcd ]; then \
-	mv $(CODE_HOME)/rtl-lab/scripts/sim-sc/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
+	if [ -f $(RTL_LAB_HOME)/scripts/sim-sc/activity.vcd ]; then \
+	mv $(RTL_LAB_HOME)/scripts/sim-sc/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
 syn: _check_project clean-imp
-	cd $(CODE_HOME)/rtl-lab/scripts/syn && \
+	cd $(RTL_LAB_HOME)/scripts/syn && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
-	yosys -l $(PROJ_DIR)/imp/$(OUT_DIR)/output/yosys.log -c $(CODE_HOME)/rtl-lab/scripts/syn/run.tcl
+	yosys -l $(PROJ_DIR)/imp/$(OUT_DIR)/output/yosys.log -c $(RTL_LAB_HOME)/scripts/syn/run.tcl
 
 post-syn-sta: _check_project clean-imp
-	cd $(CODE_HOME)/rtl-lab/scripts/post-syn-sta && \
+	cd $(RTL_LAB_HOME)/scripts/post-syn-sta && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
-	sta -no_splash -exit $(CODE_HOME)/rtl-lab/scripts/post-syn-sta/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
+	sta -no_splash -exit $(RTL_LAB_HOME)/scripts/post-syn-sta/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
 
 post-syn-sim: _check_project clean-sim
-	cd $(CODE_HOME)/rtl-lab/scripts/post-syn-sim && \
+	cd $(RTL_LAB_HOME)/scripts/post-syn-sim && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/output && \
 	./run.sh && \
-	if [ -f $(CODE_HOME)/rtl-lab/scripts/post-syn-sim/activity.vcd ]; then \
-	mv $(CODE_HOME)/rtl-lab/scripts/post-syn-sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
+	if [ -f $(RTL_LAB_HOME)/scripts/post-syn-sim/activity.vcd ]; then \
+	mv $(RTL_LAB_HOME)/scripts/post-syn-sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
 post-syn-dpa: _check_project clean-imp
-	cd $(CODE_HOME)/rtl-lab/scripts/post-syn-dpa && \
+	cd $(RTL_LAB_HOME)/scripts/post-syn-dpa && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
-	sta -no_splash -exit $(CODE_HOME)/rtl-lab/scripts/post-syn-dpa/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
+	sta -no_splash -exit $(RTL_LAB_HOME)/scripts/post-syn-dpa/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
 
 flow-list: _check_project
 	@echo "Experiments in project '$(PROJECT)':"

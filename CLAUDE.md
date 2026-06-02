@@ -33,4 +33,4 @@ Always source the environment script before running any command:
 source sourceme.sh
 ```
 
-This sets `CODE_HOME` (the parent of this repo) and the paths for Verilator, Yosys, Yosys-Slang, OpenSTA, OpenROAD, and SystemC (`SYSTEMC_HOME`/`SYSTEMC_INCLUDE`/`SYSTEMC_LIBDIR`, used only by `make sim-sc`). Paths inside the flow are resolved as `$CODE_HOME/rtl-lab/projects/$PROJECT/...`.
+This derives `RTL_LAB_HOME` (the repo root) from the script's own location, then sources your `~/.bashrc` — where you export the tool install roots: `EDA_HOME` (puts Verilator, Yosys, Yosys-Slang, OpenSTA, and SystemC on `PATH`) and `PDK_HOME`. It then derives `SYSTEMC_INCLUDE`/`SYSTEMC_LIBDIR` (used only by `make sim-sc`) and `ASAP7_HOME` (from `PDK_HOME`). Paths inside the flow are resolved as `$RTL_LAB_HOME/projects/$PROJECT/...`.
