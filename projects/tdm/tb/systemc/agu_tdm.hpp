@@ -45,8 +45,8 @@
 //   BYTES_PER_WORD - bytes per word / address step (default 4)
 // -----------------------------------------------------------------------------
 
-#ifndef TDM_AGU_HPP
-#define TDM_AGU_HPP
+#ifndef AGU_TDM_HPP
+#define AGU_TDM_HPP
 
 #include <systemc.h>
 
@@ -59,7 +59,7 @@
 #include <vector>
 
 template <int NUM_REQ = 4, int BYTES_PER_WORD = 4>
-SC_MODULE(tdm_agu) {
+SC_MODULE(agu_tdm) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
     sc_out<bool>     req_o[NUM_REQ];
@@ -270,7 +270,7 @@ SC_MODULE(tdm_agu) {
         }
     }
 
-    tdm_agu(sc_core::sc_module_name nm, const std::string& trace_path,
+    agu_tdm(sc_core::sc_module_name nm, const std::string& trace_path,
             const std::string& out_path = std::string())
         : sc_module(nm), out_path_(out_path), p_num_banks_(32), p_bank_width_(4),
           p_R_(4), p_C_(4), p_L_(8), p_store_mode_(0) {

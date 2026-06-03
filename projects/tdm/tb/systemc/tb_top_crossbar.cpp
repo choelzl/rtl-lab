@@ -42,7 +42,7 @@
 #include <string>
 
 #include "top_crossbar.hpp"
-#include "cros_agu.hpp"
+#include "agu_crossbar.hpp"
 
 #ifndef N_AGU
 #define N_AGU 2
@@ -51,7 +51,7 @@
 #define N_REQ 4
 #endif
 #ifndef N_BANK
-#define N_BANK 8
+#define N_BANK 32
 #endif
 #ifndef N_ROW
 #define N_ROW 1024
@@ -103,12 +103,12 @@ int sc_main(int, char*[]) {
         dut.m_rdata_o[m](m_rdata[m]);
     }
 
-    cros_agu<N_REQ, WORD_BYTES>* agus[N_AGU];
+    agu_crossbar<N_REQ, WORD_BYTES>* agus[N_AGU];
     for (int a = 0; a < N_AGU; ++a) {
         const std::string nm    = "agu" + std::to_string(a);
         const std::string trace = trace_dir + "/mem_" + std::to_string(a) + ".log";
         const std::string out   = out_dir + "/out_" + std::to_string(a) + ".log";
-        agus[a] = new cros_agu<N_REQ, WORD_BYTES>(nm.c_str(), trace, out);
+        agus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), trace, out);
         agus[a]->clk_i(clk);
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);

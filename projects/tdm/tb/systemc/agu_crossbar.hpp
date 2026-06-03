@@ -4,7 +4,7 @@
 // Description:
 //   Native SystemC Address Generation Unit (AGU) for the CROSSBAR design — a
 //   non-synthesizable verification driver for the crossbar DUT (lives under
-//   tb/systemc/). The TDM design has its own driver, tdm_agu.hpp. It is an
+//   tb/systemc/). The TDM design has its own driver, agu_tdm.hpp. It is an
 //   OBI manager with NUM_REQ request ports that replays a CSV memory trace
 //   (addr,we,data) and drives the simplified single-channel OBI protocol (see
 //   doc/specs/obi.md). The trace's first non-empty line is metadata (the shared
@@ -45,8 +45,8 @@
 //   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
 // -----------------------------------------------------------------------------
 
-#ifndef CROS_AGU_HPP
-#define CROS_AGU_HPP
+#ifndef AGU_CROSSBAR_HPP
+#define AGU_CROSSBAR_HPP
 
 #include <systemc.h>
 
@@ -58,7 +58,7 @@
 #include <vector>
 
 template <int NUM_REQ = 4, int BYTES_PER_WORD = 4>
-SC_MODULE(cros_agu) {
+SC_MODULE(agu_crossbar) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
     sc_out<bool>     req_o[NUM_REQ];
@@ -220,7 +220,7 @@ SC_MODULE(cros_agu) {
         }
     }
 
-    cros_agu(sc_core::sc_module_name nm, const std::string& trace_path,
+    agu_crossbar(sc_core::sc_module_name nm, const std::string& trace_path,
         const std::string& out_path = std::string())
         : sc_module(nm), out_path_(out_path) {
         load_trace(trace_path);

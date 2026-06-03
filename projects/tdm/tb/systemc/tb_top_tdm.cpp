@@ -28,7 +28,7 @@
 #include <string>
 
 #include "top_tdm.hpp"
-#include "tdm_agu.hpp"
+#include "agu_tdm.hpp"
 
 #ifndef N_AGU
 #define N_AGU 2
@@ -99,12 +99,12 @@ int sc_main(int, char*[]) {
         dut.a_l_i[a](m_l[a]);         dut.a_store_mode_i[a](m_store_mode[a]);
     }
 
-    tdm_agu<N_REQ, WORD_BYTES>* agus[N_AGU];
+    agu_tdm<N_REQ, WORD_BYTES>* agus[N_AGU];
     for (int a = 0; a < N_AGU; ++a) {
         const std::string nm    = "agu" + std::to_string(a);
         const std::string trace = trace_dir + "/mem_" + std::to_string(a) + ".log";
         const std::string out   = out_dir + "/out_" + std::to_string(a) + ".log";
-        agus[a] = new tdm_agu<N_REQ, WORD_BYTES>(nm.c_str(), trace, out);
+        agus[a] = new agu_tdm<N_REQ, WORD_BYTES>(nm.c_str(), trace, out);
         agus[a]->clk_i(clk);
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);
