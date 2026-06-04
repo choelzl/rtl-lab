@@ -5,7 +5,7 @@ description: Scaffold a new empty RTL project under projects/<name>/ so it can b
 
 # Add a new project
 
-Create an empty project skeleton under `projects/<name>/` that plugs into the shared EDA flow. The user populates `rtl/` and `tb/` afterwards (optionally via the `add-arch` skill).
+Create an empty project skeleton under `projects/<name>/` that plugs into the shared EDA flow. The user populates `rtl/` and `tb/` afterwards.
 
 ## 1. Resolve the project name
 
@@ -56,7 +56,7 @@ This creates `projects/<name>/sim/` and `projects/<name>/imp/`. These stay gitig
 
 ## 4. Write a stub project README
 
-Create `projects/<name>/README.md` with this skeleton (fill the title; leave the tables/sections as placeholders for the user or the `add-arch` skill to populate):
+Create `projects/<name>/README.md` with this skeleton (fill the title; leave the tables/sections as placeholders for the user to populate):
 
 ```markdown
 # <Name>
@@ -107,6 +107,6 @@ Add a bullet for the new project to the `Projects:` list in the root `README.md`
 Tell the user:
 - The skeleton that was created.
 - That `sim/` and `imp/` are generated and gitignored.
-- To add RTL modules to `projects/<name>/rtl/` and testbenches to `projects/<name>/tb/`, then build with `make <target> PROJECT=<name> ...`, or use the `add-arch` skill to integrate a new top-level.
+- To add RTL modules to `projects/<name>/rtl/` and testbenches to `projects/<name>/tb/`, then build with `make <target> PROJECT=<name> ...`.
 
 Do not commit anything unless the user asks.

@@ -15,7 +15,7 @@ This README documents the shared EDA flow: the `make` targets, their parameters,
 ```
 .
 ├── .claude/
-│   └── skills/           # Claude Code skills (add-project, add-arch)
+│   └── skills/           # Claude Code skills (add-project)
 ├── scripts/              # Project-agnostic EDA flow scripts
 │   ├── sim/              # Pre-synthesis simulation flow
 │   │   └── run.sh        # Verilator compile and run script
@@ -190,14 +190,13 @@ The make targets form a pipeline where earlier steps produce artifacts consumed 
 
 ## Skills
 
-This repository ships [Claude Code](https://claude.com/claude-code) skills under [.claude/skills/](.claude/skills/). They automate the repetitive parts of working in this sandbox — scaffolding a project and integrating a new design through the full EDA flow. Invoke a skill by name (e.g. `/add-project my-accel`) in a Claude Code session.
+This repository ships [Claude Code](https://claude.com/claude-code) skills under [.claude/skills/](.claude/skills/). They automate the repetitive parts of working in this sandbox — scaffolding a project so it plugs into the full EDA flow. Invoke a skill by name (e.g. `/add-project my-accel`) in a Claude Code session.
 
 | Skill                                                | Purpose                                                                                                                                                                                                                               |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`add-project`](.claude/skills/add-project/SKILL.md) | Scaffold a new empty project under `projects/<name>/`: creates the `rtl/`, `tb/`, `scripts/flow/`, and `doc/` skeleton, runs `make init`, writes a stub project README, and registers the project in this README's `Projects:` list.  |
-| [`add-arch`](.claude/skills/add-arch/SKILL.md)       | Integrate a new top-level architecture into an existing project: review its RTL, act on `CLAUDE:` code comments, write the testbench, run the full sim → syn → post-syn flow, wire it into the project's automation, and update docs. |
 
-A typical greenfield flow is `/add-project` to create the skeleton, then populate `rtl/` and `tb/` (or hand the new top-level to `/add-arch`) to verify, characterize, and document it.
+A typical greenfield flow is `/add-project` to create the skeleton, then populate `rtl/` and `tb/` to verify, characterize, and document the design.
 
 ## Commands
 
