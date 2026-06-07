@@ -21,8 +21,8 @@
 //     - delay penalty : 100 * (actual - ideal) / ideal  [%].
 //
 //   Paths are resolved from the environment so the binary works under the flow
-//   (CWD = scripts/sim-sc) and standalone: input traces from
-//   $RTL_LAB_HOME/projects/$SEL_PROJECT/tb/traces/mem_<i>.log, output logs
+//   (CWD = scripts/sim-sc) and standalone: input stimuli from
+//   $RTL_LAB_HOME/projects/$SEL_PROJECT/tb/stimuli/mem_<i>.log, output logs
 //   into the run's output dir ($.../sim/$SEL_OUT_DIR/output/out_<i>.log).
 //
 //   Configuration via -D (the flow's PARAMS mechanism), defaults below. The
@@ -79,10 +79,11 @@ int sc_main(int, char*[]) {
     const std::string proj_dir =
         ch ? (std::string(ch) + "/projects/" + project)
            : ("projects/" + project);
-    const std::string test_name = env_or("SEL_TEST", "");
-    const std::string trace_dir = test_name.empty()
-        ? proj_dir + "/tb/traces"
-        : proj_dir + "/tb/traces/" + test_name;
+    const std::string in_dir = env_or("SEL_IN_DIR", "");
+    const std::string stim_dir =
+        in_dir.empty()                        ? proj_dir + "/tb/stimuli/sample"
+      : in_dir.find('/') != std::string::npos ? in_dir
+      :                                         proj_dir + "/tb/stimuli/" + in_dir;
     const char* od = std::getenv("SEL_OUT_DIR");
     const std::string out_dir =
         od ? (proj_dir + "/sim/" + od + "/output") : ".";
@@ -108,10 +109,10 @@ int sc_main(int, char*[]) {
 
     agu_crossbar<N_REQ, WORD_BYTES>* agus[N_AGU];
     for (int a = 0; a < N_AGU; ++a) {
-        const std::string nm    = "agu" + std::to_string(a);
-        const std::string trace = trace_dir + "/mem_" + std::to_string(a) + ".log";
-        const std::string out   = out_dir + "/out_" + std::to_string(a) + ".log";
-        agus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), trace, out);
+        const std::string nm   = "agu" + std::to_string(a);
+        const std::string stim = stim_dir + "/mem_" + std::to_string(a) + ".log";
+        const std::string out  = out_dir + "/out_" + std::to_string(a) + ".log";
+        agus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), stim, out);
         agus[a]->clk_i(clk);
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);

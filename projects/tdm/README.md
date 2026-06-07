@@ -16,7 +16,7 @@ source ../../sourceme.sh   # or: source sourceme.sh from the repository root
 make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=run0
 ```
 
-This builds [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp), runs it on the traces in [tb/traces/](tb/traces/), and prints timing statistics. `tdm` is selected with `PROJECT=tdm` on every `make` command.
+This builds [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp), runs it on the stimuli in [tb/stimuli/](tb/stimuli/), and prints timing statistics. `tdm` is selected with `PROJECT=tdm` on every `make` command.
 
 Override the design size with `PARAMS` (each becomes a `-D`):
 
@@ -49,11 +49,11 @@ Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults bel
 
 ## Testbenches
 
-| Testbench         | File                                                             | Drives                                                                                                                   |
-| ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Testbench         | File                                                             | Drives                                                                                                                       |
+| ----------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/agu_crossbar.hpp), runs to completion, prints statistics. |
 
-**Traces** ([tb/traces/](tb/traces/)): `mem_<i>.log`, one CSV per AGU. The **first line** carries the TDM mapping parameters (`num_banks,bank_width,C,R,L,store_mode`; consumed by the TDM AGU, skipped by the crossbar AGU); the access rows follow as `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The sample traces write random data to a set of addresses then read them back.
+**Stimuli** ([tb/stimuli/](tb/stimuli/)): `mem_<i>.log`, one CSV per AGU. The **first line** carries the TDM mapping parameters (`num_banks,bank_width,C,R,L,store_mode`; consumed by the TDM AGU, skipped by the crossbar AGU); the access rows follow as `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The `sample` stimuli write random data to a set of addresses then read them back. The stimuli folder is selected with `IN_DIR`: a bare name (e.g. `IN_DIR=sample`) is a subfolder of `tb/stimuli/`, while a value containing a `/` (e.g. `IN_DIR=/data/my_stim` or `IN_DIR=./cases/run1`) is used as a filesystem path (relative paths resolve from where you run `make`). Unset, it defaults to `tb/stimuli/sample`.
 
 **Outputs** (in `sim/<OUT_DIR>/output/`): `out_<i>.log` (per-AGU completed accesses `cycle,addr,we,data` for inspection — a read should return the value of its matching write), plus `compile.log` / `run.log`.
 

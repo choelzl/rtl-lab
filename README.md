@@ -125,11 +125,11 @@ source sourceme.sh
 
 `sourceme.sh` sets `RTL_LAB_HOME` from its own location, sources `~/.bashrc`, and then derives `SYSTEMC_INCLUDE`, `SYSTEMC_LIBDIR` (from `SYSTEMC_HOME`) and `ASAP7_HOME` (from `PDK_HOME`). You therefore export only the install **roots** in your `~/.bashrc`:
 
-| Variable | Purpose |
-| --- | --- |
-| `EDA_HOME` | Root holding the EDA tool installs. |
-| `VERILATOR_HOME`, `YOSYS_HOME`, `YOSYS_SLANG_HOME`, `OPENSTA_HOME`, `SYSTEMC_HOME` | Per-tool install dirs (conventionally `$EDA_HOME/<tool>`); each tool's `bin/` must be on `PATH`. |
-| `PDK_HOME` | Root holding the PDK trees — the ASAP7 standard-cell liberty (`.lib`) and verilog (`.v`) consumed by synthesis, STA, DPA and post-synthesis simulation. |
+| Variable                                                                           | Purpose                                                                                                                                                 |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EDA_HOME`                                                                         | Root holding the EDA tool installs.                                                                                                                     |
+| `VERILATOR_HOME`, `YOSYS_HOME`, `YOSYS_SLANG_HOME`, `OPENSTA_HOME`, `SYSTEMC_HOME` | Per-tool install dirs (conventionally `$EDA_HOME/<tool>`); each tool's `bin/` must be on `PATH`.                                                        |
+| `PDK_HOME`                                                                         | Root holding the PDK trees — the ASAP7 standard-cell liberty (`.lib`) and verilog (`.v`) consumed by synthesis, STA, DPA and post-synthesis simulation. |
 
 A minimal `~/.bashrc` block (adjust the two roots to your machine):
 
@@ -192,9 +192,9 @@ The make targets form a pipeline where earlier steps produce artifacts consumed 
 
 This repository ships [Claude Code](https://claude.com/claude-code) skills under [.claude/skills/](.claude/skills/). They automate the repetitive parts of working in this sandbox — scaffolding a project so it plugs into the full EDA flow. Invoke a skill by name (e.g. `/add-project my-accel`) in a Claude Code session.
 
-| Skill                                                | Purpose                                                                                                                                                                                                                               |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`add-project`](.claude/skills/add-project/SKILL.md) | Scaffold a new empty project under `projects/<name>/`: creates the `rtl/`, `tb/`, `scripts/flow/`, and `doc/` skeleton, runs `make init`, writes a stub project README, and registers the project in this README's `Projects:` list.  |
+| Skill                                                | Purpose                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`add-project`](.claude/skills/add-project/SKILL.md) | Scaffold a new empty project under `projects/<name>/`: creates the `rtl/`, `tb/`, `scripts/flow/`, and `doc/` skeleton, runs `make init`, writes a stub project README, and registers the project in this README's `Projects:` list. |
 
 A typical greenfield flow is `/add-project` to create the skeleton, then populate `rtl/` and `tb/` to verify, characterize, and document the design.
 
@@ -222,20 +222,29 @@ Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd` w
 A second, parallel simulation mode for designs that involve SystemC. The top is C++ `sc_main` (not an SV testbench), so it can instantiate both Verilated SV modules and native SystemC modules and simulate them together under the SystemC kernel. Simulation only — SystemC is never synthesized, and the `make sim`/`syn`/post-syn flows are unaffected.
 
 ```bash
-make sim-sc TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=VAL ..."] [TB_DEFS="KEY=VAL ..."]
+make sim-sc TOP_LEVEL=<top_level> CLK_PERIOD_NS=<val> OUT_DIR=<name> [PARAMS="KEY=VAL ..."] [TB_DEFS="KEY=VAL ..."] [IN_DIR=<dir>]
 ```
 
-| Parameter       | Required | Description                                                                                                                       |
-| --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `TOP_LEVEL`     | yes      | SystemC design top the harness instantiates (`rtl/systemc/<top_level>.hpp`); the SV DUT(s) it wraps are verilated from `rtl/*.sv` |
-| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)                                                                       |
-| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                                                                                  |
-| `PARAMS`        | no       | RTL elaboration parameters; passed to the verilated SV DUT(s) as `-G` and mirrored to the harness as `-D` (kept in sync)          |
-| `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D`                                                        |
+| Parameter       | Required | Description                                                                                                                                                                                                                                                                                              |
+| --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TOP_LEVEL`     | yes      | SystemC design top the harness instantiates (`rtl/systemc/<top_level>.hpp`); the SV DUT(s) it wraps are verilated from `rtl/*.sv`                                                                                                                                                                        |
+| `CLK_PERIOD_NS` | yes      | Clock period in nanoseconds (drives the harness `sc_clock`)                                                                                                                                                                                                                                              |
+| `OUT_DIR`       | yes      | Output subdirectory under `sim/`                                                                                                                                                                                                                                                                         |
+| `PARAMS`        | no       | RTL elaboration parameters; passed to the verilated SV DUT(s) as `-G` and mirrored to the harness as `-D` (kept in sync)                                                                                                                                                                                 |
+| `TB_DEFS`       | no       | Harness-only compile-time defines (e.g. `N_TESTS`, `SEED`), passed as `-D`                                                                                                                                                                                                                               |
+| `IN_DIR`        | no       | Input stimuli directory, exported as `SEL_IN_DIR` for the harness to read at run time. A bare name is a subfolder of the project's `tb/stimuli/`; a value containing `/` is a filesystem path. Unset → the harness's built-in default. Interpreted by the testbench, so the mapping is project-specific. |
 
 Like `make sim`, `TOP_LEVEL` names the **design top** — here a SystemC `SC_MODULE` at `projects/<PROJECT>/rtl/systemc/<top_level>.hpp` — and the matching harness that instantiates it is `projects/<PROJECT>/tb/systemc/tb_<top_level>.cpp` (which defines `sc_main`). The harness wires the design top to the `driver` stimulus; the design top in turn wraps the Verilated SV DUT(s), which Verilator compiles directly from `projects/<PROJECT>/rtl/*.sv` (picking the SV top itself — no separate parameter). Other native SystemC design modules live alongside the top under `rtl/systemc/`, and both `rtl/systemc/` and `tb/systemc/` are on the harness include path.
 
 Requires the SystemC library (see Environment setup). Outputs go to `projects/<PROJECT>/sim/<OUT_DIR>/`, including an `activity.vcd`. The harness reads `PARAMS`/`TB_DEFS` as compile-time defines with in-file defaults, so it needs no hand-editing; widths must keep the DUT's ports within the SystemC port type the harness binds (Verilator's `uint32_t` for ≤32-bit ports).
+
+**Stimuli selection (`IN_DIR`).** The harness reads its input stimuli from the directory named by `IN_DIR`, exported to the simulation as the `SEL_IN_DIR` environment variable. The Makefile resolves it by shape:
+
+- a value **containing a `/`** is a **filesystem path** and is resolved to absolute — relative paths resolve from the directory you run `make` in, *not* the flow's internal working dir (e.g. `IN_DIR=./cases/run1` or `IN_DIR=/data/my_stim`);
+- a **bare name** (no `/`) is passed through verbatim for the testbench to interpret — by convention a **subfolder of the project's `tb/stimuli/`** (e.g. `IN_DIR=sample` → `tb/stimuli/sample`);
+- **unset**, the harness falls back to its own built-in default.
+
+The value is consumed by the C++ testbench (not the flow scripts), so the bare-name convention and the default are project-specific — see the project README. This makes the same harness runnable against the bundled stimuli, a named test set, or an arbitrary location on disk without editing code.
 
 `PARAMS`/`TB_DEFS` arrive as ALL-CAPS `-D` config macros (e.g. `N_BANK`, `WORD_BYTES`). Name native SystemC module template parameters in ALL-CAPS too, but **distinct from those macros** — counts as `NUM_*` (e.g. `NUM_BANK`), other dimensions spelled out (e.g. `BYTES_PER_WORD`) — and pass the macros as positional template arguments. Sharing a name between a parameter and its knob macro lets a `PARAMS=...` override rewrite the template declaration and breaks the build.
 
@@ -331,14 +340,15 @@ make clean-all                # remove all sim/ and imp/ directories
 
 ### Make-level parameters reference
 
-| Parameter        | Make targets                                       | Values                          | Description                                                       |
-| ---------------- | -------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `PROJECT`        | all                                                | project name                    | Required. Project under `projects/` to operate on (no default)    |
-| `TOP_LEVEL`      | sim, syn, post-syn-sta, post-syn-sim, post-syn-dpa | module name                     | RTL module to build/simulate; can be any module in the hierarchy  |
-| `CLK_PERIOD_NS`  | sim, post-syn-sta, post-syn-sim, post-syn-dpa      | e.g. `1.0`                      | Clock period in nanoseconds                                       |
-| `OUT_DIR`        | all except clean-all                               | directory name                  | Output subdirectory under `sim/` or `imp/`                        |
-| `NETLIST_DIR`    | post-syn-sta, post-syn-sim, post-syn-dpa           | e.g. `top_bas_4x8_syn`          | Directory containing the synthesized netlist from `make syn`      |
-| `VCD_DIR`        | post-syn-dpa                                       | e.g. `top_bas_4x8_post-syn-sim` | Directory containing `activity.vcd` from `make post-syn-sim`      |
-| `PARAMS`         | sim, syn, post-syn-sim                             | `"KEY=VAL ..."`                 | Project-specific RTL elaboration parameters                       |
-| `KEEP_HIERARCHY` | syn, post-syn-dpa                                  | `0` (default), `1`              | Preserve module boundaries in the netlist                         |
-| `EXP`            | flow-run, flow-ext, flow-gen                       | experiment name                 | Required. Experiment subfolder under `scripts/flow/` (no default) |
+| Parameter        | Make targets                                       | Values                          | Description                                                                                                                                      |
+| ---------------- | -------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PROJECT`        | all                                                | project name                    | Required. Project under `projects/` to operate on (no default)                                                                                   |
+| `TOP_LEVEL`      | sim, syn, post-syn-sta, post-syn-sim, post-syn-dpa | module name                     | RTL module to build/simulate; can be any module in the hierarchy                                                                                 |
+| `CLK_PERIOD_NS`  | sim, post-syn-sta, post-syn-sim, post-syn-dpa      | e.g. `1.0`                      | Clock period in nanoseconds                                                                                                                      |
+| `OUT_DIR`        | all except clean-all                               | directory name                  | Output subdirectory under `sim/` or `imp/`                                                                                                       |
+| `NETLIST_DIR`    | post-syn-sta, post-syn-sim, post-syn-dpa           | e.g. `top_bas_4x8_syn`          | Directory containing the synthesized netlist from `make syn`                                                                                     |
+| `VCD_DIR`        | post-syn-dpa                                       | e.g. `top_bas_4x8_post-syn-sim` | Directory containing `activity.vcd` from `make post-syn-sim`                                                                                     |
+| `PARAMS`         | sim, syn, post-syn-sim                             | `"KEY=VAL ..."`                 | Project-specific RTL elaboration parameters                                                                                                      |
+| `IN_DIR`         | sim-sc                                             | dir name or path                | Input stimuli dir, exported as `SEL_IN_DIR`. Bare name → subfolder of `tb/stimuli/`; value with `/` → filesystem path; unset → testbench default |
+| `KEEP_HIERARCHY` | syn, post-syn-dpa                                  | `0` (default), `1`              | Preserve module boundaries in the netlist                                                                                                        |
+| `EXP`            | flow-run, flow-ext, flow-gen                       | experiment name                 | Required. Experiment subfolder under `scripts/flow/` (no default)                                                                                |

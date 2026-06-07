@@ -11,7 +11,7 @@ CLK_PERIOD_NS  ?= 1
 PARAMS         ?= none
 TB_DEFS        ?= none
 KEEP_HIERARCHY ?= 0
-TEST           ?=
+IN_DIR         ?=
 EXP            ?=
 
 PROJ_DIR := $(RTL_LAB_HOME)/projects/$(PROJECT)
@@ -25,7 +25,7 @@ export SEL_CLK_PERIOD_NS  := $(CLK_PERIOD_NS)
 export SEL_PARAMS         := $(PARAMS)
 export SEL_TB_DEFS        := $(TB_DEFS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
-export SEL_TEST           := $(TEST)
+export SEL_IN_DIR         := $(if $(findstring /,$(IN_DIR)),$(abspath $(IN_DIR)),$(IN_DIR))
 
 .PHONY: _check_project _check_exp init flow-list flow-run flow-ext flow-gen
 

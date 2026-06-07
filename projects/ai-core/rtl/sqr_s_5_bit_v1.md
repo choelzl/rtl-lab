@@ -25,13 +25,13 @@ in_i  = { s, a3, a2, a1, a0 }
 
 The lower five output bits depend only on the raw lower bits `a3..a0`, with no contribution from `s`. The formulas are algebraically identical to those in `sqr_u_4_bit` applied to the raw (unmodified) bits:
 
-| Bit       | Expression                                    |
-|-----------|-----------------------------------------------|
-| `out_o[0]` | `a0`                                         |
-| `out_o[1]` | `0`                                          |
-| `out_o[2]` | `a1 & ~a0`                                   |
-| `out_o[3]` | `a0 & (a1 ^ a2)`                             |
-| `out_o[4]` | `(a0 & (a2 ^ a3)) \| (a2 & ~a1 & ~a0)`      |
+| Bit        | Expression                             |
+| ---------- | -------------------------------------- |
+| `out_o[0]` | `a0`                                   |
+| `out_o[1]` | `0`                                    |
+| `out_o[2]` | `a1 & ~a0`                             |
+| `out_o[3]` | `a0 & (a1 ^ a2)`                       |
+| `out_o[4]` | `(a0 & (a2 ^ a3)) \| (a2 & ~a1 & ~a0)` |
 
 The sign-independence of these bits holds because the 2's-complement negation of `{a3,a2,a1,a0}` produces the same lower five bits of the square as the original unsigned value. The `s`-dependent correction terms cancel algebraically when expanded across all minterms.
 
@@ -102,16 +102,16 @@ out_o[8] = s & ~a3 & ~a2 & ~a1 & ~a0
 
 ## Truth table (selected entries)
 
-| `in_i` (decimal) | `in_i` (binary) | `out_o` (decimal) | `out_o` (binary)  |
-|------------------:|:----------------|------------------:|:------------------|
-|  15               | 0\_1111          |   225             | 0\_1110\_0001     |
-|  10               | 0\_1010          |   100             | 0\_0110\_0100     |
-|   1               | 0\_0001          |     1             | 0\_0000\_0001     |
-|   0               | 0\_0000          |     0             | 0\_0000\_0000     |
-|  −1               | 1\_1111          |     1             | 0\_0000\_0001     |
-| −10               | 1\_0110          |   100             | 0\_0110\_0100     |
-| −15               | 1\_0001          |   225             | 0\_1110\_0001     |
-| −16               | 1\_0000          |   256             | 1\_0000\_0000     |
+| `in_i` (decimal) | `in_i` (binary) | `out_o` (decimal) | `out_o` (binary) |
+| ---------------: | --------------- | ----------------: | ---------------- |
+|               15 | 0\_1111         |               225 | 0\_1110\_0001    |
+|               10 | 0\_1010         |               100 | 0\_0110\_0100    |
+|                1 | 0\_0001         |                 1 | 0\_0000\_0001    |
+|                0 | 0\_0000         |                 0 | 0\_0000\_0000    |
+|               −1 | 1\_1111         |                 1 | 0\_0000\_0001    |
+|              −10 | 1\_0110         |               100 | 0\_0110\_0100    |
+|              −15 | 1\_0001         |               225 | 0\_1110\_0001    |
+|              −16 | 1\_0000         |               256 | 1\_0000\_0000    |
 
 ## Comparison with sqr_s_5_bit_v0
 
