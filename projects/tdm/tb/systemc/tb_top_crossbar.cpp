@@ -79,7 +79,10 @@ int sc_main(int, char*[]) {
     const std::string proj_dir =
         ch ? (std::string(ch) + "/projects/" + project)
            : ("projects/" + project);
-    const std::string trace_dir = proj_dir + "/tb/traces";
+    const std::string test_name = env_or("SEL_TEST", "");
+    const std::string trace_dir = test_name.empty()
+        ? proj_dir + "/tb/traces"
+        : proj_dir + "/tb/traces/" + test_name;
     const char* od = std::getenv("SEL_OUT_DIR");
     const std::string out_dir =
         od ? (proj_dir + "/sim/" + od + "/output") : ".";
