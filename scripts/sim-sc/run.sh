@@ -34,7 +34,7 @@ if [ "${SEL_TB_DEFS}" != "none" ]; then
 fi
 
 shopt -s nullglob
-rtl_files=("${PROJ}"/rtl/*.sv)
+rtl_files=("${PROJ}"/rtl/*.sv "${PROJ}"/rtl/sv/*.sv)
 shopt -u nullglob
 
 if [ "${#rtl_files[@]}" -gt 0 ]; then
@@ -51,6 +51,8 @@ if [ "${#rtl_files[@]}" -gt 0 ]; then
         -CFLAGS "${cflags}" \
         "${g_flags[@]}" \
         -I"${PROJ}/rtl" \
+        -I"${PROJ}/rtl/sv" \
+        -I"${PROJ}/rtl/sv/lib" \
         "${rtl_files[@]}" \
         "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
         -Mdir "${SIM}/build/obj_dir" \
