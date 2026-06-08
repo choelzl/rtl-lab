@@ -2,26 +2,18 @@
 // Author: Cedric Hölzl
 //
 // Description:
-//   Single-port OBI subordinate memory bank. One OBI beat transfers one full
-//   row (WORDS_PER_ROW words); the OBI interface must therefore be instantiated
-//   with DATA_W = WORDS_PER_ROW * BYTES_PER_WORD * 8.
+//   Single-port OBI subordinate memory bank.
 //
-//   obi.gnt is combinational (follows obi.req). 1-cycle access latency.
-//   Active-low reset (rst_ni). Byte-enable writes across the full row.
-//   Out-of-range row index triggers $fatal (simulation only).
+//   Ports use obi_pkg::obi_req_t / obi_resp_t (fixed 32-bit addr/data, 4-bit be).
+//   obi_resp_o.gnt is combinational (follows obi_req_i.req). 1-cycle read latency.
+//   obi_req_i.addr is a BANK-LOCAL byte address; the bank-select bits are stripped
+//   by the upstream crossbar. Row decode: row = addr / (WORDS_PER_ROW * BYTES_PER_WORD).
+//   Out-of-range row access triggers $fatal (simulation only).
 //
-//   obi.addr is a BANK-LOCAL byte address — the bank-select field has already
-//   been stripped by the upstream interconnect.
-//   Row decode: row = addr / (WORDS_PER_ROW * BYTES_PER_WORD).
-//
-// Parameters (mapped from PARAMS macros via the instantiating top-level):
-//   NUM_ROW        — depth in rows              (maps from N_ROW,    default 1024)
-//   WORDS_PER_ROW  — words per row              (maps from N_REQ,    default 4)
-//   BYTES_PER_WORD — bytes per data word         (maps from WORD_BYTES, default 4)
-//
-//   The instantiating module must set:
-//     obi_if #(.DATA_W(WORDS_PER_ROW * BYTES_PER_WORD * 8)) obi_inst (...);
-//   A mismatch is caught by an elaboration-time assertion.
+// Parameters:
+//   NUM_ROW        — number of rows (depth)
+//   WORDS_PER_ROW  — words per row; must satisfy WORDS_PER_ROW * BYTES_PER_WORD * 8 == 32
+//   BYTES_PER_WORD — bytes per word; must satisfy WORDS_PER_ROW * BYTES_PER_WORD == 4
 // -----------------------------------------------------------------------------
 
 `ifndef BANK_SV
@@ -34,57 +26,56 @@ module bank #(
     parameter int WORDS_PER_ROW  = 4,
     parameter int BYTES_PER_WORD = 4
 ) (
-    input  logic   clk_i,
-    input  logic   rst_ni,
-    obi_if.sub     obi
+    input  logic                clk_i,
+    input  logic                rst_ni,
+    input  obi_pkg::obi_req_t   obi_req_i,
+    output obi_pkg::obi_resp_t  obi_resp_o
 );
 
-    localparam int ADDR_W = $bits(obi.addr);
-    localparam int DATA_W = $bits(obi.wdata);  // actual interface data width
-    localparam int BE_W   = $bits(obi.be);
+    localparam int ADDR_W = $bits(obi_req_i.addr);
+    localparam int DATA_W = $bits(obi_req_i.wdata);
+    localparam int BE_W   = $bits(obi_req_i.be);
 
     initial begin
         if (DATA_W != WORDS_PER_ROW * BYTES_PER_WORD * 8)
-            $fatal(1, "bank: obi DATA_W (%0d) != WORDS_PER_ROW*BYTES_PER_WORD*8 (%0d)",
+            $fatal(1, "bank: DATA_W (%0d) != WORDS_PER_ROW*BYTES_PER_WORD*8 (%0d)",
                    DATA_W, WORDS_PER_ROW * BYTES_PER_WORD * 8);
         if (BE_W != WORDS_PER_ROW * BYTES_PER_WORD)
-            $fatal(1, "bank: obi BE_W (%0d) != WORDS_PER_ROW*BYTES_PER_WORD (%0d)",
+            $fatal(1, "bank: BE_W (%0d) != WORDS_PER_ROW*BYTES_PER_WORD (%0d)",
                    BE_W, WORDS_PER_ROW * BYTES_PER_WORD);
         if (ADDR_W < $clog2(NUM_ROW * WORDS_PER_ROW * BYTES_PER_WORD))
-            $fatal(1, "bank: obi ADDR_W (%0d) too narrow for bank size (need >= %0d bits for %0d bytes)",
+            $fatal(1, "bank: ADDR_W (%0d) too narrow for bank size (need >= %0d bits for %0d bytes)",
                    ADDR_W, $clog2(NUM_ROW * WORDS_PER_ROW * BYTES_PER_WORD),
                    NUM_ROW * WORDS_PER_ROW * BYTES_PER_WORD);
     end
 
     logic [DATA_W-1:0] mem [0:NUM_ROW-1];
 
-    // Row index from bank-local byte address
     logic [ADDR_W-1:0] row_idx;
-    assign row_idx = obi.addr / ADDR_W'(WORDS_PER_ROW * BYTES_PER_WORD);
+    assign row_idx = obi_req_i.addr / ADDR_W'(WORDS_PER_ROW * BYTES_PER_WORD);
 
-    // Combinational grant — bank never back-pressures; contention resolved upstream
-    assign obi.gnt = obi.req;
+    assign obi_resp_o.gnt = obi_req_i.req;
 
     always_ff @(posedge clk_i) begin
         if (!rst_ni) begin
-            obi.rvalid <= 1'b0;
-            obi.rdata  <= '0;
+            obi_resp_o.rvalid <= 1'b0;
+            obi_resp_o.rdata  <= '0;
         end else begin
-            obi.rvalid <= obi.req;
-            obi.rdata  <= '0;
-            if (obi.req) begin
+            obi_resp_o.rvalid <= obi_req_i.req;
+            obi_resp_o.rdata  <= '0;
+            if (obi_req_i.req) begin
                 // synthesis translate_off
                 if (row_idx >= ADDR_W'(NUM_ROW))
-                    $fatal(1, "bank: OBI access out of range: row %0d >= capacity %0d",
+                    $fatal(1, "bank: access out of range: row %0d >= capacity %0d",
                            row_idx, NUM_ROW);
                 // synthesis translate_on
-                if (obi.we) begin
+                if (obi_req_i.we) begin
                     for (int b = 0; b < BE_W; b++) begin
-                        if (obi.be[b])
-                            mem[row_idx][8*b +: 8] <= obi.wdata[8*b +: 8];
+                        if (obi_req_i.be[b])
+                            mem[row_idx][8*b +: 8] <= obi_req_i.wdata[8*b +: 8];
                     end
                 end else begin
-                    obi.rdata <= mem[row_idx];
+                    obi_resp_o.rdata <= mem[row_idx];
                 end
             end
         end
