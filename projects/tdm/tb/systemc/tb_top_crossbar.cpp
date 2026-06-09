@@ -41,11 +41,15 @@
 #include <cstdlib>
 #include <string>
 
+#ifdef USE_SV_DUT
+#include "top_crossbar_sv.hpp"
+#else
 #include "top_crossbar.hpp"
+#endif
 #include "agu_crossbar.hpp"
 
 #ifndef N_AGU
-#define N_AGU 2
+#define N_AGU 8
 #endif
 #ifndef N_REQ
 #define N_REQ 4
@@ -64,64 +68,79 @@
 #endif
 
 static const int kCyclesPerGroup = 1;
-static const int kPipeFill       = 2;
+static const int kPipeFill = 2;
 
-static std::string env_or(const char* key, const std::string& dflt) {
-    const char* v = std::getenv(key);
+static std::string env_or(const char *key, const std::string &dflt)
+{
+    const char *v = std::getenv(key);
     return v ? std::string(v) : dflt;
 }
 
-int sc_main(int, char*[]) {
+int sc_main(int, char *[])
+{
     static const int kNumMgr = N_AGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
-    const char* ch = std::getenv("RTL_LAB_HOME");
+    const char *ch = std::getenv("RTL_LAB_HOME");
     const std::string proj_dir =
         ch ? (std::string(ch) + "/projects/" + project)
            : ("projects/" + project);
     const std::string in_dir = env_or("SEL_IN_DIR", "");
     const std::string stim_dir =
-        in_dir.empty()                        ? proj_dir + "/tb/stimuli/sample"
-      : in_dir.find('/') != std::string::npos ? in_dir
-      :                                         proj_dir + "/tb/stimuli/" + in_dir;
-    const char* od = std::getenv("SEL_OUT_DIR");
+        in_dir.empty()                          ? proj_dir + "/tb/stimuli/sample"
+        : in_dir.find('/') != std::string::npos ? in_dir
+                                                : proj_dir + "/tb/stimuli/" + in_dir;
+    const char *od = std::getenv("SEL_OUT_DIR");
     const std::string out_dir =
         od ? (proj_dir + "/sim/" + od + "/output") : ".";
 
     sc_clock clk("clk", CLK_PERIOD_NS, SC_NS);
     sc_signal<bool> rst_ni;
 
-    sc_signal<bool>     m_req[kNumMgr], m_we[kNumMgr], m_gnt[kNumMgr], m_rvalid[kNumMgr];
+    sc_signal<bool> m_req[kNumMgr], m_we[kNumMgr], m_gnt[kNumMgr], m_rvalid[kNumMgr];
     sc_signal<uint64_t> m_addr[kNumMgr], m_wdata[kNumMgr], m_rdata[kNumMgr];
     sc_signal<uint32_t> m_be[kNumMgr];
-    sc_signal<bool>     done[N_AGU];
+    sc_signal<bool> done[N_AGU];
 
+#ifdef USE_SV_DUT
+    top_crossbar_sv<N_AGU * N_REQ, N_BANK, N_ROW> dut("dut");
+#else
     top_crossbar<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
+#endif
     dut.clk_i(clk);
     dut.rst_ni(rst_ni);
-    for (int m = 0; m < kNumMgr; ++m) {
-        dut.m_req_i[m](m_req[m]);   dut.m_addr_i[m](m_addr[m]);
-        dut.m_we_i[m](m_we[m]);     dut.m_be_i[m](m_be[m]);
+    for (int m = 0; m < kNumMgr; ++m)
+    {
+        dut.m_req_i[m](m_req[m]);
+        dut.m_addr_i[m](m_addr[m]);
+        dut.m_we_i[m](m_we[m]);
+        dut.m_be_i[m](m_be[m]);
         dut.m_wdata_i[m](m_wdata[m]);
-        dut.m_gnt_o[m](m_gnt[m]);   dut.m_rvalid_o[m](m_rvalid[m]);
+        dut.m_gnt_o[m](m_gnt[m]);
+        dut.m_rvalid_o[m](m_rvalid[m]);
         dut.m_rdata_o[m](m_rdata[m]);
     }
 
-    agu_crossbar<N_REQ, WORD_BYTES>* agus[N_AGU];
-    for (int a = 0; a < N_AGU; ++a) {
-        const std::string nm   = "agu" + std::to_string(a);
+    agu_crossbar<N_REQ, WORD_BYTES> *agus[N_AGU];
+    for (int a = 0; a < N_AGU; ++a)
+    {
+        const std::string nm = "agu" + std::to_string(a);
         const std::string stim = stim_dir + "/mem_" + std::to_string(a) + ".log";
-        const std::string out  = out_dir + "/out_" + std::to_string(a) + ".log";
+        const std::string out = out_dir + "/out_" + std::to_string(a) + ".log";
         agus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), stim, out);
         agus[a]->clk_i(clk);
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);
-        for (int p = 0; p < N_REQ; ++p) {
+        for (int p = 0; p < N_REQ; ++p)
+        {
             const int m = a * N_REQ + p;
-            agus[a]->req_o[p](m_req[m]);     agus[a]->addr_o[p](m_addr[m]);
-            agus[a]->we_o[p](m_we[m]);       agus[a]->be_o[p](m_be[m]);
+            agus[a]->req_o[p](m_req[m]);
+            agus[a]->addr_o[p](m_addr[m]);
+            agus[a]->we_o[p](m_we[m]);
+            agus[a]->be_o[p](m_be[m]);
             agus[a]->wdata_o[p](m_wdata[m]);
-            agus[a]->gnt_i[p](m_gnt[m]);     agus[a]->rvalid_i[p](m_rvalid[m]);
+            agus[a]->gnt_i[p](m_gnt[m]);
+            agus[a]->rvalid_i[p](m_rvalid[m]);
             agus[a]->rdata_i[p](m_rdata[m]);
         }
     }
@@ -132,22 +151,28 @@ int sc_main(int, char*[]) {
 
     const int kMaxCycles = 1000000;
     int actual = 0;
-    while (actual < kMaxCycles) {
+    while (actual < kMaxCycles)
+    {
         bool all = true;
-        for (int a = 0; a < N_AGU; ++a) all = all && done[a].read();
-        if (all) break;
+        for (int a = 0; a < N_AGU; ++a)
+            all = all && done[a].read();
+        if (all)
+            break;
         sc_start(CLK_PERIOD_NS, SC_NS);
         ++actual;
     }
 
     int g_max = 0;
     std::size_t total_acc = 0, total_rd = 0;
-    for (int a = 0; a < N_AGU; ++a) {
+    for (int a = 0; a < N_AGU; ++a)
+    {
         const std::size_t len = agus[a]->trace_.size();
         const int g = static_cast<int>((len + N_REQ - 1) / N_REQ);
         g_max = std::max(g_max, g);
         total_acc += agus[a]->log_.size();
-        for (const auto& e : agus[a]->log_) if (!e.we) ++total_rd;
+        for (const auto &e : agus[a]->log_)
+            if (!e.we)
+                ++total_rd;
     }
     const int ideal = kCyclesPerGroup * g_max + kPipeFill;
     const double penalty = ideal > 0 ? 100.0 * (actual - ideal) / ideal : 0.0;
@@ -165,6 +190,7 @@ int sc_main(int, char*[]) {
     printf("===========================================\n");
 
     sc_stop();
-    for (int a = 0; a < N_AGU; ++a) delete agus[a];
+    for (int a = 0; a < N_AGU; ++a)
+        delete agus[a];
     return 0;
 }
