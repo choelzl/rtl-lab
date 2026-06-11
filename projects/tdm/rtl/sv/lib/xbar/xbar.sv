@@ -6,18 +6,15 @@
 
 module system_xbar
   import obi_pkg::*;
-  import addr_map_rule_pkg::*;
-  import core_v_mini_mcu_pkg::*;
 #(
     parameter XBAR_NMASTER = 3,
     parameter XBAR_NSLAVE = 6,
+    parameter SEL_SLICE_START = 0,
+    parameter SEL_SLICE_LENGTH = 2,
     localparam int unsigned IdxWidth = cf_math_pkg::idx_width(XBAR_NSLAVE)
 ) (
     input logic clk_i,
     input logic rst_ni,
-
-    // Address map
-    input addr_map_rule_pkg::addr_map_rule_t [XBAR_NSLAVE-1:0] addr_map_i,
 
     // Default slave index
     input logic [IdxWidth-1:0] default_idx_i,
@@ -60,25 +57,6 @@ module system_xbar
   logic [XBAR_NSLAVE-1:0][REQ_AGG_DATA_WIDTH-1:0] slave_req_out_data;
   obi_req_t [XBAR_NMASTER-1:0] master_req;
 
-  begin : gen_addr_decoders_NtoM
-    for (genvar i = 0; i < XBAR_NMASTER; i++) begin : gen_addr_decoders
-      addr_decode #(
-          /// Highest index which can happen in a rule.
-          .NoIndices(XBAR_NSLAVE),
-          .NoRules(XBAR_NSLAVE),
-          .addr_t(logic [31:0]),
-          .rule_t(addr_map_rule_pkg::addr_map_rule_t)
-      ) addr_decode_i (
-          .addr_i(master_req_i[i].addr),
-          .addr_map_i,
-          .idx_o(port_sel[i]),
-          .dec_valid_o(),
-          .dec_error_o(),
-          .en_default_idx_i(1'b1),
-          .default_idx_i
-      );
-    end
-  end
 
   // Propagate interleaved address
   generate
@@ -94,6 +72,12 @@ module system_xbar
   endgenerate
 
   begin : gen_xbar_NtoM
+    
+    // Select signal generation
+    for(genvar i = 0; unsigned '(i) < XBAR_NMASTER; i++) begin: gen_sel_signal
+      assign port_sel[i] = master_req_i[i].addr[SEL_SLICE_START +: SEL_SLICE_LENGTH];
+    end
+
     // Unroll OBI structs
     for (genvar i = 0; unsigned'(i) < XBAR_NMASTER; i++) begin: gen_unroll_master
       assign master_req_req[i] = master_req[i].req;
