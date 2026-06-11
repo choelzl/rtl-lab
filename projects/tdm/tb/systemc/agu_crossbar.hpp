@@ -103,7 +103,10 @@ SC_MODULE(agu_crossbar) {
 
     void load_trace(const std::string& path) {
         std::ifstream f(path.c_str());
-        if (!f) SC_REPORT_FATAL(name(), ("cannot open trace: " + path).c_str());
+        if (!f) {
+            SC_REPORT_INFO(name(), ("no stimuli (" + path + "), will be idle").c_str());
+            return;
+        }
         std::string line;
         while (std::getline(f, line))
             if (!trim(line).empty()) break;
