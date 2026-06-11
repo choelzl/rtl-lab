@@ -20,6 +20,17 @@ SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 g_flags=()
 cflags="-std=c++17 -I${PROJ}/tb/systemc -I${PROJ}/rtl/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
 
+# Verilated SV DUT: TOP_LEVEL=V<module> selects the Verilated backend.
+# Strip the leading V to get the SV module name and the sc_main harness name.
+verilator_top_flags=()
+harness_top="${SEL_TOP_LEVEL}"
+if [[ "${SEL_TOP_LEVEL}" == V* ]]; then
+    sv_top="${SEL_TOP_LEVEL#V}"
+    harness_top="${sv_top}"
+    cflags="${cflags} -DUSE_SV_DUT"
+    verilator_top_flags=("--top" "${sv_top}")
+fi
+
 if [ "${SEL_PARAMS}" != "none" ]; then
     for param in ${SEL_PARAMS}; do
         g_flags+=("-G${param}")
@@ -33,36 +44,44 @@ if [ "${SEL_TB_DEFS}" != "none" ]; then
     done
 fi
 
-shopt -s nullglob
-rtl_files=("${PROJ}"/rtl/*.sv "${PROJ}"/rtl/sv/*.sv)
-shopt -u nullglob
+shopt -s nullglob globstar
+rtl_files=("${PROJ}"/rtl/*.sv "${PROJ}"/rtl/sv/**/*.sv)
+shopt -u nullglob globstar
 
-if [ "${#rtl_files[@]}" -gt 0 ]; then
+# Collect -I flags for any lib subdirectory trees that exist
+inc_flags=(-I"${PROJ}/rtl" -I"${PROJ}/rtl/sv")
+for d in "${PROJ}"/rtl/sv/lib "${PROJ}"/rtl/sv/lib/*/; do
+    [ -d "$d" ] && inc_flags+=(-I"$d")
+done
+
+if [[ "${SEL_TOP_LEVEL}" == V* ]]; then
     verilator \
         --sc \
         --exe \
-        --build \
         -sv \
         --trace \
         --trace-max-array 0 \
         --trace-max-width 0 \
         -Wall \
         -Wno-fatal \
+        -Wno-UNUSEDPARAM \
+        "${verilator_top_flags[@]}" \
         -CFLAGS "${cflags}" \
         "${g_flags[@]}" \
-        -I"${PROJ}/rtl" \
-        -I"${PROJ}/rtl/sv" \
-        -I"${PROJ}/rtl/sv/lib" \
+        "${inc_flags[@]}" \
         "${rtl_files[@]}" \
-        "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
+        "${PROJ}/tb/systemc/tb_${harness_top}.cpp" \
         -Mdir "${SIM}/build/obj_dir" \
         -o "${SIM}/build/simv" \
-        | tee "${SIM}/output/compile.log"
+        2>&1 | tee "${SIM}/output/compile.log"
+    MAKEFLAGS= make -C "${SIM}/build/obj_dir" \
+        -f "V${harness_top}.mk" \
+        2>&1 | tee -a "${SIM}/output/compile.log"
 else
     # shellcheck disable=SC2086
     g++ ${cflags} \
         -I"${SYSTEMC_INCLUDE}" \
-        "${PROJ}/tb/systemc/tb_${SEL_TOP_LEVEL}.cpp" \
+        "${PROJ}/tb/systemc/tb_${harness_top}.cpp" \
         -o "${SIM}/build/simv" \
         -L"${SYSTEMC_LIBDIR}" -Wl,-rpath,"${SYSTEMC_LIBDIR}" -lsystemc -pthread \
         | tee "${SIM}/output/compile.log"
