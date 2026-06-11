@@ -86,7 +86,7 @@ int sc_main(int, char *[])
     sc_signal<bool> done[N_AGU];
 
 #ifdef USE_SV_DUT
-    top_crossbar_sv<N_AGU * N_REQ, N_BANK, N_ROW> dut("dut");
+    top_crossbar_sv<N_AGU, N_REQ, N_BANK, N_ROW> dut("dut");
 #else
     top_crossbar<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
 #endif
