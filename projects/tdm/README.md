@@ -18,6 +18,13 @@ make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=run0
 
 This builds [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp), runs it on the stimuli in [tb/stimuli/](tb/stimuli/), and prints timing statistics. `tdm` is selected with `PROJECT=tdm` on every `make` command.
 
+To run the Verilated SV DUT instead, prefix the top-level with `V` and pass the full parameter set (Verilator needs them as `-G` flags, which `PARAMS` provides):
+
+```bash
+make sim-sc PROJECT=tdm TOP_LEVEL=Vtop_crossbar OUT_DIR=run0 \
+    PARAMS="N_AGU=7 N_REQ=4 N_BANK=32 N_ROW=1024"
+```
+
 Override the design size with `PARAMS` (each becomes a `-D`):
 
 ```bash
@@ -29,7 +36,8 @@ make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=big \
 
 | Top-level      | File                                                         | Description                                                                                                                                    |
 | -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `top_crossbar` | [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | DUT: the `N_MGR × N_BANK` crossbar interconnect plus `N_BANK` memory banks. Exposes the manager-side OBI ports; the harness attaches the AGUs. |
+| `top_crossbar`  | [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | DUT: the `N_MGR × N_BANK` crossbar interconnect plus `N_BANK` memory banks. Exposes the manager-side OBI ports; the harness attaches the AGUs. |
+| `Vtop_crossbar` | [rtl/sv/top_crossbar.sv](rtl/sv/top_crossbar.sv)             | Alternative DUT: the two-level SV crossbar (Verilated into a SystemC module). Use `TOP_LEVEL=Vtop_crossbar` to select it. The same harness and AGUs are used; pass the full parameter set via `PARAMS` (see below). |
 
 DUT submodules: [crossbar.hpp](rtl/systemc/crossbar.hpp) (round-robin per-bank arbiter, word-interleaved routing) and [bank.hpp](rtl/systemc/bank.hpp) (single-port OBI RAM, 1-cycle latency).
 
@@ -51,7 +59,7 @@ Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults bel
 
 | Testbench         | File                                                             | Drives                                                                                                                       |
 | ----------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` + `N_AGU` [AGUs](tb/systemc/agu_crossbar.hpp), runs to completion, prints statistics. |
+| `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` (native SC) or `Vtop_crossbar` (Verilated SV, selected by `TOP_LEVEL=Vtop_crossbar`) + `N_AGU` [AGUs](tb/systemc/agu_crossbar.hpp), runs to completion, prints statistics. The Verilated wrapper is in [tb/systemc/top_crossbar_sv.hpp](tb/systemc/top_crossbar_sv.hpp). |
 
 **Stimuli** ([tb/stimuli/](tb/stimuli/)): `mem_<i>.log`, one CSV per AGU. The **first line** carries the TDM mapping parameters (`num_banks,bank_width,C,R,L,store_mode`; consumed by the TDM AGU, skipped by the crossbar AGU); the access rows follow as `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The `sample` stimuli write random data to a set of addresses then read them back. The stimuli folder is selected with `IN_DIR`: a bare name (e.g. `IN_DIR=sample`) is a subfolder of `tb/stimuli/`, while a value containing a `/` (e.g. `IN_DIR=/data/my_stim` or `IN_DIR=./cases/run1`) is used as a filesystem path (relative paths resolve from where you run `make`). Unset, it defaults to `tb/stimuli/sample`.
 
