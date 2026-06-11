@@ -36,14 +36,14 @@ module top_crossbar
 ) (
     input  logic clk_i,
     input  logic rst_ni,
-    input  logic [NUM_AGU-1:0]       agu_req_i,
-    input  logic [NUM_AGU-1:0][31:0] agu_addr_i,
-    input  logic [NUM_AGU-1:0]       agu_we_i,
-    input  logic [NUM_AGU-1:0][3:0]  agu_be_i,
-    input  logic [NUM_AGU-1:0][31:0] agu_wdata_i,
-    output logic [NUM_AGU-1:0]       agu_gnt_o,
-    output logic [NUM_AGU-1:0]       agu_rvalid_o,
-    output logic [NUM_AGU-1:0][31:0] agu_rdata_o
+    input  logic [NUM_AGU-1:0]                    agu_req_i,
+    input  logic [NUM_AGU-1:0][31:0]              agu_addr_i,
+    input  logic [NUM_AGU-1:0]                    agu_we_i,
+    input  logic [NUM_AGU-1:0][`OBI_BE_W-1:0]   agu_be_i,
+    input  logic [NUM_AGU-1:0][`OBI_DATA_W-1:0] agu_wdata_i,
+    output logic [NUM_AGU-1:0]                    agu_gnt_o,
+    output logic [NUM_AGU-1:0]                    agu_rvalid_o,
+    output logic [NUM_AGU-1:0][`OBI_DATA_W-1:0] agu_rdata_o
 );
 
   // --------------------------------------------------------------------------
@@ -88,7 +88,6 @@ module top_crossbar
   // --------------------------------------------------------------------------
   for (genvar j = 0; j < NUM_L1; j++) begin : gen_l1
     system_xbar #(
-        .BUS_TYPE    (NtoM),
         .XBAR_NMASTER(L1_NIN),
         .XBAR_NSLAVE (L1_NOUT)
     ) u_xbar (
@@ -131,7 +130,6 @@ module top_crossbar
     end
 
     system_xbar #(
-        .BUS_TYPE    (NtoM),
         .XBAR_NMASTER(L2_NIN),
         .XBAR_NSLAVE (L2_NOUT)
     ) u_xbar (

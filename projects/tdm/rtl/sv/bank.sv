@@ -4,16 +4,16 @@
 // Description:
 //   Single-port OBI subordinate memory bank.
 //
-//   Ports use obi_pkg::obi_req_t / obi_resp_t (fixed 32-bit addr/data, 4-bit be).
-//   obi_resp_o.gnt is combinational (follows obi_req_i.req). 1-cycle read latency.
+//   Ports use obi_pkg::obi_req_t / obi_resp_t; data/BE widths track OBI_DATA_W / OBI_BE_W
+//   (= BYTES_PER_ROW*8 / BYTES_PER_ROW). gnt is combinational; 1-cycle read latency.
 //   obi_req_i.addr is a BANK-LOCAL byte address; the bank-select bits are stripped
 //   by the upstream crossbar. Row decode: row = addr / (WORDS_PER_ROW * BYTES_PER_WORD).
 //   Out-of-range row access triggers $fatal (simulation only).
 //
 // Parameters:
 //   NUM_ROW        — number of rows (depth)
-//   WORDS_PER_ROW  — words per row; must satisfy WORDS_PER_ROW * BYTES_PER_WORD * 8 == 32
-//   BYTES_PER_WORD — bytes per word; must satisfy WORDS_PER_ROW * BYTES_PER_WORD == 4
+//   WORDS_PER_ROW  — words per row; must satisfy WORDS_PER_ROW * BYTES_PER_WORD == OBI_BE_W
+//   BYTES_PER_WORD — bytes per word; must satisfy WORDS_PER_ROW * BYTES_PER_WORD * 8 == OBI_DATA_W
 // -----------------------------------------------------------------------------
 
 `ifndef BANK_SV
@@ -56,7 +56,7 @@ module bank #(
 
     assign obi_resp_o.gnt = obi_req_i.req;
 
-    always_ff @(posedge clk_i) begin
+    always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             obi_resp_o.rvalid <= 1'b0;
             obi_resp_o.rdata  <= '0;
