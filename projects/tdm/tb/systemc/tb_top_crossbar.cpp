@@ -48,24 +48,7 @@
 #endif
 #include "agu_crossbar.hpp"
 
-#ifndef N_AGU
-#define N_AGU 8
-#endif
-#ifndef N_REQ
-#define N_REQ 4
-#endif
-#ifndef N_BANK
-#define N_BANK 32
-#endif
-#ifndef N_ROW
-#define N_ROW 1024
-#endif
-#ifndef WORD_BYTES
-#define WORD_BYTES 4
-#endif
-#ifndef CLK_PERIOD_NS
-#define CLK_PERIOD_NS 10
-#endif
+#include "constants.hpp"
 
 static const int kCyclesPerGroup = 1;
 static const int kPipeFill = 2;
@@ -179,8 +162,8 @@ int sc_main(int, char *[])
 
     printf("\n");
     printf("=========== crossbar statistics ===========\n");
-    printf(" config       : N_AGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d\n",
-           N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES);
+    printf(" config       : N_AGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d WORDS_PER_ROW=%d\n",
+           N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW);
     printf(" accesses     : %zu (%zu reads)\n", total_acc, total_rd);
     printf(" groups (max) : %d\n", g_max);
     printf(" actual cycles: %d\n", actual);

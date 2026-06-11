@@ -11,7 +11,7 @@
 #define N_ROW 1024
 #endif
 #ifndef WORDS_PER_ROW
-#define WORDS_PER_ROW 1
+#define WORDS_PER_ROW 4
 #endif
 #ifndef WORD_BYTES
 #define WORD_BYTES 4
