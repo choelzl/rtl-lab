@@ -9,7 +9,6 @@ module system_xbar
   import addr_map_rule_pkg::*;
   import core_v_mini_mcu_pkg::*;
 #(
-    parameter core_v_mini_mcu_pkg::bus_type_e BUS_TYPE = core_v_mini_mcu_pkg::BusType,
     parameter XBAR_NMASTER = 3,
     parameter XBAR_NSLAVE = 6,
     localparam int unsigned IdxWidth = cf_math_pkg::idx_width(XBAR_NSLAVE)
@@ -61,7 +60,7 @@ module system_xbar
   logic [XBAR_NSLAVE-1:0][REQ_AGG_DATA_WIDTH-1:0] slave_req_out_data;
   obi_req_t [XBAR_NMASTER-1:0] master_req;
 
-  if (BUS_TYPE == NtoM) begin : gen_addr_decoders_NtoM
+  begin : gen_addr_decoders_NtoM
     for (genvar i = 0; i < XBAR_NMASTER; i++) begin : gen_addr_decoders
       addr_decode #(
           /// Highest index which can happen in a rule.
@@ -94,9 +93,7 @@ module system_xbar
     end
   endgenerate
 
-  if (BUS_TYPE == NtoM) begin : gen_xbar_NtoM
-
-
+  begin : gen_xbar_NtoM
     // Unroll OBI structs
     for (genvar i = 0; unsigned'(i) < XBAR_NMASTER; i++) begin: gen_unroll_master
       assign master_req_req[i] = master_req[i].req;
@@ -142,44 +139,6 @@ module system_xbar
         .wdata_o(slave_req_out_data),
         .rdata_i(slave_resp_rdata)
     );
-
-  end else begin : gen_xbar_1toM
-
-    // N-to-1 crossbar
-    xbar_varlat_n_to_one #(
-      .XBAR_NMASTER (XBAR_NMASTER)
-    ) xbar_varlat_n_to_one_i (
-      .clk_i         (clk_i),
-      .rst_ni        (rst_ni),
-      .master_req_i  (master_req),
-      .master_resp_o (master_resp_o),
-      .slave_req_o   (neck_req),
-      .slave_resp_i  (neck_resp)
-    );
-
-    // 1-to-N crossbar
-    // NOTE: AGGREGATE_GNT should be 0 when a single master is actually
-    // aggregating multiple master requests. This is not needed when a
-    // real-single master is used or multiple masters are used as the
-    // rr_arb_tree dispatches the grant to each corresponding master.
-    // Whereas, when the xbar_varlat is used with a single master, which is
-    // shared among severals (as in this case as an output of another
-    // xbar_varlat), the rr_arb_tree gives all the grant to the shared single
-    // master, thus granting transactions that should not be granted.
-
-      xbar_varlat_one_to_n #(
-        .XBAR_NSLAVE   (XBAR_NSLAVE),
-        .AGGREGATE_GNT (32'd0) // the neck request is aggregating all the input masters
-      ) xbar_varlat_one_to_n_i (
-        .clk_i         (clk_i),
-        .rst_ni        (rst_ni),
-        .addr_map_i,
-        .default_idx_i,
-        .master_req_i  (neck_req),
-        .master_resp_o (neck_resp),
-        .slave_req_o   (slave_req_o),
-        .slave_resp_i  (slave_resp_i)
-      );
   end
 
 endmodule : system_xbar
