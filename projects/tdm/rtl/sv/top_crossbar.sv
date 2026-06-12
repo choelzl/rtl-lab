@@ -307,7 +307,7 @@ module top_crossbar
   // --------------------------------------------------------------------------
   for (genvar i = 0; i < N_BANK*2; i++) begin : gen_banks
     bank #(
-        .NUM_ROW       (N_ROW),
+        .NUM_ROW       (N_ROW/2), //Double banks, half size
         .WORDS_PER_ROW (1),
         .BYTES_PER_WORD(4),
         .SEL_SLICE_START($clog2(BYTES_PER_ROW)+$clog2(N_REQ)+$clog2(NUM_BANK_G)+$clog2(2))
