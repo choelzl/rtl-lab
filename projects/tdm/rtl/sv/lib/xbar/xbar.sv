@@ -45,6 +45,24 @@ module xbar
     input  obi_resp_t [XBAR_NSLAVE-1:0] slave_resp_i
 );
 
+  // --------------------------------------------------------------------------
+  // Parameter sanity checks (elaboration time)
+  // --------------------------------------------------------------------------
+  initial begin : chk_params
+    if (XBAR_NMASTER < 1)
+      $fatal(1, "xbar: XBAR_NMASTER must be >= 1, got %0d", XBAR_NMASTER);
+    if (XBAR_NSLAVE < 1)
+      $fatal(1, "xbar: XBAR_NSLAVE must be >= 1, got %0d", XBAR_NSLAVE);
+    if (XBAR_NSLAVE & (XBAR_NSLAVE - 1))
+      $fatal(1, "xbar: XBAR_NSLAVE (%0d) must be a power of 2 for address decode", XBAR_NSLAVE);
+    if (SEL_SLICE_START + SEL_SLICE_LENGTH > 32)
+      $fatal(1, "xbar: address slice [%0d+:%0d] overflows 32-bit address",
+             SEL_SLICE_START, SEL_SLICE_LENGTH);
+    if ((1 << SEL_SLICE_LENGTH) != XBAR_NSLAVE)
+      $fatal(1, "xbar: 2^SEL_SLICE_LENGTH=%0d but XBAR_NSLAVE=%0d; slice cannot reach all slaves",
+             1 << SEL_SLICE_LENGTH, XBAR_NSLAVE);
+  end
+
   localparam int unsigned LOG_XBAR_NMASTER = XBAR_NMASTER > 1 ? $clog2(XBAR_NMASTER) : 32'd1;
   localparam int unsigned LOG_XBAR_NSLAVE  = XBAR_NSLAVE  > 1 ? $clog2(XBAR_NSLAVE)  : 32'd1;
 

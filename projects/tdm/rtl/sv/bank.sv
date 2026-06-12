@@ -45,6 +45,14 @@ module bank #(
     localparam int BE_W   = $bits(obi_req_i.be);
 
     initial begin
+        if (NUM_ROW < 1)
+            $fatal(1, "bank: NUM_ROW must be >= 1, got %0d", NUM_ROW);
+        if (WORDS_PER_ROW < 1)
+            $fatal(1, "bank: WORDS_PER_ROW must be >= 1, got %0d", WORDS_PER_ROW);
+        if (BYTES_PER_WORD < 1)
+            $fatal(1, "bank: BYTES_PER_WORD must be >= 1, got %0d", BYTES_PER_WORD);
+        if (SEL_SLICE_START >= 32)
+            $fatal(1, "bank: SEL_SLICE_START (%0d) must be < 32", SEL_SLICE_START);
         if (DATA_W != WORDS_PER_ROW * BYTES_PER_WORD * 8)
             $fatal(1, "bank: DATA_W (%0d) != WORDS_PER_ROW*BYTES_PER_WORD*8 (%0d)",
                    DATA_W, WORDS_PER_ROW * BYTES_PER_WORD * 8);

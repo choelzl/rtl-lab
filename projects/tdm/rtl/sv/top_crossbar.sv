@@ -19,9 +19,9 @@
 //     addr[+: 1]                                           L3 even/odd sub-bank         [9]
 //     addr[31 : $clog2(BYTES_PER_ROW*N_REQ*N_BANK/N_REQ*2)] bank-local row address     [31:10]
 //
-//   Address scramble (applied before routing, see addr_scramble):
-//     addr[8:6] ^= addr[11:9] — XORs lower routing bits with the next-higher nibble
-//     to spread stride patterns across different banks and reduce conflict probability.
+//   Address hash (applied before routing, see addr_hash):
+//     addr[11:9] += addr[8:6] — adds the bank-within-group bits into the L2 routing
+//     field to spread stride patterns across different banks and reduce conflict probability.
 // -----------------------------------------------------------------------------
 
 module top_crossbar
@@ -63,7 +63,31 @@ module top_crossbar
 );
 
   // --------------------------------------------------------------------------
-  // Address scramble: XOR addr[5:2] with addr[8:5] to reduce bank conflicts.
+  // Parameter sanity checks (elaboration time)
+  // --------------------------------------------------------------------------
+  initial begin : chk_params
+    if (N_AGU < 1 || N_WAGU < 1 || N_REQ < 1 || N_ROW < 1)
+      $fatal(1, "top_crossbar: N_AGU/N_WAGU/N_REQ/N_ROW must all be >= 1");
+    if (N_BANK < 2)
+      $fatal(1, "top_crossbar: N_BANK must be >= 2, got %0d", N_BANK);
+    if (N_BANK % N_REQ != 0)
+      $fatal(1, "top_crossbar: N_BANK (%0d) must be divisible by N_REQ (%0d)", N_BANK, N_REQ);
+    if (N_REQ & (N_REQ - 1))
+      $fatal(1, "top_crossbar: N_REQ (%0d) must be a power of 2", N_REQ);
+    if (N_BANK & (N_BANK - 1))
+      $fatal(1, "top_crossbar: N_BANK (%0d) must be a power of 2", N_BANK);
+    if (NUM_BANK_G & (NUM_BANK_G - 1))
+      $fatal(1, "top_crossbar: NUM_BANK_G=N_BANK/N_REQ (%0d) must be a power of 2", NUM_BANK_G);
+    // Routing consumes $clog2(BYTES_PER_ROW) + $clog2(N_REQ) + $clog2(NUM_BANK_G) + 1 address bits;
+    // at least one bit must remain for the bank-local row index.
+    if ($clog2(BYTES_PER_ROW) + $clog2(N_REQ) + $clog2(NUM_BANK_G) + 1 >= 32)
+      $fatal(1, "top_crossbar: routing consumes %0d address bits, leaving none for row index",
+             $clog2(BYTES_PER_ROW) + $clog2(N_REQ) + $clog2(NUM_BANK_G) + 1);
+  end
+
+  // --------------------------------------------------------------------------
+  // Address hash: fold bank-within-group bits into the L2 routing field to
+  // spread stride patterns across different banks and reduce conflict probability.
   // Applied to every AGU and WAGU address before routing.
   // --------------------------------------------------------------------------
   function automatic logic [31:0] addr_hash(input logic [31:0] addr);
