@@ -2,13 +2,13 @@
 // Solderpad Hardware License, Version 2.1, see LICENSE.md for details.
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 /*
- *
- * Description: OBI package, contains common system definitions.
+ * Description: OBI package — shared request/response struct types.
  *
  * Data-path widths are controlled by two compile-time macros:
- *   OBI_DATA_W  — data bus width in bits  (default 32, = BYTES_PER_ROW*8)
- *   OBI_BE_W    — byte-enable width in bits (default 4, = BYTES_PER_ROW)
- * Override with -DOBI_DATA_W=<n> -DOBI_BE_W=<n> at elaboration time.
+ *   OBI_DATA_W  — data bus width in bits   (default 32)
+ *   OBI_BE_W    — byte-enable width in bits (default 4, one bit per byte)
+ * Override at elaboration time: -DOBI_DATA_W=<n> -DOBI_BE_W=<n/8>.
+ * Both macros must be consistent: OBI_BE_W == OBI_DATA_W / 8.
  */
 
 `ifndef INTERACE_OBI

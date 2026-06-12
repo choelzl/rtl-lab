@@ -12,14 +12,16 @@
 //
 //   Inter-level: L1 xbar j, slave k  →  L2 xbar k, master j
 //
-//   Address routing (BANK_ROWS=1024 → BANK_BYTES=4096):
-//     L1 map: group k covers [k * L2_NOUT * BANK_BYTES, (k+1) * L2_NOUT * BANK_BYTES)
-//     L2 map: bank b in group k covers [(k*L2_NOUT+b)*BANK_BYTES, (k*L2_NOUT+b+1)*BANK_BYTES)
+//   Address bit layout after scramble (defaults: BYTES_PER_ROW=16, N_REQ=4, N_BANK=32):
+//     addr[$clog2(BYTES_PER_ROW)-1 : 0]                    byte offset within a row     [3:0]
+//     addr[+: $clog2(N_REQ)]                               L1 slave select (xbar group) [5:4]
+//     addr[+: $clog2(N_BANK/N_REQ)]                        L2 bank-within-group select  [8:6]
+//     addr[+: 1]                                           L3 even/odd sub-bank         [9]
+//     addr[31 : $clog2(BYTES_PER_ROW*N_REQ*N_BANK/N_REQ*2)] bank-local row address     [31:10]
 //
-//   Address scramble (applied before routing, see addr_hash):
-//     XORs the lower routing/offset bits with the
-//     next-higher nibble to spread stride patterns across different banks and
-//     reduce conflict probability.
+//   Address scramble (applied before routing, see addr_scramble):
+//     addr[8:6] ^= addr[11:9] — XORs lower routing bits with the next-higher nibble
+//     to spread stride patterns across different banks and reduce conflict probability.
 // -----------------------------------------------------------------------------
 
 module top_crossbar

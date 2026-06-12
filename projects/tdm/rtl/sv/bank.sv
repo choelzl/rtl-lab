@@ -4,8 +4,15 @@
 // Description:
 //   Single-port OBI subordinate memory bank.
 //
-//   Ports use obi_pkg::obi_req_t / obi_resp_t; data/BE widths track OBI_DATA_W / OBI_BE_W
-//   (= BYTES_PER_ROW*8 / BYTES_PER_ROW). gnt is combinational; 1-cycle read latency.
+//   Ports use obi_pkg::obi_req_t / obi_resp_t; OBI_DATA_W / OBI_BE_W must match
+//   WORDS_PER_ROW * BYTES_PER_WORD * 8 / WORDS_PER_ROW * BYTES_PER_WORD respectively
+//   (enforced by initial assertions).
+//
+//   Timing: gnt is purely combinational (= req). rvalid is registered and always
+//   asserted one cycle after any granted request — reads return rdata, writes return
+//   rdata='0. There is no write-response suppression: the upstream OBI master must
+//   consume rvalid on writes.
+//
 //   obi_req_i.addr is a BANK-LOCAL byte address; the bank-select bits are stripped
 //   by the upstream crossbar. Row decode: row = addr / (WORDS_PER_ROW * BYTES_PER_WORD).
 //   Out-of-range row access triggers $fatal (simulation only).
