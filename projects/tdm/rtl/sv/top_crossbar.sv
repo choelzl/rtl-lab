@@ -4,10 +4,10 @@
 // Description:
 //   Two-level crossbar: 32 AGU inputs → 32 bank outputs.
 //
-//   Level 1: 8 × system_xbar(NtoM, 4-in, 4-out)
+//   Level 1: 8 × xbar(NtoM, 4-in, 4-out)
 //     AGUs 4j..4j+3 → L1 xbar j → 4 inter-level links (one per L2 group)
 //
-//   Level 2: 4 × system_xbar(NtoM, 8-in, 8-out)
+//   Level 2: 4 × xbar(NtoM, 8-in, 8-out)
 //     8 inter-level inputs (one per L1 xbar) → 8 banks
 //
 //   Inter-level: L1 xbar j, slave k  →  L2 xbar k, master j
@@ -21,29 +21,35 @@ module top_crossbar
   import obi_pkg::*;
 #(
     parameter int unsigned N_AGU     = 7,
+    parameter int unsigned N_WAGU    = 6,
     parameter int unsigned N_REQ     = 4,
     parameter int unsigned N_BANK    = 32,
     parameter int unsigned N_ROW     = 1024,
     // Derived — do not override
-    localparam int unsigned NUM_AGU   = N_AGU * N_REQ,
-    localparam int unsigned L1_NIN    = 4,
-    localparam int unsigned L1_NOUT   = 4,
-    localparam int unsigned L2_NIN    = 8,
-    localparam int unsigned L2_NOUT   = 8,
-    localparam int unsigned NUM_L1    = NUM_AGU  / L1_NIN,
-    localparam int unsigned NUM_L2    = N_BANK / L2_NOUT,
-    localparam int unsigned BANK_BYTES= N_ROW * 4
+    localparam int unsigned NUM_AGU    = N_AGU * N_REQ,
+    localparam int unsigned NUM_WAGU   = N_WAGU * N_REQ,
+    localparam int unsigned NUM_BANK_G = N_BANK / N_REQ,
+    localparam int unsigned BANK_BYTES = N_ROW * 4
 ) (
     input  logic clk_i,
     input  logic rst_ni,
     input  logic [NUM_AGU-1:0]                    agu_req_i,
     input  logic [NUM_AGU-1:0][31:0]              agu_addr_i,
     input  logic [NUM_AGU-1:0]                    agu_we_i,
-    input  logic [NUM_AGU-1:0][`OBI_BE_W-1:0]   agu_be_i,
-    input  logic [NUM_AGU-1:0][`OBI_DATA_W-1:0] agu_wdata_i,
+    input  logic [NUM_AGU-1:0][`OBI_BE_W-1:0]     agu_be_i,
+    input  logic [NUM_AGU-1:0][`OBI_DATA_W-1:0]   agu_wdata_i,
     output logic [NUM_AGU-1:0]                    agu_gnt_o,
     output logic [NUM_AGU-1:0]                    agu_rvalid_o,
-    output logic [NUM_AGU-1:0][`OBI_DATA_W-1:0] agu_rdata_o
+    output logic [NUM_AGU-1:0][`OBI_DATA_W-1:0]   agu_rdata_o,
+    
+    input  logic [NUM_WAGU-1:0]                    wagu_req_i,
+    input  logic [NUM_WAGU-1:0][31:0]              wagu_addr_i,
+    input  logic [NUM_WAGU-1:0]                    wagu_we_i,
+    input  logic [NUM_WAGU-1:0][`OBI_BE_W-1:0]     wagu_be_i,
+    input  logic [NUM_WAGU-1:0][`OBI_DATA_W-1:0]   wagu_wdata_i,
+    output logic [NUM_WAGU-1:0]                    wagu_gnt_o,
+    output logic [NUM_WAGU-1:0]                    wagu_rvalid_o,
+    output logic [NUM_WAGU-1:0][`OBI_DATA_W-1:0]   wagu_rdata_o
 );
 
   // --------------------------------------------------------------------------
@@ -66,71 +72,198 @@ module top_crossbar
   end
 
   // --------------------------------------------------------------------------
-  // Inter-level OBI wires: [L1-xbar-j][slave/L2-xbar-k]
+  // Pack flat WAGU ports → obi_pkg structs
   // --------------------------------------------------------------------------
-  obi_req_t  [NUM_L1-1:0][L1_NOUT-1:0] il_req;
-  obi_resp_t [NUM_L1-1:0][L1_NOUT-1:0] il_resp;
+  obi_req_t  [NUM_WAGU-1:0] wagu_obi_req;
+  obi_resp_t [NUM_WAGU-1:0] wagu_obi_resp;
+
+  for (genvar a = 0; a < NUM_WAGU; a++) begin : gen_wagu_pack
+    assign wagu_obi_req[a] = '{
+      req:   wagu_req_i  [a],
+      we:    wagu_we_i   [a],
+      be:    wagu_be_i   [a],
+      addr:  wagu_addr_i [a],
+      wdata: wagu_wdata_i[a]
+    };
+    assign wagu_gnt_o   [a] = wagu_obi_resp[a].gnt;
+    assign wagu_rvalid_o[a] = wagu_obi_resp[a].rvalid;
+    assign wagu_rdata_o [a] = wagu_obi_resp[a].rdata;
+  end
 
   // --------------------------------------------------------------------------
-  // Level-1: 8 × system_xbar(NtoM, 4-in, 4-out)
+  // Inter-level OBI wires: [L1-xbar-j][slave/L2-xbar-k]
+  // Reading Side
   // --------------------------------------------------------------------------
-  for (genvar j = 0; j < NUM_L1; j++) begin : gen_l1
-    system_xbar #(
-        .XBAR_NMASTER(L1_NIN),
-        .XBAR_NSLAVE (L1_NOUT),
+  obi_req_t  [N_AGU-1:0][N_REQ-1:0] L1_L2_req;
+  obi_resp_t [N_AGU-1:0][N_REQ-1:0] L1_L2_resp;
+
+  // --------------------------------------------------------------------------
+  // Level-1: 8 × xbar(NtoM, 4-in, 4-out)
+  // --------------------------------------------------------------------------
+  for (genvar j = 0; j < N_AGU; j++) begin : gen_l1
+    xbar #(
+        .XBAR_NMASTER(N_REQ),
+        .XBAR_NSLAVE (N_REQ),
         .SEL_SLICE_START(0),
-        .SEL_SLICE_LENGTH($clog2(L1_NOUT))
+        .SEL_SLICE_LENGTH($clog2(N_REQ))
     ) u_xbar (
         .clk_i,
         .rst_ni,
         .default_idx_i('0),
-        .master_req_i (agu_obi_req [j*L1_NIN +: L1_NIN]),
-        .master_resp_o(agu_obi_resp[j*L1_NIN +: L1_NIN]),
-        .slave_req_o  (il_req [j]),
-        .slave_resp_i (il_resp[j])
+        .master_req_i (agu_obi_req [j*N_REQ +: N_REQ]),
+        .master_resp_o(agu_obi_resp[j*N_REQ +: N_REQ]),
+        .slave_req_o  (L1_L2_req [j]),
+        .slave_resp_i (L1_L2_resp[j])
     );
   end
 
   // --------------------------------------------------------------------------
-  // Bank-side OBI signals
+  // Inter-level OBI wires: [L1-xbar-j][slave/L2-xbar-k]
+  // Writing Side
   // --------------------------------------------------------------------------
-  obi_req_t  [N_BANK-1:0] bk_obi_req;
-  obi_resp_t [N_BANK-1:0] bk_obi_resp;
+  obi_req_t  [N_WAGU-1:0][N_REQ-1:0] wL1_L2_req;
+  obi_resp_t [N_WAGU-1:0][N_REQ-1:0] wL1_L2_resp;
 
   // --------------------------------------------------------------------------
-  // Level-2: 4 × system_xbar(NtoM, 8-in, 8-out)
-  // L2 xbar k, master j  ←  L1 xbar j, slave k
+  // Level-1: AGU × xbar(NtoM, 4-in, 4-out)
   // --------------------------------------------------------------------------
-  for (genvar k = 0; k < NUM_L2; k++) begin : gen_l2
-    obi_req_t  [L2_NIN-1:0]       l2_master_req;
-    obi_resp_t [L2_NIN-1:0]       l2_master_resp;
+  for (genvar j = 0; j < N_WAGU; j++) begin : gen_wl1
+    xbar #(
+        .XBAR_NMASTER(N_REQ),
+        .XBAR_NSLAVE (N_REQ),
+        .SEL_SLICE_START(0),
+        .SEL_SLICE_LENGTH($clog2(N_REQ))
+    ) u_xbar (
+        .clk_i,
+        .rst_ni,
+        .default_idx_i('0),
+        .master_req_i (wagu_obi_req [j*N_REQ +: N_REQ]),
+        .master_resp_o(wagu_obi_resp[j*N_REQ +: N_REQ]),
+        .slave_req_o  (wL1_L2_req [j]),
+        .slave_resp_i (wL1_L2_resp[j])
+    );
+  end
+
+  // --------------------------------------------------------------------------
+  // Inter-level OBI wires: [L2-xbar-j][L3-xbar-k]
+  // Reading Side
+  // --------------------------------------------------------------------------
+  obi_req_t  [N_BANK-1:0] L2_L3_req;
+  obi_resp_t [N_BANK-1:0] L2_L3_resp;
+
+  // --------------------------------------------------------------------------
+  // Level-2: 4 × xbar(NtoM, 8-in, 8-out)
+  // --------------------------------------------------------------------------
+  for (genvar k = 0; k < N_REQ; k++) begin : gen_l2
+    obi_req_t  [N_AGU-1:0]       l2_master_req;
+    obi_resp_t [N_AGU-1:0]       l2_master_resp;
 
 
-    for (genvar j = 0; j < L2_NIN; j++) begin : gen_il
-      assign l2_master_req[j]    = il_req        [j][k];
-      assign il_resp      [j][k] = l2_master_resp[j];
+    for (genvar j = 0; j < N_AGU; j++) begin : gen_il
+      assign l2_master_req[j]    = L1_L2_req     [j][k];
+      assign L1_L2_resp   [j][k] = l2_master_resp[j];
     end
 
-    system_xbar #(
-        .XBAR_NMASTER(L2_NIN),
-        .XBAR_NSLAVE (L2_NOUT),
-        .SEL_SLICE_START($clog2(L1_NOUT)),
-        .SEL_SLICE_LENGTH($clog2(L2_NOUT))
+    xbar #(
+        .XBAR_NMASTER(N_AGU),
+        .XBAR_NSLAVE (NUM_BANK_G),
+        .SEL_SLICE_START($clog2(N_REQ)),
+        .SEL_SLICE_LENGTH($clog2(NUM_BANK_G))
     ) u_xbar (
         .clk_i,
         .rst_ni,
         .default_idx_i('0),
         .master_req_i (l2_master_req),
         .master_resp_o(l2_master_resp),
-        .slave_req_o  (bk_obi_req [k*L2_NOUT +: L2_NOUT]),
-        .slave_resp_i (bk_obi_resp[k*L2_NOUT +: L2_NOUT])
+        .slave_req_o  (L2_L3_req [k*NUM_BANK_G +: NUM_BANK_G]),
+        .slave_resp_i (L2_L3_resp[k*NUM_BANK_G +: NUM_BANK_G])
+    );
+  end
+
+  
+  // --------------------------------------------------------------------------
+  // Inter-level OBI wires: [L2-xbar-j][L3-xbar-k]
+  // Writing Side
+  // --------------------------------------------------------------------------
+  obi_req_t  [N_BANK-1:0] wL2_L3_req;
+  obi_resp_t [N_BANK-1:0] wL2_L3_resp;
+
+  // --------------------------------------------------------------------------
+  // Level-2: 4 × xbar(NtoM, 8-in, 8-out)
+  // --------------------------------------------------------------------------
+  for (genvar k = 0; k < N_REQ; k++) begin : gen_wl2
+    obi_req_t  [N_WAGU-1:0]       l2_master_req;
+    obi_resp_t [N_WAGU-1:0]       l2_master_resp;
+
+
+    for (genvar j = 0; j < N_WAGU; j++) begin : gen_il
+      assign l2_master_req[j]    = wL1_L2_req     [j][k];
+      assign wL1_L2_resp   [j][k] = l2_master_resp[j];
+    end
+
+    xbar #(
+        .XBAR_NMASTER(N_WAGU),
+        .XBAR_NSLAVE (NUM_BANK_G),
+        .SEL_SLICE_START($clog2(N_REQ)),
+        .SEL_SLICE_LENGTH($clog2(NUM_BANK_G))
+    ) u_xbar (
+        .clk_i,
+        .rst_ni,
+        .default_idx_i('0),
+        .master_req_i (l2_master_req),
+        .master_resp_o(l2_master_resp),
+        .slave_req_o  (wL2_L3_req [k*NUM_BANK_G +: NUM_BANK_G]),
+        .slave_resp_i (wL2_L3_resp[k*NUM_BANK_G +: NUM_BANK_G])
+    );
+  end
+
+
+
+
+
+
+
+
+  // --------------------------------------------------------------------------
+  // Bank-side OBI signals
+  // --------------------------------------------------------------------------
+  obi_req_t  [(N_BANK*2)-1:0] bk_req;
+  obi_resp_t [(N_BANK*2)-1:0] bk_resp;
+
+  // --------------------------------------------------------------------------
+  // Level-3: NBANK × xbar(NtoM, 2-in, 2-out)
+  // Handles Even/Odd
+  // --------------------------------------------------------------------------
+  for (genvar k = 0; k < N_BANK; k++) begin : gen_l3
+    obi_req_t  [1:0]       l3_master_req;
+    obi_resp_t [1:0]       l3_master_resp;
+
+    assign l3_master_req[0] = L2_L3_req     [k];
+    assign L2_L3_resp   [k] = l3_master_resp[0];
+    
+    assign l3_master_req[1] = wL2_L3_req    [k];
+    assign wL2_L3_resp  [k] = l3_master_resp[1];
+
+    xbar #(
+        .XBAR_NMASTER(2),
+        .XBAR_NSLAVE (2),
+        .SEL_SLICE_START($clog2(N_REQ)+$clog2(NUM_BANK_G)),
+        .SEL_SLICE_LENGTH(1)
+    ) u_xbar (
+        .clk_i,
+        .rst_ni,
+        .default_idx_i('0),
+        .master_req_i (l3_master_req),
+        .master_resp_o(l3_master_resp),
+        .slave_req_o  (bk_req [k*2 +: 2]),
+        .slave_resp_i (bk_resp[k*2 +: 2])
     );
   end
 
   // --------------------------------------------------------------------------
   // Banks
   // --------------------------------------------------------------------------
-  for (genvar i = 0; i < N_BANK; i++) begin : gen_banks
+  for (genvar i = 0; i < N_BANK*2; i++) begin : gen_banks
     bank #(
         .NUM_ROW       (N_ROW),
         .WORDS_PER_ROW (1),
@@ -138,8 +271,8 @@ module top_crossbar
     ) u_bank (
         .clk_i,
         .rst_ni,
-        .obi_req_i (bk_obi_req [i]),
-        .obi_resp_o(bk_obi_resp[i])
+        .obi_req_i (bk_req [i]),
+        .obi_resp_o(bk_resp[i])
     );
   end
 

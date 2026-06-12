@@ -11,6 +11,10 @@
  * Override with -DOBI_DATA_W=<n> -DOBI_BE_W=<n> at elaboration time.
  */
 
+`ifndef INTERACE_OBI
+`define INTERACE_OBI
+
+
 `ifndef OBI_DATA_W
 `define OBI_DATA_W 32
 `endif
@@ -35,3 +39,5 @@ package obi_pkg;
   } obi_resp_t;
 
 endpackage
+
+`endif

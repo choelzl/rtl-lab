@@ -4,7 +4,7 @@
 
 
 
-module system_xbar
+module xbar
   import obi_pkg::*;
 #(
     parameter XBAR_NMASTER = 3,
@@ -125,4 +125,4 @@ module system_xbar
     );
   end
 
-endmodule : system_xbar
+endmodule : xbar

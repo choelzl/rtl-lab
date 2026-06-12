@@ -3,10 +3,11 @@
 //
 // Description:
 //   sc_main harness for the crossbar design (make sim-sc). It instantiates the
-//   DUT (top_crossbar = crossbar + N_BANK banks) and N_AGU AGUs, wires each
-//   AGU's N_REQ OBI ports to the DUT manager ports, drives clock/reset, and
-//   runs until every AGU has drained its trace. Each AGU dumps its completed
-//   accesses to out_<i>.log; the harness then prints timing statistics.
+//   DUT (top_crossbar = crossbar + N_BANK banks), N_AGU read AGUs and N_WAGU
+//   write AGUs, wires each AGU's N_REQ OBI ports to the DUT manager ports,
+//   drives clock/reset, and runs until every AGU has drained its trace. Read
+//   AGUs dump completed accesses to out_<i>.log, write AGUs to wout_<i>.log;
+//   the harness then prints timing statistics.
 //
 //   Statistics:
 //     - actual cycles : measured cycles (reset release -> all AGUs done).
@@ -21,9 +22,9 @@
 //     - delay penalty : 100 * (actual - ideal) / ideal  [%].
 //
 //   Paths are resolved from the environment so the binary works under the flow
-//   (CWD = scripts/sim-sc) and standalone: input stimuli from
-//   $RTL_LAB_HOME/projects/$SEL_PROJECT/tb/stimuli/mem_<i>.log, output logs
-//   into the run's output dir ($.../sim/$SEL_OUT_DIR/output/out_<i>.log).
+//   (CWD = scripts/sim-sc) and standalone: read-AGU stimuli from
+//   .../tb/stimuli/mem_<i>.log, write-AGU stimuli from wmem_<i>.log; output
+//   logs into $.../sim/$SEL_OUT_DIR/output/out_<i>.log and wout_<i>.log.
 //
 //   Configuration via -D (the flow's PARAMS mechanism), defaults below. The
 //   config knobs are ALL-CAPS macros (N_AGU, …); the design headers name their
@@ -62,6 +63,7 @@ static std::string env_or(const char *key, const std::string &dflt)
 int sc_main(int, char *[])
 {
     static const int kNumMgr = N_AGU * N_REQ;
+    static const int kNumWMgr = N_WAGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
     const char *ch = std::getenv("RTL_LAB_HOME");
@@ -83,10 +85,15 @@ int sc_main(int, char *[])
     sc_signal<bool> m_req[kNumMgr], m_we[kNumMgr], m_gnt[kNumMgr], m_rvalid[kNumMgr];
     sc_signal<uint64_t> m_addr[kNumMgr], m_wdata[kNumMgr], m_rdata[kNumMgr];
     sc_signal<uint32_t> m_be[kNumMgr];
-    sc_signal<bool> done[N_AGU];
+
+    sc_signal<bool> m_w_req[kNumWMgr], m_w_we[kNumWMgr], m_w_gnt[kNumWMgr], m_w_rvalid[kNumWMgr];
+    sc_signal<uint64_t> m_w_addr[kNumWMgr], m_w_wdata[kNumWMgr], m_w_rdata[kNumWMgr];
+    sc_signal<uint32_t> m_w_be[kNumWMgr];
+
+    sc_signal<bool> done[N_AGU + N_WAGU];
 
 #ifdef USE_SV_DUT
-    top_crossbar_sv<N_AGU, N_REQ, N_BANK, N_ROW> dut("dut");
+    top_crossbar_sv<N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW> dut("dut");
 #else
     top_crossbar<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
 #endif
@@ -102,6 +109,17 @@ int sc_main(int, char *[])
         dut.m_gnt_o[m](m_gnt[m]);
         dut.m_rvalid_o[m](m_rvalid[m]);
         dut.m_rdata_o[m](m_rdata[m]);
+    }
+    for (int m = 0; m < kNumWMgr; ++m)
+    {
+        dut.m_w_req_i[m](m_w_req[m]);
+        dut.m_w_addr_i[m](m_w_addr[m]);
+        dut.m_w_we_i[m](m_w_we[m]);
+        dut.m_w_be_i[m](m_w_be[m]);
+        dut.m_w_wdata_i[m](m_w_wdata[m]);
+        dut.m_w_gnt_o[m](m_w_gnt[m]);
+        dut.m_w_rvalid_o[m](m_w_rvalid[m]);
+        dut.m_w_rdata_o[m](m_w_rdata[m]);
     }
 
     agu_crossbar<N_REQ, WORD_BYTES> *agus[N_AGU];
@@ -128,6 +146,30 @@ int sc_main(int, char *[])
         }
     }
 
+    agu_crossbar<N_REQ, WORD_BYTES> *wagus[N_WAGU];
+    for (int a = 0; a < N_WAGU; ++a)
+    {
+        const std::string nm = "wagu" + std::to_string(a);
+        const std::string stim = stim_dir + "/wmem_" + std::to_string(a) + ".log";
+        const std::string out = out_dir + "/wout_" + std::to_string(a) + ".log";
+        wagus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), stim, out);
+        wagus[a]->clk_i(clk);
+        wagus[a]->rst_ni(rst_ni);
+        wagus[a]->done_o(done[N_AGU + a]);
+        for (int p = 0; p < N_REQ; ++p)
+        {
+            const int m = a * N_REQ + p;
+            wagus[a]->req_o[p](m_w_req[m]);
+            wagus[a]->addr_o[p](m_w_addr[m]);
+            wagus[a]->we_o[p](m_w_we[m]);
+            wagus[a]->be_o[p](m_w_be[m]);
+            wagus[a]->wdata_o[p](m_w_wdata[m]);
+            wagus[a]->gnt_i[p](m_w_gnt[m]);
+            wagus[a]->rvalid_i[p](m_w_rvalid[m]);
+            wagus[a]->rdata_i[p](m_w_rdata[m]);
+        }
+    }
+
     rst_ni.write(false);
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
     rst_ni.write(true);
@@ -137,7 +179,7 @@ int sc_main(int, char *[])
     while (actual < kMaxCycles)
     {
         bool all = true;
-        for (int a = 0; a < N_AGU; ++a)
+        for (int a = 0; a < N_AGU + N_WAGU; ++a)
             all = all && done[a].read();
         if (all)
             break;
@@ -157,13 +199,23 @@ int sc_main(int, char *[])
             if (!e.we)
                 ++total_rd;
     }
+    for (int a = 0; a < N_WAGU; ++a)
+    {
+        const std::size_t len = wagus[a]->trace_.size();
+        const int g = static_cast<int>((len + N_REQ - 1) / N_REQ);
+        g_max = std::max(g_max, g);
+        total_acc += wagus[a]->log_.size();
+        for (const auto &e : wagus[a]->log_)
+            if (!e.we)
+                ++total_rd;
+    }
     const int ideal = kCyclesPerGroup * g_max + kPipeFill;
     const double penalty = ideal > 0 ? 100.0 * (actual - ideal) / ideal : 0.0;
 
     printf("\n");
     printf("=========== crossbar statistics ===========\n");
-    printf(" config       : N_AGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d WORDS_PER_ROW=%d\n",
-           N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW);
+    printf(" config       : N_AGU=%d N_WAGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d WORDS_PER_ROW=%d\n",
+           N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW);
     printf(" accesses     : %zu (%zu reads)\n", total_acc, total_rd);
     printf(" groups (max) : %d\n", g_max);
     printf(" actual cycles: %d\n", actual);
@@ -175,5 +227,7 @@ int sc_main(int, char *[])
     sc_stop();
     for (int a = 0; a < N_AGU; ++a)
         delete agus[a];
+    for (int a = 0; a < N_WAGU; ++a)
+        delete wagus[a];
     return 0;
 }

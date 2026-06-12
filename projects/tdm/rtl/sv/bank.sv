@@ -19,7 +19,7 @@
 `ifndef BANK_SV
 `define BANK_SV
 
-`include "obi.sv"
+`include "obi_pkg.sv"
 
 module bank #(
     parameter int NUM_ROW        = 1024,
