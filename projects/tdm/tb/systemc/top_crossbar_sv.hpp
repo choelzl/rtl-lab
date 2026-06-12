@@ -57,6 +57,9 @@ SC_MODULE(top_crossbar_sv)
 {
     static constexpr int NUM_MGR = NUM_AGU * NUM_REQ;
     static constexpr int NUM_WMGR = NUM_WAGU * NUM_REQ;
+    // req/we/gnt/rvalid are packed into uint32_t bitmasks — enforce the limit.
+    static_assert(NUM_MGR <= 32, "NUM_MGR  > 32: req/we/gnt/rvalid bitmasks overflow uint32_t");
+    static_assert(NUM_WMGR <= 32, "NUM_WMGR > 32: req/we/gnt/rvalid bitmasks overflow uint32_t");
 
     // Clock and reset
     sc_in<bool> clk_i;
@@ -111,26 +114,36 @@ SC_MODULE(top_crossbar_sv)
     sc_signal<uint32_t> s_w_rvalid;
     sc_signal<sc_bv<NUM_WMGR * 32>> s_w_rdata;
 
-    // Pack flat per-manager inputs → wide Verilated input signals
-    void pack_inputs()
+    // -----------------------------------------------------------------------
+    // Shared helpers — instantiated once for each channel width (N).
+    // Static so they don't need 'this'; all data is passed by reference.
+    // -----------------------------------------------------------------------
+    template <int N>
+    static void do_pack(
+        sc_in<bool>(&req_i)[N],
+        sc_in<uint64_t>(&addr_i)[N],
+        sc_in<bool>(&we_i)[N],
+        sc_in<uint32_t>(&be_i)[N],
+        sc_in<uint64_t>(&wdata_i)[N],
+        sc_signal<uint32_t> & s_req,
+        sc_signal<sc_bv<N * 32>> & s_addr,
+        sc_signal<uint32_t> & s_we,
+        sc_signal<sc_bv<N * 4>> & s_be,
+        sc_signal<sc_bv<N * 32>> & s_wdata)
     {
-        uint32_t req_v = 0;
-        uint32_t we_v = 0;
-        sc_bv<NUM_MGR * 32> addr_v;
-        sc_bv<NUM_MGR * 4> be_v;
-        sc_bv<NUM_MGR * 32> wdata_v;
-
-        for (int i = 0; i < NUM_MGR; ++i)
+        uint32_t req_v = 0, we_v = 0;
+        sc_bv<N * 32> addr_v, wdata_v;
+        sc_bv<N * 4> be_v;
+        for (int i = 0; i < N; ++i)
         {
-            if (m_req_i[i].read())
+            if (req_i[i].read())
                 req_v |= (1u << i);
-            if (m_we_i[i].read())
+            if (we_i[i].read())
                 we_v |= (1u << i);
-            addr_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(m_addr_i[i].read());
-            be_v.range(4 * (i + 1) - 1, 4 * i) = m_be_i[i].read();
-            wdata_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(m_wdata_i[i].read());
+            addr_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(addr_i[i].read());
+            be_v.range(4 * (i + 1) - 1, 4 * i) = be_i[i].read();
+            wdata_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(wdata_i[i].read());
         }
-
         s_req.write(req_v);
         s_we.write(we_v);
         s_addr.write(addr_v);
@@ -138,62 +151,30 @@ SC_MODULE(top_crossbar_sv)
         s_wdata.write(wdata_v);
     }
 
-    // Unpack wide Verilated output signals → flat per-manager outputs
-    void unpack_outputs()
+    template <int N>
+    static void do_unpack(
+        const sc_signal<uint32_t> &s_gnt,
+        const sc_signal<uint32_t> &s_rvalid,
+        const sc_signal<sc_bv<N * 32>> &s_rdata,
+        sc_out<bool>(&gnt_o)[N],
+        sc_out<bool>(&rvalid_o)[N],
+        sc_out<uint64_t>(&rdata_o)[N])
     {
         const uint32_t gnt_v = s_gnt.read();
         const uint32_t rvalid_v = s_rvalid.read();
-        const sc_bv<NUM_MGR * 32> rdata_v = s_rdata.read();
-
-        for (int i = 0; i < NUM_MGR; ++i)
+        const sc_bv<N * 32> rdata_v = s_rdata.read();
+        for (int i = 0; i < N; ++i)
         {
-            m_gnt_o[i].write((gnt_v >> i) & 1u);
-            m_rvalid_o[i].write((rvalid_v >> i) & 1u);
-            m_rdata_o[i].write(static_cast<uint64_t>(rdata_v.range(32 * (i + 1) - 1, 32 * i).to_uint()));
+            gnt_o[i].write((gnt_v >> i) & 1u);
+            rvalid_o[i].write((rvalid_v >> i) & 1u);
+            rdata_o[i].write(static_cast<uint64_t>(rdata_v.range(32 * (i + 1) - 1, 32 * i).to_uint()));
         }
     }
 
-    // Pack flat per-write-manager inputs → wide Verilated wagu input signals
-    void pack_w_inputs()
-    {
-        uint32_t req_v = 0;
-        uint32_t we_v = 0;
-        sc_bv<NUM_WMGR * 32> addr_v;
-        sc_bv<NUM_WMGR * 4> be_v;
-        sc_bv<NUM_WMGR * 32> wdata_v;
-
-        for (int i = 0; i < NUM_WMGR; ++i)
-        {
-            if (m_w_req_i[i].read())
-                req_v |= (1u << i);
-            if (m_w_we_i[i].read())
-                we_v |= (1u << i);
-            addr_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(m_w_addr_i[i].read());
-            be_v.range(4 * (i + 1) - 1, 4 * i) = m_w_be_i[i].read();
-            wdata_v.range(32 * (i + 1) - 1, 32 * i) = static_cast<uint32_t>(m_w_wdata_i[i].read());
-        }
-
-        s_w_req.write(req_v);
-        s_w_we.write(we_v);
-        s_w_addr.write(addr_v);
-        s_w_be.write(be_v);
-        s_w_wdata.write(wdata_v);
-    }
-
-    // Unpack wide Verilated wagu output signals → flat per-write-manager outputs
-    void unpack_w_outputs()
-    {
-        const uint32_t gnt_v = s_w_gnt.read();
-        const uint32_t rvalid_v = s_w_rvalid.read();
-        const sc_bv<NUM_WMGR * 32> rdata_v = s_w_rdata.read();
-
-        for (int i = 0; i < NUM_WMGR; ++i)
-        {
-            m_w_gnt_o[i].write((gnt_v >> i) & 1u);
-            m_w_rvalid_o[i].write((rvalid_v >> i) & 1u);
-            m_w_rdata_o[i].write(static_cast<uint64_t>(rdata_v.range(32 * (i + 1) - 1, 32 * i).to_uint()));
-        }
-    }
+    void pack_inputs() { do_pack<NUM_MGR>(m_req_i, m_addr_i, m_we_i, m_be_i, m_wdata_i, s_req, s_addr, s_we, s_be, s_wdata); }
+    void pack_w_inputs() { do_pack<NUM_WMGR>(m_w_req_i, m_w_addr_i, m_w_we_i, m_w_be_i, m_w_wdata_i, s_w_req, s_w_addr, s_w_we, s_w_be, s_w_wdata); }
+    void unpack_outputs() { do_unpack<NUM_MGR>(s_gnt, s_rvalid, s_rdata, m_gnt_o, m_rvalid_o, m_rdata_o); }
+    void unpack_w_outputs() { do_unpack<NUM_WMGR>(s_w_gnt, s_w_rvalid, s_w_rdata, m_w_gnt_o, m_w_rvalid_o, m_w_rdata_o); }
 
     SC_CTOR(top_crossbar_sv) : vdut("vdut")
     {

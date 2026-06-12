@@ -41,6 +41,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <memory>
 
 #ifdef USE_SV_DUT
 #include "top_crossbar_sv.hpp"
@@ -51,8 +52,8 @@
 
 #include "constants.hpp"
 
-static const int kCyclesPerGroup = 1;
-static const int kPipeFill = 2;
+static constexpr int kCyclesPerGroup = 1;
+static constexpr int kPipeFill = 2;
 
 static std::string env_or(const char *key, const std::string &dflt)
 {
@@ -62,8 +63,8 @@ static std::string env_or(const char *key, const std::string &dflt)
 
 int sc_main(int, char *[])
 {
-    static const int kNumMgr = N_AGU * N_REQ;
-    static const int kNumWMgr = N_WAGU * N_REQ;
+    constexpr int kNumMgr = N_AGU * N_REQ;
+    constexpr int kNumWMgr = N_WAGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
     const char *ch = std::getenv("RTL_LAB_HOME");
@@ -122,13 +123,13 @@ int sc_main(int, char *[])
         dut.m_w_rdata_o[m](m_w_rdata[m]);
     }
 
-    agu_crossbar<N_REQ, WORD_BYTES> *agus[N_AGU];
+    std::unique_ptr<agu_crossbar<N_REQ, WORD_BYTES>> agus[N_AGU];
     for (int a = 0; a < N_AGU; ++a)
     {
         const std::string nm = "agu" + std::to_string(a);
         const std::string stim = stim_dir + "/mem_" + std::to_string(a) + ".log";
         const std::string out = out_dir + "/out_" + std::to_string(a) + ".log";
-        agus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), stim, out);
+        agus[a] = std::make_unique<agu_crossbar<N_REQ, WORD_BYTES>>(nm.c_str(), stim, out);
         agus[a]->clk_i(clk);
         agus[a]->rst_ni(rst_ni);
         agus[a]->done_o(done[a]);
@@ -146,13 +147,13 @@ int sc_main(int, char *[])
         }
     }
 
-    agu_crossbar<N_REQ, WORD_BYTES> *wagus[N_WAGU];
+    std::unique_ptr<agu_crossbar<N_REQ, WORD_BYTES>> wagus[N_WAGU];
     for (int a = 0; a < N_WAGU; ++a)
     {
         const std::string nm = "wagu" + std::to_string(a);
         const std::string stim = stim_dir + "/wmem_" + std::to_string(a) + ".log";
         const std::string out = out_dir + "/wout_" + std::to_string(a) + ".log";
-        wagus[a] = new agu_crossbar<N_REQ, WORD_BYTES>(nm.c_str(), stim, out);
+        wagus[a] = std::make_unique<agu_crossbar<N_REQ, WORD_BYTES>>(nm.c_str(), stim, out);
         wagus[a]->clk_i(clk);
         wagus[a]->rst_ni(rst_ni);
         wagus[a]->done_o(done[N_AGU + a]);
@@ -174,7 +175,7 @@ int sc_main(int, char *[])
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
     rst_ni.write(true);
 
-    const int kMaxCycles = 1000000;
+    constexpr int kMaxCycles = 1000000;
     int actual = 0;
     while (actual < kMaxCycles)
     {
@@ -186,6 +187,9 @@ int sc_main(int, char *[])
         sc_start(CLK_PERIOD_NS, SC_NS);
         ++actual;
     }
+    if (actual >= kMaxCycles)
+        fprintf(stderr, "WARNING: simulation timed out after %d cycles — not all AGUs finished\n",
+                kMaxCycles);
 
     int g_max = 0;
     std::size_t total_acc = 0, total_rd = 0;
@@ -225,9 +229,5 @@ int sc_main(int, char *[])
     printf("===========================================\n");
 
     sc_stop();
-    for (int a = 0; a < N_AGU; ++a)
-        delete agus[a];
-    for (int a = 0; a < N_WAGU; ++a)
-        delete wagus[a];
     return 0;
 }
