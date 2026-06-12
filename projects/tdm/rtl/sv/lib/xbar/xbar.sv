@@ -11,7 +11,7 @@ module system_xbar
     parameter XBAR_NSLAVE = 6,
     parameter SEL_SLICE_START = 0,
     parameter SEL_SLICE_LENGTH = 2,
-    localparam int unsigned IdxWidth = cf_math_pkg::idx_width(XBAR_NSLAVE)
+    localparam int unsigned IdxWidth = $clog2(XBAR_NSLAVE)
 ) (
     input logic clk_i,
     input logic rst_ni,
