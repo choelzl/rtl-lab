@@ -24,7 +24,8 @@
 module bank #(
     parameter int NUM_ROW        = 1024,
     parameter int WORDS_PER_ROW  = 4,
-    parameter int BYTES_PER_WORD = 4
+    parameter int BYTES_PER_WORD = 4,
+    parameter SEL_SLICE_START = 0
 ) (
     input  logic                clk_i,
     input  logic                rst_ni,
@@ -32,7 +33,7 @@ module bank #(
     output obi_pkg::obi_resp_t  obi_resp_o
 );
 
-    localparam int ADDR_W = $bits(obi_req_i.addr);
+    localparam int ADDR_W = $bits(obi_req_i.addr)- SEL_SLICE_START;
     localparam int DATA_W = $bits(obi_req_i.wdata);
     localparam int BE_W   = $bits(obi_req_i.be);
 
@@ -52,7 +53,7 @@ module bank #(
     logic [DATA_W-1:0] mem [0:NUM_ROW-1];
 
     logic [ADDR_W-1:0] row_idx;
-    assign row_idx = obi_req_i.addr / ADDR_W'(WORDS_PER_ROW * BYTES_PER_WORD);
+    assign row_idx = obi_req_i.addr >> SEL_SLICE_START;
 
     assign obi_resp_o.gnt = obi_req_i.req;
 

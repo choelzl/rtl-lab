@@ -15,6 +15,11 @@
 //   Address routing (BANK_ROWS=1024 → BANK_BYTES=4096):
 //     L1 map: group k covers [k * L2_NOUT * BANK_BYTES, (k+1) * L2_NOUT * BANK_BYTES)
 //     L2 map: bank b in group k covers [(k*L2_NOUT+b)*BANK_BYTES, (k*L2_NOUT+b+1)*BANK_BYTES)
+//
+//   Address scramble (applied before routing, see addr_hash):
+//     XORs the lower routing/offset bits with the
+//     next-higher nibble to spread stride patterns across different banks and
+//     reduce conflict probability.
 // -----------------------------------------------------------------------------
 
 module top_crossbar
@@ -25,11 +30,14 @@ module top_crossbar
     parameter int unsigned N_REQ     = 4,
     parameter int unsigned N_BANK    = 32,
     parameter int unsigned N_ROW     = 1024,
+    parameter int unsigned WORDS_PER_ROW  = 4,
+    parameter int unsigned BYTES_PER_WORD = 4,
     // Derived — do not override
     localparam int unsigned NUM_AGU    = N_AGU * N_REQ,
     localparam int unsigned NUM_WAGU   = N_WAGU * N_REQ,
     localparam int unsigned NUM_BANK_G = N_BANK / N_REQ,
-    localparam int unsigned BANK_BYTES = N_ROW * 4
+    localparam int unsigned BYTES_PER_ROW = WORDS_PER_ROW*BYTES_PER_WORD,
+    localparam int unsigned BANK_BYTES = N_ROW * BYTES_PER_ROW
 ) (
     input  logic clk_i,
     input  logic rst_ni,
@@ -53,18 +61,26 @@ module top_crossbar
 );
 
   // --------------------------------------------------------------------------
-  // Pack flat AGU ports → obi_pkg structs
+  // Address scramble: XOR addr[5:2] with addr[8:5] to reduce bank conflicts.
+  // Applied to every AGU and WAGU address before routing.
+  // --------------------------------------------------------------------------
+  function automatic logic [31:0] addr_hash(input logic [31:0] addr);
+    return {addr[31:12],  addr[11:9] + addr[8:6], addr[5:0]};
+  endfunction
+
+  // --------------------------------------------------------------------------
+  // Pack flat AGU ports → obi_pkg structs (scrambled addr_hash)
   // --------------------------------------------------------------------------
   obi_req_t  [NUM_AGU-1:0] agu_obi_req;
   obi_resp_t [NUM_AGU-1:0] agu_obi_resp;
 
   for (genvar a = 0; a < NUM_AGU; a++) begin : gen_agu_pack
     assign agu_obi_req[a] = '{
-      req:   agu_req_i  [a],
-      we:    agu_we_i   [a],
-      be:    agu_be_i   [a],
-      addr:  agu_addr_i [a],
-      wdata: agu_wdata_i[a]
+      req:   agu_req_i             [a],
+      we:    agu_we_i              [a],
+      be:    agu_be_i              [a],
+      addr:  addr_hash(agu_addr_i[a]),
+      wdata: agu_wdata_i           [a]
     };
     assign agu_gnt_o   [a] = agu_obi_resp[a].gnt;
     assign agu_rvalid_o[a] = agu_obi_resp[a].rvalid;
@@ -72,18 +88,18 @@ module top_crossbar
   end
 
   // --------------------------------------------------------------------------
-  // Pack flat WAGU ports → obi_pkg structs
+  // Pack flat WAGU ports → obi_pkg structs (scrambled addr_hash)
   // --------------------------------------------------------------------------
   obi_req_t  [NUM_WAGU-1:0] wagu_obi_req;
   obi_resp_t [NUM_WAGU-1:0] wagu_obi_resp;
 
   for (genvar a = 0; a < NUM_WAGU; a++) begin : gen_wagu_pack
     assign wagu_obi_req[a] = '{
-      req:   wagu_req_i  [a],
-      we:    wagu_we_i   [a],
-      be:    wagu_be_i   [a],
-      addr:  wagu_addr_i [a],
-      wdata: wagu_wdata_i[a]
+      req:   wagu_req_i              [a],
+      we:    wagu_we_i               [a],
+      be:    wagu_be_i               [a],
+      addr:  addr_hash(wagu_addr_i[a]),
+      wdata: wagu_wdata_i            [a]
     };
     assign wagu_gnt_o   [a] = wagu_obi_resp[a].gnt;
     assign wagu_rvalid_o[a] = wagu_obi_resp[a].rvalid;
@@ -104,7 +120,7 @@ module top_crossbar
     xbar #(
         .XBAR_NMASTER(N_REQ),
         .XBAR_NSLAVE (N_REQ),
-        .SEL_SLICE_START(0),
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)),
         .SEL_SLICE_LENGTH($clog2(N_REQ))
     ) u_xbar (
         .clk_i,
@@ -131,7 +147,7 @@ module top_crossbar
     xbar #(
         .XBAR_NMASTER(N_REQ),
         .XBAR_NSLAVE (N_REQ),
-        .SEL_SLICE_START(0),
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)),
         .SEL_SLICE_LENGTH($clog2(N_REQ))
     ) u_xbar (
         .clk_i,
@@ -167,7 +183,7 @@ module top_crossbar
     xbar #(
         .XBAR_NMASTER(N_AGU),
         .XBAR_NSLAVE (NUM_BANK_G),
-        .SEL_SLICE_START($clog2(N_REQ)),
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)+$clog2(N_REQ)),
         .SEL_SLICE_LENGTH($clog2(NUM_BANK_G))
     ) u_xbar (
         .clk_i,
@@ -204,7 +220,7 @@ module top_crossbar
     xbar #(
         .XBAR_NMASTER(N_WAGU),
         .XBAR_NSLAVE (NUM_BANK_G),
-        .SEL_SLICE_START($clog2(N_REQ)),
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)+$clog2(N_REQ)),
         .SEL_SLICE_LENGTH($clog2(NUM_BANK_G))
     ) u_xbar (
         .clk_i,
@@ -247,8 +263,8 @@ module top_crossbar
     xbar #(
         .XBAR_NMASTER(2),
         .XBAR_NSLAVE (2),
-        .SEL_SLICE_START($clog2(N_REQ)+$clog2(NUM_BANK_G)),
-        .SEL_SLICE_LENGTH(1)
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)+$clog2(N_REQ)+$clog2(NUM_BANK_G)),
+        .SEL_SLICE_LENGTH($clog2(2))
     ) u_xbar (
         .clk_i,
         .rst_ni,
@@ -267,7 +283,8 @@ module top_crossbar
     bank #(
         .NUM_ROW       (N_ROW),
         .WORDS_PER_ROW (1),
-        .BYTES_PER_WORD(4)
+        .BYTES_PER_WORD(4),
+        .SEL_SLICE_START($clog2(BYTES_PER_ROW)+$clog2(N_REQ)+$clog2(NUM_BANK_G)+$clog2(2))
     ) u_bank (
         .clk_i,
         .rst_ni,
