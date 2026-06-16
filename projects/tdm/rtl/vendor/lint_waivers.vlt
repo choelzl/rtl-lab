@@ -1,0 +1,10 @@
+`verilator_config
+
+lint_off -rule UNUSEDSIGNAL   -file "*/rtl/vendor/*"
+lint_off -rule PINCONNECTEMPTY -file "*/rtl/vendor/*"
+lint_off -rule GENUNNAMED     -file "*/rtl/vendor/*"
+lint_off -rule UNSIGNED       -file "*/rtl/vendor/*"
+lint_off -rule WIDTHTRUNC     -file "*/rtl/vendor/*"
+lint_off -rule UNOPTFLAT      -file "*/rtl/vendor/*"
+lint_off -rule SYNCASYNCNET   -file "*/rtl/vendor/*"
+lint_off -rule SYNCASYNCNET   -file "*/rtl/crossbar.sv"

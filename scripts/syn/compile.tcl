@@ -24,7 +24,13 @@ yosys "read_liberty -lib $env(ASAP7_HOME)/lib/NLDM/asap7sc7p5t_OA_RVT_TT_nldm_21
 # -----------------------------------------------------------------------------
 # Read SystemVerilog sources
 # -----------------------------------------------------------------------------
-set rtl_files [lsort [glob "$env(RTL_LAB_HOME)/projects/$env(SEL_PROJECT)/rtl/*.sv"]]
+set rtl_dir "$env(RTL_LAB_HOME)/projects/$env(SEL_PROJECT)/rtl"
+set rtl_files [lsort [split [exec find $rtl_dir -name "*.sv"] "\n"]]
+
+set inc_flags ""
+foreach dir [lsort [split [exec find $rtl_dir -type d] "\n"]] {
+    append inc_flags " -I $dir"
+}
 
 set g_flags ""
 if {$env(SEL_PARAMS) ne "none"} {
@@ -38,4 +44,4 @@ if {$env(SEL_KEEP_HIERARCHY) eq "1"} {
     set kh_flag " --keep-hierarchy"
 }
 
-yosys "read_slang [join $rtl_files] --top $env(SEL_TOP_LEVEL)$g_flags$kh_flag"
+yosys "read_slang --single-unit [join $rtl_files]$inc_flags --top $env(SEL_TOP_LEVEL)$g_flags$kh_flag"

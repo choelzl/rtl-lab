@@ -16,11 +16,15 @@ if [ "${SEL_PARAMS}" != "none" ]; then
     done
 fi
 
-# Collect -I flags including any lib subdirectory trees that exist
-inc_flags=(-I"${PROJ}/rtl" -I"${PROJ}/rtl/sv")
-for d in "${PROJ}"/rtl/sv/lib "${PROJ}"/rtl/sv/lib/*/; do
-    [ -d "$d" ] && inc_flags+=(-I"$d")
-done
+inc_flags=()
+while IFS= read -r d; do
+    inc_flags+=(-I"$d")
+done < <(find "${PROJ}/rtl" -type d | sort)
+
+vlt_files=()
+while IFS= read -r f; do
+    vlt_files+=("$f")
+done < <(find "${PROJ}/rtl" -name "*.vlt" | sort)
 
 verilator \
     -sv \
@@ -31,11 +35,11 @@ verilator \
     --trace-max-width 0 \
     -Wall \
     -Wno-fatal \
-    -Wno-UNUSEDPARAM \
     -DVCD \
     -DCLK_PERIOD_NS="${SEL_CLK_PERIOD_NS}" \
     "${g_flags[@]}" \
     "${inc_flags[@]}" \
+    "${vlt_files[@]}" \
     --top-module "tb_${SEL_TOP_LEVEL}" \
     "${PROJ}/tb/tb_${SEL_TOP_LEVEL}.sv" \
     -Mdir "${SIM}/build/obj_dir" \

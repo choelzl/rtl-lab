@@ -1,0 +1,130 @@
+diff --git a/xbar.sv b/xbar_varlat.sv
+similarity index 74%
+rename from xbar.sv
+rename to xbar_varlat.sv
+index 15d0403..4818fe2 100644
+--- a/xbar.sv
++++ b/xbar_varlat.sv
+@@ -9,40 +9,55 @@
+ // specific language governing permissions and limitations under the License.
+ //
+ // Author: Michael Schaffner <schaffner@iis.ee.ethz.ch>, ETH Zurich
++//        Davide Schiavone <davide.schiavone@epfl.ch>, EPFL Lausanne
+ // Date: 07.03.2019
+ // Description: Full crossbar, implemented as logarithmic interconnect.
+ 
+-module xbar #(
++module xbar_varlat #(
++  parameter int unsigned AggregateGnt    = 1,    // aggregate gnt, i.e. gnt_o = |gnt_i see (*) for examples
+   parameter int unsigned NumIn           = 4,    // number of requestors
+   parameter int unsigned NumOut          = 4,    // number of targets
+   parameter int unsigned ReqDataWidth    = 32,   // word width of data
+   parameter int unsigned RespDataWidth   = 32,   // word width of data
+-  parameter int unsigned RespLat         = 1,    // response latency of slaves
+-  parameter bit          WriteRespOn     = 1'b1, // defines whether the interconnect returns a write response
+-  parameter bit          BroadCastOn     = 1'b0, // perform broadcast
+-  parameter bit          ExtPrio         = 1'b0  // use external arbiter priority flags
++  parameter bit          ExtPrio         = 1'b0,  // use external arbiter priority flags
++  parameter int unsigned LogNumOut       = NumOut > 1 ? $clog2(NumOut) : 1,
++  parameter int unsigned LogNumIn        = NumIn > 1 ? $clog2(NumIn) : 1
+ ) (
+   input  logic                                  clk_i,
+   input  logic                                  rst_ni,
+   // external prio flag input
+-  input  logic [NumOut-1:0][$clog2(NumIn)-1:0]  rr_i,      // external prio input
++  input  logic [NumOut-1:0][LogNumIn-1:0]       rr_i,      // external prio input
+   // master side
+   input  logic [NumIn-1:0]                      req_i,     // request signal
+-  input  logic [NumIn-1:0][$clog2(NumOut)-1:0]  add_i,     // bank Address
+-  input  logic [NumIn-1:0]                      wen_i,     // 1: store, 0: load
++  input  logic [NumIn-1:0][LogNumOut-1:0]       add_i,     // bank Address
+   input  logic [NumIn-1:0][ReqDataWidth-1:0]    wdata_i,   // write data
+   output logic [NumIn-1:0]                      gnt_o,     // grant (combinationally dependent on req_i and add_i)
+   output logic [NumIn-1:0]                      vld_o,     // response valid, also asserted if write responses are enabled
+   output logic [NumIn-1:0][RespDataWidth-1:0]   rdata_o,   // data response (for load commands)
+   // slave side
+-  input  logic [NumOut-1:0]                     gnt_i,     // request out
+-  output logic [NumOut-1:0]                     req_o,     // grant input
++  input  logic [NumOut-1:0]                     gnt_i,     // grant input
++  output logic [NumOut-1:0]                     req_o,     // request out
++  input  logic [NumOut-1:0]                     vld_i,     // valid response input
+   /* verilator lint_off UNOPTFLAT */
+   output logic [NumOut-1:0][ReqDataWidth-1:0]   wdata_o,   // write data
+   /* verilator lint_on UNOPTFLAT */
+   input  logic [NumOut-1:0][RespDataWidth-1:0]  rdata_i    // data response (for load commands)
+ );
+ 
++
++/*
++  (*):
++  AggregateGnt should be 0 when a single master is actually aggregating multiple master requests,
++  for example, in the case the single master is the output of another xbar_varlat.
++
++  This is not needed when a real-single master is used or multiple masters are used as the
++  rr_arb_tree dispatches the grant to each corresponding master.
++
++  Whereas, when the xbar_varlat is used with a single master, which is shared among severals
++  as desbribed above, the rr_arb_tree gives all the grant signals to the
++  shared single master, thus granting transactions that should not be granted
++*/
++
+ ////////////////////////////////////////////////////////////////////////
+ // inter-level wires
+ ////////////////////////////////////////////////////////////////////////
+@@ -56,25 +71,23 @@ logic [NumIn-1:0][NumOut-1:0] ma_gnt, ma_req;
+ // instantiate bank address decoder/resp mux for each master
+ ////////////////////////////////////////////////////////////////////////
+ for (genvar j = 0; unsigned'(j) < NumIn; j++) begin : gen_inputs
+-  addr_dec_resp_mux #(
++  addr_dec_resp_mux_varlat #(
++    .AggregateGnt  ( AggregateGnt  ),
+     .NumOut        ( NumOut        ),
+     .ReqDataWidth  ( ReqDataWidth  ),
+-    .RespDataWidth ( RespDataWidth ),
+-    .RespLat       ( RespLat       ),
+-    .BroadCastOn   ( BroadCastOn   ),
+-    .WriteRespOn   ( WriteRespOn   )
++    .RespDataWidth ( RespDataWidth )
+   ) i_addr_dec_resp_mux (
+     .clk_i   ( clk_i      ),
+     .rst_ni  ( rst_ni     ),
+     .req_i   ( req_i[j]   ),
+     .add_i   ( add_i[j]   ),
+-    .wen_i   ( wen_i[j]   ),
+     .data_i  ( wdata_i[j] ),
+     .gnt_o   ( gnt_o[j]   ),
+     .vld_o   ( vld_o[j]   ),
+     .rdata_o ( rdata_o[j] ),
+     .req_o   ( ma_req[j]  ),
+     .gnt_i   ( ma_gnt[j]  ),
++    .vld_i   ( vld_i      ),
+     .data_o  ( ma_data[j] ),
+     .rdata_i ( rdata_i    )
+   );
+@@ -99,8 +112,7 @@ for (genvar k = 0; unsigned'(k) < NumOut; k++) begin : gen_outputs
+     rr_arb_tree #(
+       .NumIn     ( NumIn        ),
+       .DataWidth ( ReqDataWidth ),
+-      .ExtPrio   ( ExtPrio      ),
+-      .LockIn    ( 1'b1         )
++      .ExtPrio   ( ExtPrio      )
+     ) i_rr_arb_tree (
+       .clk_i   ( clk_i      ),
+       .rst_ni  ( rst_ni     ),
+@@ -120,7 +132,7 @@ end
+ ////////////////////////////////////////////////////////////////////////
+ // assertion
+ ////////////////////////////////////////////////////////////////////////
+-
++`ifndef SYNTHESIS
+ // pragma translate_off
+ initial begin
+   assert(NumIn > 0) else
+@@ -129,5 +141,6 @@ initial begin
+     $fatal(1,"NumOut needs to be larger than 0.");
+ end
+ // pragma translate_on
++`endif
+ 
+-endmodule // xbar
++endmodule // xbar_varlat
