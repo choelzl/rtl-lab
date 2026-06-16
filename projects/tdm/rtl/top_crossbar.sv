@@ -49,6 +49,47 @@ module top_crossbar
     input  obi_req_t  [NUM_WR-1:0] wagu_req_i,
     output obi_resp_t [NUM_WR-1:0] wagu_resp_o
 );
+    function automatic logic [31:0] addr_hash(input logic [31:0] addr);
+        return {addr[31:9], {addr[11:9] + addr[8:6]}[2:0], addr[5:0]};
+    endfunction
+
+    // --------------------------------------------------------------------------
+    // Pack flat AGU ports → obi_pkg structs (scrambled addr_hash)
+    // --------------------------------------------------------------------------
+    obi_req_t  [NUM_RD-1:0] ragu_obi_req;
+    obi_resp_t [NUM_RD-1:0] ragu_obi_resp;
+
+    for (genvar a = 0; a < NUM_RD; a++) begin : gen_ragu_pack
+        assign ragu_obi_req[a] = '{
+            req:   ragu_req_i[a].req,
+            we:    ragu_req_i[a].we,
+            be:    ragu_req_i[a].be,
+            addr:  addr_hash(ragu_req_i[a].addr),
+            wdata: ragu_req_i[a].wdata
+        };
+        assign ragu_resp_o[a].gnt    = ragu_obi_resp[a].gnt;
+        assign ragu_resp_o[a].rvalid = ragu_obi_resp[a].rvalid;
+        assign ragu_resp_o[a].rdata  = ragu_obi_resp[a].rdata;
+    end
+
+    // --------------------------------------------------------------------------
+    // Pack flat WAGU ports → obi_pkg structs (scrambled addr_hash)
+    // --------------------------------------------------------------------------
+    obi_req_t  [NUM_WR-1:0] wagu_obi_req;
+    obi_resp_t [NUM_WR-1:0] wagu_obi_resp;
+
+    for (genvar a = 0; a < NUM_WR; a++) begin : gen_wagu_pack
+        assign wagu_obi_req[a] = '{
+            req:   wagu_req_i[a].req,
+            we:    wagu_req_i[a].we,
+            be:    wagu_req_i[a].be,
+            addr:  addr_hash(wagu_req_i[a].addr),
+            wdata: wagu_req_i[a].wdata
+        };
+        assign wagu_resp_o[a].gnt    = wagu_obi_resp[a].gnt;
+        assign wagu_resp_o[a].rvalid = wagu_obi_resp[a].rvalid;
+        assign wagu_resp_o[a].rdata  = wagu_obi_resp[a].rdata;
+    end
 
     obi_req_t  [NUM_RAGU-1:0][NUM_REQ-1:0] rd_l1_l2_req;
     obi_resp_t [NUM_RAGU-1:0][NUM_REQ-1:0] rd_l1_l2_resp;
@@ -62,8 +103,8 @@ module top_crossbar
         ) crossbar_level_1_i (
             .clk_i,
             .rst_ni,
-            .master_req_i (ragu_req_i [j*NUM_REQ +: NUM_REQ]),
-            .master_resp_o(ragu_resp_o[j*NUM_REQ +: NUM_REQ]),
+            .master_req_i (ragu_obi_req [j*NUM_REQ +: NUM_REQ]),
+            .master_resp_o(ragu_obi_resp[j*NUM_REQ +: NUM_REQ]),
             .slave_req_o  (rd_l1_l2_req [j]),
             .slave_resp_i (rd_l1_l2_resp[j])
         );
@@ -81,8 +122,8 @@ module top_crossbar
         ) crossbar_level_1_i (
             .clk_i,
             .rst_ni,
-            .master_req_i (wagu_req_i [j*NUM_REQ +: NUM_REQ]),
-            .master_resp_o(wagu_resp_o[j*NUM_REQ +: NUM_REQ]),
+            .master_req_i (wagu_obi_req [j*NUM_REQ +: NUM_REQ]),
+            .master_resp_o(wagu_obi_resp[j*NUM_REQ +: NUM_REQ]),
             .slave_req_o  (wr_l1_l2_req [j]),
             .slave_resp_i (wr_l1_l2_resp[j])
         );
