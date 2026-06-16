@@ -1,0 +1,24 @@
+/*
+ * Copyright 2026 EPFL
+ * Solderpad Hardware License, Version 2.1, see LICENSE.md for details.
+ * SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
+ *
+ * Author: Simone Machetti - simone.machetti@epfl.ch
+ */
+
+{
+  name: "common_cells",
+  target_dir: "common_cells",
+
+  upstream: {
+    url: "https://github.com/pulp-platform/common_cells.git",
+    rev: "63e1b679a70eca3a1d60d686bc1fa170ec08e1ab",
+  },
+
+  mapping: [
+    { from: "src/cf_math_pkg.sv",                  to: "cf_math_pkg.sv" },
+    { from: "src/lzc.sv",                          to: "lzc.sv" },
+    { from: "src/rr_arb_tree.sv",                  to: "rr_arb_tree.sv" },
+    { from: "include/common_cells/assertions.svh", to: "assertions.svh" },
+  ],
+}

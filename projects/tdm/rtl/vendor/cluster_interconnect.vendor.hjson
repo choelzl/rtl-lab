@@ -1,0 +1,29 @@
+/*
+ * Copyright 2026 EPFL
+ * Solderpad Hardware License, Version 2.1, see LICENSE.md for details.
+ * SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
+ *
+ * Author: Simone Machetti - simone.machetti@epfl.ch
+ */
+
+{
+  name: "cluster_interconnect",
+  target_dir: "cluster_interconnect",
+
+  upstream: {
+    url: "https://github.com/pulp-platform/cluster_interconnect.git",
+    rev: "2967d8d17be0a6139229ca8d3d4956e182aec3de",
+    only_subdir: "rtl/tcdm_interconnect",
+  },
+
+  patch_dir: "patches/cluster_interconnect",
+
+  exclude_from_upstream: [
+    "README.md",
+    "amo_shim.sv",
+    "bfly_net.sv",
+    "clos_net.sv",
+    "tcdm_interconnect.sv",
+    "tcdm_interconnect_pkg.sv",
+  ],
+}
