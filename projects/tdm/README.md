@@ -37,7 +37,7 @@ make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=big \
 | Top-level      | File                                                         | Description                                                                                                                                    |
 | -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `top_crossbar`  | [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | DUT: the `N_MGR × N_BANK` crossbar interconnect plus `N_BANK` memory banks. Exposes the manager-side OBI ports; the harness attaches the AGUs. |
-| `Vtop_crossbar` | [rtl/sv/top_crossbar.sv](rtl/sv/top_crossbar.sv)             | Alternative DUT: the two-level SV crossbar (Verilated into a SystemC module). Use `TOP_LEVEL=Vtop_crossbar` to select it. The same harness and AGUs are used; pass the full parameter set via `PARAMS` (see below). |
+| `Vtop_crossbar` | [rtl/top_crossbar.sv](rtl/top_crossbar.sv)             | Alternative DUT: the two-level SV crossbar (Verilated into a SystemC module). Use `TOP_LEVEL=Vtop_crossbar` to select it. The same harness and AGUs are used; pass the full parameter set via `PARAMS` (see below). |
 
 DUT submodules: [crossbar.hpp](rtl/systemc/crossbar.hpp) (round-robin per-bank arbiter, word-interleaved routing) and [bank.hpp](rtl/systemc/bank.hpp) (single-port OBI RAM, 1-cycle latency).
 

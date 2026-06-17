@@ -36,9 +36,16 @@
 //   arbiter winner is effectively granted every cycle.
 //
 // Template parameters (NUM_MGR = N_AGU*N_REQ; NUM_BANK, BYTES_PER_WORD from PARAMS):
-//   NUM_MGR    - number of manager request ports (default 8)
-//   NUM_BANK   - number of memory banks (default 8)
-//   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
+//   NUM_MGR        - number of manager request ports (default 8)
+//   NUM_BANK       - number of slave ports (default 8)
+//   BYTES_PER_WORD - bytes per word; used only when SEL_LEN == 0 (default 4)
+//   SEL_START      - LSB of routing address slice; ignored when SEL_LEN == 0 (default 0)
+//   SEL_LEN        - slice width; 0 = use legacy word-interleaved routing (default 0)
+//
+//   When SEL_LEN == 0 (default): routes by (addr/BYTES_PER_WORD) % NUM_BANK and
+//   delivers the bank-local address to the slave (routing bits stripped).
+//   When SEL_LEN > 0: routes by (addr >> SEL_START) & mask and passes the full
+//   address through to the slave unchanged (caller strips routing bits).
 // -----------------------------------------------------------------------------
 
 #ifndef CROSSBAR_HPP
@@ -48,7 +55,8 @@
 
 #include <cstdint>
 
-template <int NUM_MGR = 8, int NUM_BANK = 8, int BYTES_PER_WORD = 4>
+template <int NUM_MGR = 8, int NUM_BANK = 8, int BYTES_PER_WORD = 4,
+          int SEL_START = 0, int SEL_LEN = 0>
 SC_MODULE(crossbar) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
@@ -76,10 +84,16 @@ SC_MODULE(crossbar) {
     sc_signal<int>   owner[NUM_BANK];
 
     static int bank_of(uint64_t a) {
-        return static_cast<int>((a / BYTES_PER_WORD) % NUM_BANK);
+        if constexpr (SEL_LEN > 0)
+            return static_cast<int>((a >> SEL_START) & ((1 << SEL_LEN) - 1));
+        else
+            return static_cast<int>((a / BYTES_PER_WORD) % NUM_BANK);
     }
-    static uint64_t local_of(uint64_t a) {
-        return (a / BYTES_PER_WORD / NUM_BANK) * static_cast<uint64_t>(BYTES_PER_WORD);
+    static uint64_t slave_addr(uint64_t a) {
+        if constexpr (SEL_LEN > 0)
+            return a;
+        else
+            return (a / BYTES_PER_WORD / NUM_BANK) * static_cast<uint64_t>(BYTES_PER_WORD);
     }
 
     void comb() {
@@ -110,7 +124,7 @@ SC_MODULE(crossbar) {
 
             if (winner >= 0) {
                 b_req_o[b].write(true);
-                b_addr_o[b].write(local_of(m_addr_i[winner].read()));
+                b_addr_o[b].write(slave_addr(m_addr_i[winner].read()));
                 b_we_o[b].write(m_we_i[winner].read());
                 b_be_o[b].write(m_be_i[winner].read());
                 b_wdata_o[b].write(m_wdata_i[winner].read());

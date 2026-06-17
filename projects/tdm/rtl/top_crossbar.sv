@@ -216,7 +216,7 @@ module top_crossbar
             wdata: bank_req[i].wdata
         };
         bank #(
-            .NUM_ROW       (NUM_ROW),
+            .NUM_ROW       (NUM_ROW/2),
             .WORDS_PER_ROW (WORDS_PER_ROW),
             .BYTES_PER_WORD(BYTES_PER_WORD)
         ) bank_i (

@@ -43,7 +43,7 @@
 #include <string>
 #include <memory>
 
-#ifdef USE_SV_DUT
+#ifdef SV
 #include "top_crossbar_sv.hpp"
 #else
 #include "top_crossbar.hpp"
@@ -93,10 +93,10 @@ int sc_main(int, char *[])
 
     sc_signal<bool> done[N_AGU + N_WAGU];
 
-#ifdef USE_SV_DUT
+#ifdef SV
     top_crossbar_sv<N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW> dut("dut");
 #else
-    top_crossbar<N_AGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
+    top_crossbar<N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
 #endif
     dut.clk_i(clk);
     dut.rst_ni(rst_ni);

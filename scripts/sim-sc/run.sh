@@ -20,6 +20,11 @@ SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 g_flags=()
 cflags="-std=c++17 -I${PROJ}/tb/systemc -I${PROJ}/rtl/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
 
+if [[ "${SEL_TOP_LEVEL}" == V* ]]; then
+    SEL_TOP_LEVEL="${SEL_TOP_LEVEL#V}"
+    cflags="${cflags} -DSV"
+fi
+
 if [ "${SEL_PARAMS}" != "none" ]; then
     for param in ${SEL_PARAMS}; do
         g_flags+=("-G${param}")
@@ -49,7 +54,7 @@ done < <(find "${PROJ}/rtl" -name "*.vlt" | sort)
 
 top_flags=()
 if [ -n "$(find "${PROJ}/rtl" -name "${SEL_TOP_LEVEL}.sv" -print -quit)" ]; then
-    top_flags=(--top "${SEL_TOP_LEVEL}")
+    top_flags=(--top-module "${SEL_TOP_LEVEL}")
 fi
 
 if [ "${#rtl_files[@]}" -gt 0 ]; then
