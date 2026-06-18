@@ -55,7 +55,8 @@ The design described above is the **default**; every size is an RTL parameter, s
 
 | Parameter    | Meaning                                    | Default    |
 | ------------ | ------------------------------------------ | ---------- |
-| `N_AGU`      | number of AGUs (OBI managers)              | 2          |
+| `N_RAGU`     | number of AGUs (OBI managers)              | 2          |
+| `N_WAGU`     | number of AGUs (OBI managers)              | 2          |
 | `N_REQ`      | requests (ports) issued per AGU per cycle  | 4          |
 | `WORD_BYTES` | size of one word / OBI data beat, in bytes | 4 (32-bit) |
 | `N_BANK`     | number of memory banks                     | 32         |
@@ -63,7 +64,7 @@ The design described above is the **default**; every size is an RTL parameter, s
 
 Derived quantities:
 
-- **Crossbar size** = `(N_AGU × N_REQ)` request ports × `N_BANK` bank ports (default **8×32**).
+- **Crossbar size** = `(N_RAGU × N_REQ)` request ports × `N_BANK` bank ports (default **8×32**).
 - **Total capacity** = `N_BANK × N_ROW × WORD_BYTES` bytes (default 32 × 1024 × 4 = **128 KiB**).
 
 Address decode for a byte address `a` (word-interleaved across banks):

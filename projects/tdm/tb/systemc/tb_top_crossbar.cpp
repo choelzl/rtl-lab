@@ -3,7 +3,7 @@
 //
 // Description:
 //   sc_main harness for the crossbar design (make sim-sc). It instantiates the
-//   DUT (top_crossbar = crossbar + N_BANK banks), N_AGU read AGUs and N_WAGU
+//   DUT (top_crossbar = crossbar + N_BANK banks), N_RAGU read AGUs and N_WAGU
 //   write AGUs, wires each AGU's N_REQ OBI ports to the DUT manager ports,
 //   drives clock/reset, and runs until every AGU has drained its trace. Read
 //   AGUs dump completed accesses to out_<i>.log, write AGUs to wout_<i>.log;
@@ -27,9 +27,9 @@
 //   logs into $.../sim/$SEL_OUT_DIR/output/out_<i>.log and wout_<i>.log.
 //
 //   Configuration via -D (the flow's PARAMS mechanism), defaults below. The
-//   config knobs are ALL-CAPS macros (N_AGU, …); the design headers name their
+//   config knobs are ALL-CAPS macros (N_RAGU, …); the design headers name their
 //   template parameters in ALL-CAPS too but deliberately distinct from those
-//   macros (counts NUM_*, e.g. NUM_AGU; other dims spelled out, e.g.
+//   macros (counts NUM_*, e.g. NUM_RAGU; other dims spelled out, e.g.
 //   BYTES_PER_WORD), so a -D override can never rewrite a template declaration.
 //   The macros pass straight through as positional template arguments below.
 // -----------------------------------------------------------------------------
@@ -49,8 +49,62 @@
 #include "top_crossbar.hpp"
 #endif
 #include "agu_crossbar.hpp"
-
 #include "constants.hpp"
+
+// ---------------------------------------------------------------------------
+// Lx crossbar Number
+// ---------------------------------------------------------------------------
+#ifndef NUM_L1
+#define NUM_L1 N_RAGU
+#endif
+#ifndef NUM_L2
+#define NUM_L2 4
+#endif
+// ---------------------------------------------------------------------------
+// L1 crossbar  (NUM_L1 switches, each L1_NIN-in × L1_NOUT-out)
+// ---------------------------------------------------------------------------
+#ifndef L1_NIN
+#define L1_NIN N_REQ
+#endif
+#ifndef L1_NOUT
+#define L1_NOUT NUM_L2
+#endif
+
+// ---------------------------------------------------------------------------
+// L2 crossbar  (NUM_L2 switches, each L2_NIN-in × L2_NOUT-out)
+// ---------------------------------------------------------------------------
+
+#ifndef L2_NIN
+#define L2_NIN NUM_L1
+#endif
+#ifndef L2_NOUT
+#define L2_NOUT N_BANK / NUM_L2
+#endif
+
+// ---------------------------------------------------------------------------
+// Write crossbar (separate 2-layer path for N_WAGU write AGUs; not yet
+// connected to banks — ports exist for future wiring only)
+// ---------------------------------------------------------------------------
+// WL1: NUM_WL1 switches, each WL1_NIN-in × WL1_NOUT-out
+#ifndef NUM_WL1
+#define NUM_WL1 N_WAGU
+#endif
+#ifndef NUM_WL2
+#define NUM_WL2 4
+#endif
+#ifndef WL1_NIN
+#define WL1_NIN N_REQ
+#endif
+#ifndef WL1_NOUT
+#define WL1_NOUT NUM_WL2
+#endif
+// WL2: NUM_WL2 switches, each WL2_NIN-in × WL2_NOUT-out
+#ifndef WL2_NIN
+#define WL2_NIN NUM_WL1
+#endif
+#ifndef WL2_NOUT
+#define WL2_NOUT N_BANK / NUM_WL2
+#endif
 
 static constexpr int kCyclesPerGroup = 1;
 static constexpr int kPipeFill = 2;
@@ -63,7 +117,7 @@ static std::string env_or(const char *key, const std::string &dflt)
 
 int sc_main(int, char *[])
 {
-    constexpr int kNumMgr = N_AGU * N_REQ;
+    constexpr int kNumMgr = N_RAGU * N_REQ;
     constexpr int kNumWMgr = N_WAGU * N_REQ;
 
     const std::string project = env_or("SEL_PROJECT", "tdm");
@@ -91,12 +145,12 @@ int sc_main(int, char *[])
     sc_signal<uint64_t> m_w_addr[kNumWMgr], m_w_wdata[kNumWMgr], m_w_rdata[kNumWMgr];
     sc_signal<uint32_t> m_w_be[kNumWMgr];
 
-    sc_signal<bool> done[N_AGU + N_WAGU];
+    sc_signal<bool> done[N_RAGU + N_WAGU];
 
 #ifdef SV
-    top_crossbar_sv<N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW> dut("dut");
+    top_crossbar_sv<N_RAGU, N_WAGU, N_REQ, N_BANK, N_ROW> dut("dut");
 #else
-    top_crossbar<N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
+    top_crossbar<N_RAGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES> dut("dut");
 #endif
     dut.clk_i(clk);
     dut.rst_ni(rst_ni);
@@ -123,8 +177,8 @@ int sc_main(int, char *[])
         dut.m_w_rdata_o[m](m_w_rdata[m]);
     }
 
-    std::unique_ptr<agu_crossbar<N_REQ, WORD_BYTES>> agus[N_AGU];
-    for (int a = 0; a < N_AGU; ++a)
+    std::unique_ptr<agu_crossbar<N_REQ, WORD_BYTES>> agus[N_RAGU];
+    for (int a = 0; a < N_RAGU; ++a)
     {
         const std::string nm = "agu" + std::to_string(a);
         const std::string stim = stim_dir + "/mem_" + std::to_string(a) + ".log";
@@ -156,7 +210,7 @@ int sc_main(int, char *[])
         wagus[a] = std::make_unique<agu_crossbar<N_REQ, WORD_BYTES>>(nm.c_str(), stim, out);
         wagus[a]->clk_i(clk);
         wagus[a]->rst_ni(rst_ni);
-        wagus[a]->done_o(done[N_AGU + a]);
+        wagus[a]->done_o(done[N_RAGU + a]);
         for (int p = 0; p < N_REQ; ++p)
         {
             const int m = a * N_REQ + p;
@@ -180,7 +234,7 @@ int sc_main(int, char *[])
     while (actual < kMaxCycles)
     {
         bool all = true;
-        for (int a = 0; a < N_AGU + N_WAGU; ++a)
+        for (int a = 0; a < N_RAGU + N_WAGU; ++a)
             all = all && done[a].read();
         if (all)
             break;
@@ -193,7 +247,7 @@ int sc_main(int, char *[])
 
     int g_max = 0;
     std::size_t total_acc = 0, total_rd = 0;
-    for (int a = 0; a < N_AGU; ++a)
+    for (int a = 0; a < N_RAGU; ++a)
     {
         const std::size_t len = agus[a]->trace_.size();
         const int g = static_cast<int>((len + N_REQ - 1) / N_REQ);
@@ -218,8 +272,8 @@ int sc_main(int, char *[])
 
     printf("\n");
     printf("=========== crossbar statistics ===========\n");
-    printf(" config       : N_AGU=%d N_WAGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d WORDS_PER_ROW=%d\n",
-           N_AGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW);
+    printf(" config       : N_RAGU=%d N_WAGU=%d N_REQ=%d N_BANK=%d N_ROW=%d WORD_BYTES=%d WORDS_PER_ROW=%d\n",
+           N_RAGU, N_WAGU, N_REQ, N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW);
     printf(" accesses     : %zu (%zu reads)\n", total_acc, total_rd);
     printf(" groups (max) : %d\n", g_max);
     printf(" actual cycles: %d\n", actual);

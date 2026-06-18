@@ -22,7 +22,7 @@ To run the Verilated SV DUT instead, prefix the top-level with `V` and pass the 
 
 ```bash
 make sim-sc PROJECT=tdm TOP_LEVEL=Vtop_crossbar OUT_DIR=run0 \
-    PARAMS="N_AGU=7 N_REQ=4 N_BANK=32 N_ROW=1024"
+    PARAMS="N_RAGU=7 N_REQ=4 N_BANK=32 N_ROW=1024"
 ```
 
 Override the design size with `PARAMS` (each becomes a `-D`):
@@ -47,13 +47,14 @@ Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults bel
 
 | Parameter    | Meaning                        | Default |
 | ------------ | ------------------------------ | ------- |
-| `N_AGU`      | number of AGUs (managers)      | 2       |
+| `N_RAGU`     | number of AGUs (managers)      | 2       |
+| `N_WAGU`     | number of AGUs (managers)      | 2       |
 | `N_REQ`      | request ports per AGU          | 4       |
 | `N_BANK`     | number of memory banks         | 32      |
 | `N_ROW`      | rows (words) per bank          | 1024    |
 | `WORD_BYTES` | bytes per word / OBI data beat | 4       |
 
-`N_MGR = N_AGU · N_REQ` request ports; total capacity `N_BANK · N_ROW · WORD_BYTES` bytes. See [doc/specs/crossbar.md](doc/specs/crossbar.md#configuration-parameters) for the address decode and full semantics.
+`N_WAGU · N_REQ` request ports; total capacity `N_BANK · N_ROW · WORD_BYTES` bytes. See [doc/specs/crossbar.md](doc/specs/crossbar.md#configuration-parameters) for the address decode and full semantics.
 
 ## Testbenches
 

@@ -26,8 +26,8 @@
 // ---------------------------------------------------------------------------
 // AGU / manager side
 // ---------------------------------------------------------------------------
-#ifndef N_AGU
-#define N_AGU 7
+#ifndef N_RAGU
+#define N_RAGU 7
 #endif
 #ifndef N_WAGU
 #define N_WAGU 6
@@ -37,61 +37,6 @@
 #endif
 #ifndef N_MGR
 #define N_MGR (N_AGU * N_REQ)
-#endif
-
-// ---------------------------------------------------------------------------
-// Lx crossbar Number
-// ---------------------------------------------------------------------------
-#ifndef NUM_L1
-#define NUM_L1 N_AGU
-#endif
-#ifndef NUM_L2
-#define NUM_L2 4
-#endif
-// ---------------------------------------------------------------------------
-// L1 crossbar  (NUM_L1 switches, each L1_NIN-in × L1_NOUT-out)
-// ---------------------------------------------------------------------------
-#ifndef L1_NIN
-#define L1_NIN N_REQ
-#endif
-#ifndef L1_NOUT
-#define L1_NOUT NUM_L2
-#endif
-
-// ---------------------------------------------------------------------------
-// L2 crossbar  (NUM_L2 switches, each L2_NIN-in × L2_NOUT-out)
-// ---------------------------------------------------------------------------
-
-#ifndef L2_NIN
-#define L2_NIN NUM_L1
-#endif
-#ifndef L2_NOUT
-#define L2_NOUT N_BANK / NUM_L2
-#endif
-
-// ---------------------------------------------------------------------------
-// Write crossbar (separate 2-layer path for N_WAGU write AGUs; not yet
-// connected to banks — ports exist for future wiring only)
-// ---------------------------------------------------------------------------
-// WL1: NUM_WL1 switches, each WL1_NIN-in × WL1_NOUT-out
-#ifndef NUM_WL1
-#define NUM_WL1 N_WAGU
-#endif
-#ifndef NUM_WL2
-#define NUM_WL2 4
-#endif
-#ifndef WL1_NIN
-#define WL1_NIN N_REQ
-#endif
-#ifndef WL1_NOUT
-#define WL1_NOUT NUM_WL2
-#endif
-// WL2: NUM_WL2 switches, each WL2_NIN-in × WL2_NOUT-out
-#ifndef WL2_NIN
-#define WL2_NIN NUM_WL1
-#endif
-#ifndef WL2_NOUT
-#define WL2_NOUT N_BANK / NUM_WL2
 #endif
 
 // ---------------------------------------------------------------------------
