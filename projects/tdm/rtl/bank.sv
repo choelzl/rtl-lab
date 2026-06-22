@@ -33,17 +33,17 @@ module bank
     output obi_resp_t obi_resp_o
 );
 
-    logic [WORDS_PER_ROW*BYTES_PER_WORD*8-1:0] mem [NUM_ROW];
+    logic [WORDS_PER_ROW*BYTES_PER_WORD*8-1:0] mem      [NUM_ROW];
 
-    logic [$clog2(NUM_ROW)-1:0]              row_idx;
-    logic                                    rvalid_q;
-    logic [`OBI_DATA_WIDTH-1:0]              rdata_q;
+    logic [               $clog2(NUM_ROW)-1:0] row_idx;
+    logic                                      rvalid_q;
+    logic [               `OBI_DATA_WIDTH-1:0] rdata_q;
 
-    assign row_idx = obi_req_i.addr[$clog2(WORDS_PER_ROW*BYTES_PER_WORD) +: $clog2(NUM_ROW)];
+    assign row_idx = obi_req_i.addr[$clog2(WORDS_PER_ROW*BYTES_PER_WORD)+:$clog2(NUM_ROW)];
 
-    assign obi_resp_o.gnt    = obi_req_i.req;
+    assign obi_resp_o.gnt = obi_req_i.req;
     assign obi_resp_o.rvalid = rvalid_q;
-    assign obi_resp_o.rdata  = rdata_q;
+    assign obi_resp_o.rdata = rdata_q;
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -54,9 +54,8 @@ module bank
             rdata_q  <= '0;
             if (obi_req_i.req) begin
                 if (obi_req_i.we) begin
-                    for (int b = 0; b < WORDS_PER_ROW*BYTES_PER_WORD; b++) begin
-                        if (obi_req_i.be[b])
-                            mem[row_idx][8*b +: 8] <= obi_req_i.wdata[8*b +: 8];
+                    for (int b = 0; b < WORDS_PER_ROW * BYTES_PER_WORD; b++) begin
+                        if (obi_req_i.be[b]) mem[row_idx][8*b+:8] <= obi_req_i.wdata[8*b+:8];
                     end
                 end else begin
                     rdata_q <= mem[row_idx];

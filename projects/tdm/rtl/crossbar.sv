@@ -35,8 +35,8 @@ module crossbar
     parameter int SEL_SLICE_START  = 0,
     parameter int SEL_SLICE_LENGTH = 2
 ) (
-    input  logic clk_i,
-    input  logic rst_ni,
+    input logic clk_i,
+    input logic rst_ni,
 
     input  obi_req_t  [XBAR_NMASTER-1:0] master_req_i,
     output obi_resp_t [XBAR_NMASTER-1:0] master_resp_o,
@@ -45,47 +45,44 @@ module crossbar
     input  obi_resp_t [XBAR_NSLAVE-1:0] slave_resp_i
 );
 
-    localparam int unsigned LOG_XBAR_NSLAVE     = XBAR_NSLAVE > 1 ? $clog2(XBAR_NSLAVE) : 1;
-    localparam int unsigned REQ_AGG_DATA_WIDTH  = $bits(obi_req_t) - 1;
+    localparam int unsigned LOG_XBAR_NSLAVE = XBAR_NSLAVE > 1 ? $clog2(XBAR_NSLAVE) : 1;
+    localparam int unsigned REQ_AGG_DATA_WIDTH = $bits(obi_req_t) - 1;
     localparam int unsigned RESP_AGG_DATA_WIDTH = `OBI_DATA_WIDTH;
 
-    logic [XBAR_NMASTER-1:0][LOG_XBAR_NSLAVE-1:0]    port_sel;
+    logic [XBAR_NMASTER-1:0][   LOG_XBAR_NSLAVE-1:0] port_sel;
     logic [XBAR_NMASTER-1:0]                         master_req_req;
     logic [XBAR_NMASTER-1:0][REQ_AGG_DATA_WIDTH-1:0] master_req_data;
     logic [XBAR_NMASTER-1:0]                         master_resp_gnt;
     logic [XBAR_NMASTER-1:0]                         master_resp_rvalid;
-    logic [XBAR_NMASTER-1:0][`OBI_DATA_WIDTH-1:0]    master_resp_rdata;
+    logic [XBAR_NMASTER-1:0][   `OBI_DATA_WIDTH-1:0] master_resp_rdata;
 
-    logic [XBAR_NSLAVE-1:0]                          slave_req_req;
-    logic [XBAR_NSLAVE-1:0][REQ_AGG_DATA_WIDTH-1:0]  slave_req_out_data;
-    logic [XBAR_NSLAVE-1:0]                          slave_resp_gnt;
-    logic [XBAR_NSLAVE-1:0]                          slave_resp_rvalid;
-    logic [XBAR_NSLAVE-1:0][`OBI_DATA_WIDTH-1:0]     slave_resp_rdata;
+    logic [ XBAR_NSLAVE-1:0]                         slave_req_req;
+    logic [ XBAR_NSLAVE-1:0][REQ_AGG_DATA_WIDTH-1:0] slave_req_out_data;
+    logic [ XBAR_NSLAVE-1:0]                         slave_resp_gnt;
+    logic [ XBAR_NSLAVE-1:0]                         slave_resp_rvalid;
+    logic [ XBAR_NSLAVE-1:0][   `OBI_DATA_WIDTH-1:0] slave_resp_rdata;
 
     for (genvar i = 0; i < XBAR_NMASTER; i++) begin : gen_sel_signal
-        assign port_sel[i] = master_req_i[i].addr[SEL_SLICE_START +: SEL_SLICE_LENGTH];
+        assign port_sel[i] = master_req_i[i].addr[SEL_SLICE_START+:SEL_SLICE_LENGTH];
     end
 
     for (genvar i = 0; i < XBAR_NMASTER; i++) begin : gen_unroll_master
-        assign master_req_req[i]  = master_req_i[i].req;
+        assign master_req_req[i] = master_req_i[i].req;
         assign master_req_data[i] = {
-            master_req_i[i].we,
-            master_req_i[i].be,
-            master_req_i[i].addr,
-            master_req_i[i].wdata
+            master_req_i[i].we, master_req_i[i].be, master_req_i[i].addr, master_req_i[i].wdata
         };
-        assign master_resp_o[i].gnt    = master_resp_gnt[i];
+        assign master_resp_o[i].gnt = master_resp_gnt[i];
         assign master_resp_o[i].rvalid = master_resp_rvalid[i];
-        assign master_resp_o[i].rdata  = master_resp_rdata[i];
+        assign master_resp_o[i].rdata = master_resp_rdata[i];
     end
 
     for (genvar i = 0; i < XBAR_NSLAVE; i++) begin : gen_unroll_slave
         assign slave_req_o[i].req = slave_req_req[i];
         assign {slave_req_o[i].we, slave_req_o[i].be,
                 slave_req_o[i].addr, slave_req_o[i].wdata} = slave_req_out_data[i];
-        assign slave_resp_gnt[i]    = slave_resp_i[i].gnt;
+        assign slave_resp_gnt[i] = slave_resp_i[i].gnt;
         assign slave_resp_rvalid[i] = slave_resp_i[i].rvalid;
-        assign slave_resp_rdata[i]  = slave_resp_i[i].rdata;
+        assign slave_resp_rdata[i] = slave_resp_i[i].rdata;
     end
 
     xbar_varlat #(

@@ -40,13 +40,24 @@
 #include <utility>
 
 enum class tdm_stor_mode {
-    Loop_Row_Col, Loop_Row, Loop_Col_Row, Loop_Row_Space,
-    Row_Col_Loop, Row_Loop, Col_Row_Loop, Row_Loop_Col, Col_Loop_Row,
-    Loop_2x2_H, Loop_2x2_V, Loop_2i, Loop_4x4_H, Loop_4x4_V, Loop_4i
+    Loop_Row_Col,
+    Loop_Row,
+    Loop_Col_Row,
+    Loop_Row_Space,
+    Row_Col_Loop,
+    Row_Loop,
+    Col_Row_Loop,
+    Row_Loop_Col,
+    Col_Loop_Row,
+    Loop_2x2_H,
+    Loop_2x2_V,
+    Loop_2i,
+    Loop_4x4_H,
+    Loop_4x4_V,
+    Loop_4i
 };
 
-template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_WORD = 4>
-SC_MODULE(tdm) {
+template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_WORD = 4> SC_MODULE(tdm) {
     static_assert(NUM_WORD >= 1, "NUM_WORD must be >= 1");
 
     sc_in<bool>      g_req_i[NUM_WORD];
@@ -58,12 +69,12 @@ SC_MODULE(tdm) {
     sc_out<bool>     g_rvalid_o[NUM_WORD];
     sc_out<uint64_t> g_rdata_o[NUM_WORD];
 
-    sc_in<uint64_t>  num_banks_i;
-    sc_in<uint64_t>  bank_width_i;
-    sc_in<uint64_t>  r_i;
-    sc_in<uint64_t>  c_i;
-    sc_in<uint64_t>  l_i;
-    sc_in<uint64_t>  store_mode_i;
+    sc_in<uint64_t> num_banks_i;
+    sc_in<uint64_t> bank_width_i;
+    sc_in<uint64_t> r_i;
+    sc_in<uint64_t> c_i;
+    sc_in<uint64_t> l_i;
+    sc_in<uint64_t> store_mode_i;
 
     sc_out<bool>     c_req_o[NUM_WORD];
     sc_out<uint64_t> c_addr_o[NUM_WORD];
@@ -76,66 +87,77 @@ SC_MODULE(tdm) {
 
     static uint32_t ilog2(uint64_t v) {
         uint32_t r = 0;
-        while (v > 1) { v >>= 1; ++r; }
+        while (v > 1) {
+            v >>= 1;
+            ++r;
+        }
         return r;
     }
 
     static uint32_t tzeros(uint64_t v) {
-        if (v == 0) return 0;
+        if (v == 0)
+            return 0;
         uint32_t r = 0;
-        while (((v >> r) & 1ull) == 0) ++r;
+        while (((v >> r) & 1ull) == 0)
+            ++r;
         return r;
     }
 
-    static std::pair<uint32_t, uint32_t> get_k(tdm_stor_mode mode, uint32_t e,
-                                               uint32_t tzR, uint32_t tzC,
-                                               uint32_t tzL) {
+    static std::pair<uint32_t, uint32_t> get_k(tdm_stor_mode mode, uint32_t e, uint32_t tzR,
+                                               uint32_t tzC, uint32_t tzL) {
         using M = tdm_stor_mode;
         switch (mode) {
-            case M::Loop_Row_Col:
-            case M::Loop_Row:       return {std::max(tzC, e), std::max(tzR + tzC, e)};
-            case M::Loop_Col_Row:
-            case M::Loop_Row_Space: return {std::max(tzR, e), std::max(tzC + tzR, e)};
-            case M::Row_Col_Loop:
-            case M::Row_Loop:       return {std::max(tzL, e), std::max(tzL + tzC, e)};
-            case M::Col_Row_Loop:   return {std::max(tzL, e), std::max(tzR + tzL, e)};
-            case M::Row_Loop_Col:   return {std::max(tzC, e), std::max(tzL + tzC, e)};
-            case M::Col_Loop_Row:   return {std::max(tzR, e), std::max(tzL + tzR, e)};
-            case M::Loop_2x2_H:     return {std::max(tzC + 1, e), std::max(tzR + tzC, e)};
-            case M::Loop_2x2_V:
-            case M::Loop_2i:        return {std::max(tzR + 1, e), std::max(tzC + tzR, e)};
-            case M::Loop_4x4_H:     return {std::max(tzC + 2, e), std::max(tzR + tzC, e)};
-            case M::Loop_4x4_V:
-            case M::Loop_4i:        return {std::max(tzR + 2, e), std::max(tzC + tzR, e)};
-            default:
-                SC_REPORT_ERROR("tdm", "unsupported store_mode");
-                return {e, e};
+        case M::Loop_Row_Col:
+        case M::Loop_Row:
+            return {std::max(tzC, e), std::max(tzR + tzC, e)};
+        case M::Loop_Col_Row:
+        case M::Loop_Row_Space:
+            return {std::max(tzR, e), std::max(tzC + tzR, e)};
+        case M::Row_Col_Loop:
+        case M::Row_Loop:
+            return {std::max(tzL, e), std::max(tzL + tzC, e)};
+        case M::Col_Row_Loop:
+            return {std::max(tzL, e), std::max(tzR + tzL, e)};
+        case M::Row_Loop_Col:
+            return {std::max(tzC, e), std::max(tzL + tzC, e)};
+        case M::Col_Loop_Row:
+            return {std::max(tzR, e), std::max(tzL + tzR, e)};
+        case M::Loop_2x2_H:
+            return {std::max(tzC + 1, e), std::max(tzR + tzC, e)};
+        case M::Loop_2x2_V:
+        case M::Loop_2i:
+            return {std::max(tzR + 1, e), std::max(tzC + tzR, e)};
+        case M::Loop_4x4_H:
+            return {std::max(tzC + 2, e), std::max(tzR + tzC, e)};
+        case M::Loop_4x4_V:
+        case M::Loop_4i:
+            return {std::max(tzR + 2, e), std::max(tzC + tzR, e)};
+        default:
+            SC_REPORT_ERROR("tdm", "unsupported store_mode");
+            return {e, e};
         }
     }
 
-    void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_t C,
-                 uint64_t L, tdm_stor_mode mode, uint64_t& bank_id,
-                 uint64_t& row_id) const {
-        const uint32_t b = ilog2(nb);
-        const uint32_t e = ilog2(bw);
-        const std::pair<uint32_t, uint32_t> k =
-            get_k(mode, e, tzeros(R), tzeros(C), tzeros(L));
-        const uint32_t k1 = k.first;
-        const uint32_t k2 = k.second;
+    void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_t C, uint64_t L,
+                 tdm_stor_mode mode, uint64_t &bank_id, uint64_t &row_id) const {
+        const uint32_t                      b  = ilog2(nb);
+        const uint32_t                      e  = ilog2(bw);
+        const std::pair<uint32_t, uint32_t> k  = get_k(mode, e, tzeros(R), tzeros(C), tzeros(L));
+        const uint32_t                      k1 = k.first;
+        const uint32_t                      k2 = k.second;
 
         const uint64_t bmask = (b >= 64) ? ~0ull : ((1ull << b) - 1);
-        const uint64_t con = (addr >> e) & ((1ull << (k1 - e)) - 1) & bmask;
-        const uint64_t str = (addr >> k1) & ((1ull << (k2 - k1)) - 1) & bmask;
-        const uint64_t l   = (addr >> k2) & bmask;
+        const uint64_t con   = (addr >> e) & ((1ull << (k1 - e)) - 1) & bmask;
+        const uint64_t str   = (addr >> k1) & ((1ull << (k2 - k1)) - 1) & bmask;
+        const uint64_t l     = (addr >> k2) & bmask;
 
         auto bit = [](uint64_t v, uint32_t i) -> uint64_t { return (v >> i) & 1ull; };
 
-        bank_id =
-            ((bit(str, 1) ^ bit(con, 2) ^ bit(l, 1) ^ bit(l, 2)) << 0) |
-            ((bit(str, 2) ^ bit(con, 1) ^ bit(l, 1)) << 1) |
-            ((bit(str, 0) ^ bit(str, 4) ^ bit(con, 0) ^ bit(con, 1) ^ bit(l, 4)) << 2) |
-            ((bit(str, 0) ^ bit(con, 4) ^ bit(l, 0)) << 3) |
-            ((bit(str, 1) ^ bit(str, 3) ^ bit(con, 0) ^ bit(con, 3) ^ bit(l, 3)) << 4);
+        bank_id = ((bit(str, 1) ^ bit(con, 2) ^ bit(l, 1) ^ bit(l, 2)) << 0) |
+                  ((bit(str, 2) ^ bit(con, 1) ^ bit(l, 1)) << 1) |
+                  ((bit(str, 0) ^ bit(str, 4) ^ bit(con, 0) ^ bit(con, 1) ^ bit(l, 4)) << 2) |
+                  ((bit(str, 0) ^ bit(con, 4) ^ bit(l, 0)) << 3) |
+                  ((bit(str, 1) ^ bit(str, 3) ^ bit(con, 0) ^ bit(con, 3) ^ bit(l, 3)) << 4);
 
         row_id = addr >> (e + b);
     }
@@ -153,13 +175,12 @@ SC_MODULE(tdm) {
 
         for (int w = 0; w < NUM_WORD; ++w) {
             uint64_t bank_id = 0, row_id = 0;
-            map_one(base + static_cast<uint64_t>(w) * BYTES_PER_WORD, nb, bw, R, C, L,
-                    mode, bank_id, row_id);
+            map_one(base + static_cast<uint64_t>(w) * BYTES_PER_WORD, nb, bw, R, C, L, mode,
+                    bank_id, row_id);
             if (bank_id >= static_cast<uint64_t>(NUM_BANK))
                 SC_REPORT_FATAL("tdm", "bank_id >= NUM_BANK (build N_BANK too small; "
                                        "the mapping needs N_BANK >= 32)");
-            const uint64_t word_index =
-                row_id * static_cast<uint64_t>(NUM_BANK) + bank_id;
+            const uint64_t word_index = row_id * static_cast<uint64_t>(NUM_BANK) + bank_id;
 
             c_req_o[w].write(g_req_i[w].read());
             c_addr_o[w].write(word_index * static_cast<uint64_t>(BYTES_PER_WORD));
@@ -175,11 +196,10 @@ SC_MODULE(tdm) {
 
     SC_CTOR(tdm) {
         SC_METHOD(comb);
-        sensitive << g_addr_i << g_we_i << g_be_i << num_banks_i << bank_width_i
-                  << r_i << c_i << l_i << store_mode_i;
+        sensitive << g_addr_i << g_we_i << g_be_i << num_banks_i << bank_width_i << r_i << c_i
+                  << l_i << store_mode_i;
         for (int w = 0; w < NUM_WORD; ++w)
-            sensitive << g_req_i[w] << g_wdata_i[w] << c_gnt_i[w] << c_rvalid_i[w]
-                      << c_rdata_i[w];
+            sensitive << g_req_i[w] << g_wdata_i[w] << c_gnt_i[w] << c_rvalid_i[w] << c_rdata_i[w];
     }
 };
 

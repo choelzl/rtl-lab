@@ -21,14 +21,14 @@
 //   T12  Reset mid-operation: rvalid deasserts immediately
 // -----------------------------------------------------------------------------
 
-#include <systemc.h>
+#include "bank.hpp"
 #include <cstdio>
 #include <cstdlib>
-#include "bank.hpp"
+#include <systemc.h>
 
 static constexpr int kNumRows   = 8;
 static constexpr int kBytesWord = 4;
-using DUT = bank<kNumRows, kBytesWord>;
+using DUT                       = bank<kNumRows, kBytesWord>;
 
 // ---------------------------------------------------------------------------
 // Test accounting
@@ -36,8 +36,7 @@ using DUT = bank<kNumRows, kBytesWord>;
 static int g_pass = 0;
 static int g_fail = 0;
 
-static void CHECK(bool cond, const char* label)
-{
+static void CHECK(bool cond, const char *label) {
     if (cond) {
         ++g_pass;
         std::printf("  PASS  %s\n", label);
@@ -50,8 +49,7 @@ static void CHECK(bool cond, const char* label)
 // ---------------------------------------------------------------------------
 // Testbench module
 // ---------------------------------------------------------------------------
-SC_MODULE(tb)
-{
+SC_MODULE(tb) {
     sc_clock        clk{"clk", 10, SC_NS};
     sc_signal<bool> rst_n{"rst_n"};
 
@@ -64,12 +62,11 @@ SC_MODULE(tb)
     sc_signal<bool>     rvalid_o{"rvalid_o"};
     sc_signal<uint64_t> rdata_o{"rdata_o"};
 
-    DUT* dut;
+    DUT *dut;
 
     SC_HAS_PROCESS(tb);
 
-    tb(sc_module_name nm) : sc_module(nm)
-    {
+    tb(sc_module_name nm) : sc_module(nm) {
         dut = new DUT("dut");
         dut->clk_i(clk);
         dut->rst_ni(rst_n);
@@ -85,16 +82,20 @@ SC_MODULE(tb)
         SC_THREAD(run);
     }
 
-    ~tb() { delete dut; }
+    ~tb() {
+        delete dut;
+    }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    void tick() { wait(clk.posedge_event()); wait(1, SC_NS); }
+    void tick() {
+        wait(clk.posedge_event());
+        wait(1, SC_NS);
+    }
 
-    void idle_inputs()
-    {
+    void idle_inputs() {
         req_i.write(false);
         addr_i.write(0);
         we_i.write(false);
@@ -102,8 +103,7 @@ SC_MODULE(tb)
         wdata_i.write(0ULL);
     }
 
-    void do_reset()
-    {
+    void do_reset() {
         idle_inputs();
         rst_n.write(false);
         tick();
@@ -113,8 +113,7 @@ SC_MODULE(tb)
     }
 
     // Issue a write; returns after one tick with rvalid=1, rdata=0.
-    void do_write(uint64_t addr, uint64_t data, uint32_t be = 0xF)
-    {
+    void do_write(uint64_t addr, uint64_t data, uint32_t be = 0xF) {
         req_i.write(true);
         we_i.write(true);
         addr_i.write(addr);
@@ -125,8 +124,7 @@ SC_MODULE(tb)
     }
 
     // Issue a read; returns after one tick with rvalid=1, rdata=mem[addr].
-    uint64_t do_read(uint64_t addr)
-    {
+    uint64_t do_read(uint64_t addr) {
         req_i.write(true);
         we_i.write(false);
         addr_i.write(addr);
@@ -140,8 +138,7 @@ SC_MODULE(tb)
     // -----------------------------------------------------------------------
     // Test thread
     // -----------------------------------------------------------------------
-    void run()
-    {
+    void run() {
         do_reset();
 
         // -------------------------------------------------------------------
@@ -182,7 +179,10 @@ SC_MODULE(tb)
         // -------------------------------------------------------------------
         std::printf("\n=== T04: Read zero-initialised memory ===\n");
         do_reset();
-        req_i.write(true); addr_i.write(0); we_i.write(false); be_i.write(0xF);
+        req_i.write(true);
+        addr_i.write(0);
+        we_i.write(false);
+        be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T04 rvalid_o=1 on read response");
         CHECK(rdata_o.read() == 0ULL, "T04 rdata_o=0 from zero-init");
@@ -219,7 +219,10 @@ SC_MODULE(tb)
         do_write(0, 0xCAFEBABEULL);
         tick(); // idle cycle: rvalid=0
         CHECK(!rvalid_o.read(), "T07 rvalid_o=0 on idle cycle after write");
-        req_i.write(true); we_i.write(false); addr_i.write(0); be_i.write(0xF);
+        req_i.write(true);
+        we_i.write(false);
+        addr_i.write(0);
+        be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T07 rvalid_o=1 on read response");
         CHECK(rdata_o.read() == 0xCAFEBABEULL, "T07 rdata_o matches written value");
@@ -245,14 +248,14 @@ SC_MODULE(tb)
         // -------------------------------------------------------------------
         std::printf("\n=== T09: Multiple rows independent ===\n");
         do_reset();
-        do_write(0,  0x11111111ULL);
-        do_write(4,  0x22222222ULL);
-        do_write(8,  0x33333333ULL);
+        do_write(0, 0x11111111ULL);
+        do_write(4, 0x22222222ULL);
+        do_write(8, 0x33333333ULL);
         do_write(12, 0x44444444ULL);
 
-        CHECK(do_read(0)  == 0x11111111ULL, "T09 word 0 unaffected by other writes");
-        CHECK(do_read(4)  == 0x22222222ULL, "T09 word 1 unaffected by other writes");
-        CHECK(do_read(8)  == 0x33333333ULL, "T09 word 2 unaffected by other writes");
+        CHECK(do_read(0) == 0x11111111ULL, "T09 word 0 unaffected by other writes");
+        CHECK(do_read(4) == 0x22222222ULL, "T09 word 1 unaffected by other writes");
+        CHECK(do_read(8) == 0x33333333ULL, "T09 word 2 unaffected by other writes");
         CHECK(do_read(12) == 0x44444444ULL, "T09 word 3 unaffected by other writes");
 
         // -------------------------------------------------------------------
@@ -264,7 +267,9 @@ SC_MODULE(tb)
         do_write(4, 0xBBBBBBBBULL);
 
         // Issue two reads without an idle cycle between them
-        req_i.write(true); we_i.write(false); be_i.write(0xF);
+        req_i.write(true);
+        we_i.write(false);
+        be_i.write(0xF);
         addr_i.write(0);
         tick();
         bool     rv0 = rvalid_o.read();
@@ -296,7 +301,10 @@ SC_MODULE(tb)
         std::printf("\n=== T12: Reset clears rvalid ===\n");
         do_reset();
         // Issue a read — rvalid goes high in this tick
-        req_i.write(true); we_i.write(false); addr_i.write(0); be_i.write(0xF);
+        req_i.write(true);
+        we_i.write(false);
+        addr_i.write(0);
+        be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T12 rvalid=1 before reset");
         idle_inputs();
@@ -323,8 +331,7 @@ SC_MODULE(tb)
     }
 };
 
-int sc_main(int, char*[])
-{
+int sc_main(int, char *[]) {
     tb tb_inst("tb");
     sc_start();
     return (g_fail > 0) ? 1 : 0;

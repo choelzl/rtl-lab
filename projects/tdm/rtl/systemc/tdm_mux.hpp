@@ -22,17 +22,16 @@
 
 #include <cstdint>
 
-template <int NUM_AGU = 2>
-SC_MODULE(tdm_mux) {
+template <int NUM_AGU = 2> SC_MODULE(tdm_mux) {
     static_assert(NUM_AGU >= 1, "NUM_AGU must be >= 1");
 
-    sc_in<int>       sel_i;
-    sc_in<uint64_t>  num_banks_i[NUM_AGU];
-    sc_in<uint64_t>  bank_width_i[NUM_AGU];
-    sc_in<uint64_t>  r_i[NUM_AGU];
-    sc_in<uint64_t>  c_i[NUM_AGU];
-    sc_in<uint64_t>  l_i[NUM_AGU];
-    sc_in<uint64_t>  store_mode_i[NUM_AGU];
+    sc_in<int>      sel_i;
+    sc_in<uint64_t> num_banks_i[NUM_AGU];
+    sc_in<uint64_t> bank_width_i[NUM_AGU];
+    sc_in<uint64_t> r_i[NUM_AGU];
+    sc_in<uint64_t> c_i[NUM_AGU];
+    sc_in<uint64_t> l_i[NUM_AGU];
+    sc_in<uint64_t> store_mode_i[NUM_AGU];
 
     sc_out<uint64_t> num_banks_o;
     sc_out<uint64_t> bank_width_o;
@@ -42,7 +41,7 @@ SC_MODULE(tdm_mux) {
     sc_out<uint64_t> store_mode_o;
 
     void comb() {
-        const int s = sel_i.read();
+        const int  s  = sel_i.read();
         const bool ok = (s >= 0 && s < NUM_AGU);
         num_banks_o.write(ok ? num_banks_i[s].read() : 0);
         bank_width_o.write(ok ? bank_width_i[s].read() : 0);
@@ -56,8 +55,8 @@ SC_MODULE(tdm_mux) {
         SC_METHOD(comb);
         sensitive << sel_i;
         for (int a = 0; a < NUM_AGU; ++a)
-            sensitive << num_banks_i[a] << bank_width_i[a] << r_i[a] << c_i[a]
-                      << l_i[a] << store_mode_i[a];
+            sensitive << num_banks_i[a] << bank_width_i[a] << r_i[a] << c_i[a] << l_i[a]
+                      << store_mode_i[a];
     }
 };
 

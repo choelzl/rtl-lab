@@ -50,7 +50,7 @@ module top_crossbar
     output obi_resp_t [NUM_WR-1:0] wagu_resp_o
 );
     function automatic logic [31:0] addr_hash(input logic [31:0] addr);
-        return {addr[31:9], {addr[11:9] + addr[8:6]}[2:0], addr[5:0]};
+        return {addr[31:9], 3'(addr[11:9] + addr[8:6]), addr[5:0]};
     endfunction
 
     // --------------------------------------------------------------------------

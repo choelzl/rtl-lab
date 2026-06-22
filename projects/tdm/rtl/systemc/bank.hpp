@@ -41,18 +41,16 @@
 #include <sstream>
 #include <vector>
 
-template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4>
-SC_MODULE(bank)
-{
-    sc_in<bool> clk_i;
-    sc_in<bool> rst_ni;
-    sc_in<bool> req_i;
-    sc_in<uint64_t> addr_i;
-    sc_in<bool> we_i;
-    sc_in<uint32_t> be_i;
-    sc_in<uint64_t> wdata_i;
-    sc_out<bool> gnt_o;
-    sc_out<bool> rvalid_o;
+template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4> SC_MODULE(bank) {
+    sc_in<bool>      clk_i;
+    sc_in<bool>      rst_ni;
+    sc_in<bool>      req_i;
+    sc_in<uint64_t>  addr_i;
+    sc_in<bool>      we_i;
+    sc_in<uint32_t>  be_i;
+    sc_in<uint64_t>  wdata_i;
+    sc_out<bool>     gnt_o;
+    sc_out<bool>     rvalid_o;
     sc_out<uint64_t> rdata_o;
 
     static constexpr int kDepthWords = NUM_ROW;
@@ -61,47 +59,37 @@ SC_MODULE(bank)
 
     std::vector<uint64_t> mem;
 
-    static uint64_t apply_be(uint64_t old_w, uint64_t new_w, uint32_t be)
-    {
+    static uint64_t apply_be(uint64_t old_w, uint64_t new_w, uint32_t be) {
         uint64_t out = old_w;
-        for (int l = 0; l < BYTES_PER_WORD; ++l)
-        {
-            if (be & (1u << l))
-            {
+        for (int l = 0; l < BYTES_PER_WORD; ++l) {
+            if (be & (1u << l)) {
                 const uint64_t m = static_cast<uint64_t>(0xFF) << (8 * l);
-                out = (out & ~m) | (new_w & m);
+                out              = (out & ~m) | (new_w & m);
             }
         }
         return out;
     }
 
-    void step()
-    {
-        if (!rst_ni.read())
-        {
+    void step() {
+        if (!rst_ni.read()) {
             rvalid_o.write(false);
             rdata_o.write(0);
             return;
         }
 
-        bool rv = false;
+        bool     rv = false;
         uint64_t rd = 0;
-        if (req_i.read())
-        {
+        if (req_i.read()) {
             const uint64_t word = addr_i.read() / BYTES_PER_WORD;
-            if (word >= static_cast<uint64_t>(kDepthWords))
-            {
+            if (word >= static_cast<uint64_t>(kDepthWords)) {
                 std::ostringstream os;
-                os << "OBI access out of range: bank-local word " << word
-                   << " >= capacity " << kDepthWords;
+                os << "OBI access out of range: bank-local word " << word << " >= capacity "
+                   << kDepthWords;
                 SC_REPORT_FATAL(name(), os.str().c_str());
             }
-            if (we_i.read())
-            {
+            if (we_i.read()) {
                 mem[word] = apply_be(mem[word], wdata_i.read(), be_i.read());
-            }
-            else
-            {
+            } else {
                 rd = mem[word];
             }
             rv = true;
@@ -110,10 +98,11 @@ SC_MODULE(bank)
         rdata_o.write(rd);
     }
 
-    void comb_gnt() { gnt_o.write(req_i.read()); }
+    void comb_gnt() {
+        gnt_o.write(req_i.read());
+    }
 
-    SC_CTOR(bank) : mem(kDepthWords, 0)
-    {
+    SC_CTOR(bank) : mem(kDepthWords, 0) {
         SC_METHOD(step);
         sensitive << clk_i.pos();
         dont_initialize();

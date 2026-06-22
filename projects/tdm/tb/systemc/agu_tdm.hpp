@@ -58,8 +58,7 @@
 #include <string>
 #include <vector>
 
-template <int NUM_REQ = 4, int BYTES_PER_WORD = 4>
-SC_MODULE(agu_tdm) {
+template <int NUM_REQ = 4, int BYTES_PER_WORD = 4> SC_MODULE(agu_tdm) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
     sc_out<bool>     req_o[NUM_REQ];
@@ -78,14 +77,22 @@ SC_MODULE(agu_tdm) {
     sc_out<uint64_t> store_mode_o;
     sc_out<bool>     done_o;
 
-    struct access_t { uint64_t cycle; uint64_t addr; bool we; uint64_t data; };
+    struct access_t {
+        uint64_t cycle;
+        uint64_t addr;
+        bool     we;
+        uint64_t data;
+    };
     std::vector<access_t> log_;
 
-    static constexpr uint32_t kBeFull =
-        (BYTES_PER_WORD >= 32) ? ~0u : ((1u << BYTES_PER_WORD) - 1);
+    static constexpr uint32_t kBeFull = (BYTES_PER_WORD >= 32) ? ~0u : ((1u << BYTES_PER_WORD) - 1);
 
-    std::string                out_path_;
-    struct trace_entry_t { uint64_t addr; bool we; uint64_t data; };
+    std::string out_path_;
+    struct trace_entry_t {
+        uint64_t addr;
+        bool     we;
+        uint64_t data;
+    };
     std::vector<trace_entry_t> trace_;
     std::size_t                n_groups_;
     std::size_t                group_;
@@ -100,29 +107,36 @@ SC_MODULE(agu_tdm) {
 
     bool granted_[NUM_REQ];
 
-    struct grp_rec { uint64_t addr[NUM_REQ]; bool we; uint64_t data[NUM_REQ]; };
+    struct grp_rec {
+        uint64_t addr[NUM_REQ];
+        bool     we;
+        uint64_t data[NUM_REQ];
+    };
     std::deque<grp_rec> inflight_;
 
     bool has_row(std::size_t g, int p) const {
         return g * static_cast<std::size_t>(NUM_REQ) + p < trace_.size();
     }
 
-    static std::string trim(const std::string& s) {
+    static std::string trim(const std::string &s) {
         const std::size_t b = s.find_first_not_of(" \t\r\n");
-        if (b == std::string::npos) return std::string();
+        if (b == std::string::npos)
+            return std::string();
         const std::size_t e = s.find_last_not_of(" \t\r\n");
         return s.substr(b, e - b + 1);
     }
 
-    void parse_params(const std::string& line) {
+    void parse_params(const std::string &line) {
         std::vector<uint64_t> v;
-        std::size_t pos = 0;
+        std::size_t           pos = 0;
         while (pos <= line.size()) {
             const std::size_t c = line.find(',', pos);
             const std::string tok =
                 trim(c == std::string::npos ? line.substr(pos) : line.substr(pos, c - pos));
-            if (!tok.empty()) v.push_back(std::strtoull(tok.c_str(), nullptr, 0));
-            if (c == std::string::npos) break;
+            if (!tok.empty())
+                v.push_back(std::strtoull(tok.c_str(), nullptr, 0));
+            if (c == std::string::npos)
+                break;
             pos = c + 1;
         }
         if (v.size() < 6)
@@ -136,29 +150,33 @@ SC_MODULE(agu_tdm) {
         p_store_mode_ = v[5];
     }
 
-    void load_trace(const std::string& path) {
+    void load_trace(const std::string &path) {
         std::ifstream f(path.c_str());
-        if (!f) SC_REPORT_FATAL(name(), ("cannot open trace: " + path).c_str());
+        if (!f)
+            SC_REPORT_FATAL(name(), ("cannot open trace: " + path).c_str());
         std::string line;
-        bool got_params = false;
+        bool        got_params = false;
         while (std::getline(f, line)) {
-            if (trim(line).empty()) continue;
+            if (trim(line).empty())
+                continue;
             parse_params(trim(line));
             got_params = true;
             break;
         }
-        if (!got_params) SC_REPORT_FATAL(name(), "trace missing parameter line");
+        if (!got_params)
+            SC_REPORT_FATAL(name(), "trace missing parameter line");
         while (std::getline(f, line)) {
             const std::size_t c1 = line.find(',');
-            if (c1 == std::string::npos) continue;
+            if (c1 == std::string::npos)
+                continue;
             const std::size_t c2 = line.find(',', c1 + 1);
-            const std::string a = trim(line.substr(0, c1));
-            const std::string w = trim(c2 == std::string::npos
-                                           ? line.substr(c1 + 1)
-                                           : line.substr(c1 + 1, c2 - c1 - 1));
+            const std::string a  = trim(line.substr(0, c1));
+            const std::string w  = trim(c2 == std::string::npos ? line.substr(c1 + 1)
+                                                                : line.substr(c1 + 1, c2 - c1 - 1));
             const std::string d =
                 (c2 == std::string::npos) ? std::string() : trim(line.substr(c2 + 1));
-            if (a.empty() || a == "addr") continue;
+            if (a.empty() || a == "addr")
+                continue;
             trace_entry_t e;
             e.addr = std::strtoull(a.c_str(), nullptr, 0);
             e.we   = (std::atoi(w.c_str()) != 0);
@@ -195,12 +213,19 @@ SC_MODULE(agu_tdm) {
 
     void step() {
         drive_params();
-        if (!rst_ni.read()) { reset_state(); return; }
+        if (!rst_ni.read()) {
+            reset_state();
+            return;
+        }
 
         ++cycle_;
 
         bool resp = false;
-        for (int p = 0; p < NUM_REQ; ++p) if (rvalid_i[p].read()) { resp = true; break; }
+        for (int p = 0; p < NUM_REQ; ++p)
+            if (rvalid_i[p].read()) {
+                resp = true;
+                break;
+            }
         if (resp && !inflight_.empty()) {
             const grp_rec g = inflight_.front();
             inflight_.pop_front();
@@ -211,15 +236,19 @@ SC_MODULE(agu_tdm) {
         }
 
         for (int p = 0; p < NUM_REQ; ++p)
-            if (req_o[p].read() && gnt_i[p].read()) granted_[p] = true;
+            if (req_o[p].read() && gnt_i[p].read())
+                granted_[p] = true;
 
         if (group_ < n_groups_) {
             bool all_granted = true;
             for (int p = 0; p < NUM_REQ; ++p)
-                if (has_row(group_, p) && !granted_[p]) { all_granted = false; break; }
+                if (has_row(group_, p) && !granted_[p]) {
+                    all_granted = false;
+                    break;
+                }
             if (all_granted) {
                 const trace_entry_t e0 = trace_[group_ * NUM_REQ];
-                grp_rec g;
+                grp_rec             g;
                 g.we = e0.we;
                 for (int p = 0; p < NUM_REQ; ++p) {
                     g.addr[p] = e0.addr + static_cast<uint64_t>(p) * BYTES_PER_WORD;
@@ -227,7 +256,8 @@ SC_MODULE(agu_tdm) {
                 }
                 inflight_.push_back(g);
                 ++group_;
-                for (int p = 0; p < NUM_REQ; ++p) granted_[p] = false;
+                for (int p = 0; p < NUM_REQ; ++p)
+                    granted_[p] = false;
             }
         }
 
@@ -249,37 +279,42 @@ SC_MODULE(agu_tdm) {
             addr_o.write(0);
             we_o.write(false);
             be_o.write(0);
-            for (int p = 0; p < NUM_REQ; ++p) { req_o[p].write(false); wdata_o[p].write(0); }
+            for (int p = 0; p < NUM_REQ; ++p) {
+                req_o[p].write(false);
+                wdata_o[p].write(0);
+            }
         }
 
         done_o.write(group_ >= n_groups_ && inflight_.empty());
     }
 
     void end_of_simulation() override {
-        if (out_path_.empty()) return;
+        if (out_path_.empty())
+            return;
         std::ofstream f(out_path_.c_str());
         if (!f) {
             SC_REPORT_WARNING(name(), ("cannot write log: " + out_path_).c_str());
             return;
         }
         f << "cycle,addr,we,data\n";
-        for (const access_t& a : log_) {
-            f << a.cycle << ",0x" << std::hex << std::setw(8) << std::setfill('0')
-              << a.addr << "," << std::dec << (a.we ? 1 : 0) << ",0x" << std::hex
-              << std::setw(8) << std::setfill('0') << a.data << std::dec << "\n";
+        for (const access_t &a : log_) {
+            f << a.cycle << ",0x" << std::hex << std::setw(8) << std::setfill('0') << a.addr << ","
+              << std::dec << (a.we ? 1 : 0) << ",0x" << std::hex << std::setw(8)
+              << std::setfill('0') << a.data << std::dec << "\n";
         }
     }
 
-    agu_tdm(sc_core::sc_module_name nm, const std::string& trace_path,
-            const std::string& out_path = std::string())
-        : sc_module(nm), out_path_(out_path), p_num_banks_(32), p_bank_width_(4),
-          p_R_(4), p_C_(4), p_L_(8), p_store_mode_(0) {
+    agu_tdm(sc_core::sc_module_name nm, const std::string &trace_path,
+            const std::string &out_path = std::string())
+        : sc_module(nm), out_path_(out_path), p_num_banks_(32), p_bank_width_(4), p_R_(4), p_C_(4),
+          p_L_(8), p_store_mode_(0) {
         load_trace(trace_path);
 
         n_groups_ = (trace_.size() + NUM_REQ - 1) / NUM_REQ;
         group_    = 0;
         cycle_    = 0;
-        for (int p = 0; p < NUM_REQ; ++p) granted_[p] = false;
+        for (int p = 0; p < NUM_REQ; ++p)
+            granted_[p] = false;
 
         SC_METHOD(step);
         sensitive << clk_i.pos();

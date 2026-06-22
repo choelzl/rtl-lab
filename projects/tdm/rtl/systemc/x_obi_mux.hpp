@@ -33,15 +33,14 @@
 
 #include <cstdint>
 
-template <int NUM_AGU = 2, int NUM_WORD = 8>
-SC_MODULE(x_obi_mux) {
+template <int NUM_AGU = 2, int NUM_WORD = 8> SC_MODULE(x_obi_mux) {
     static constexpr int NUM_IN = NUM_AGU * NUM_WORD;
 
     static_assert(NUM_AGU >= 1, "NUM_AGU must be >= 1");
     static_assert(NUM_WORD >= 1, "NUM_WORD must be >= 1");
 
-    sc_in<int>       sel_req_i;
-    sc_in<int>       sel_rsp_i;
+    sc_in<int> sel_req_i;
+    sc_in<int> sel_rsp_i;
 
     sc_in<bool>      m_req_i[NUM_IN];
     sc_in<uint64_t>  m_wdata_i[NUM_IN];

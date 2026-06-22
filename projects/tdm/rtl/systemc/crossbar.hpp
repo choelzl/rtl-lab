@@ -55,60 +55,54 @@
 
 #include <cstdint>
 
-template <int NUM_IN = 8, int NUM_OUT = 8, int BYTES_PER_WORD = 4,
-          int SEL_START = 0, int SEL_LEN = 0>
-SC_MODULE(crossbar)
-{
+template <int NUM_IN = 8, int NUM_OUT = 8, int BYTES_PER_WORD = 4, int SEL_START = 0,
+          int SEL_LEN = 0>
+SC_MODULE(crossbar) {
     sc_in<bool> clk_i;
     sc_in<bool> rst_ni;
 
-    sc_in<bool> m_req_i[NUM_IN];
-    sc_in<uint64_t> m_addr_i[NUM_IN];
-    sc_in<bool> m_we_i[NUM_IN];
-    sc_in<uint32_t> m_be_i[NUM_IN];
-    sc_in<uint64_t> m_wdata_i[NUM_IN];
-    sc_out<bool> m_gnt_o[NUM_IN];
-    sc_out<bool> m_rvalid_o[NUM_IN];
+    sc_in<bool>      m_req_i[NUM_IN];
+    sc_in<uint64_t>  m_addr_i[NUM_IN];
+    sc_in<bool>      m_we_i[NUM_IN];
+    sc_in<uint32_t>  m_be_i[NUM_IN];
+    sc_in<uint64_t>  m_wdata_i[NUM_IN];
+    sc_out<bool>     m_gnt_o[NUM_IN];
+    sc_out<bool>     m_rvalid_o[NUM_IN];
     sc_out<uint64_t> m_rdata_o[NUM_IN];
 
-    sc_out<bool> b_req_o[NUM_OUT];
+    sc_out<bool>     b_req_o[NUM_OUT];
     sc_out<uint64_t> b_addr_o[NUM_OUT];
-    sc_out<bool> b_we_o[NUM_OUT];
+    sc_out<bool>     b_we_o[NUM_OUT];
     sc_out<uint32_t> b_be_o[NUM_OUT];
     sc_out<uint64_t> b_wdata_o[NUM_OUT];
-    sc_in<bool> b_gnt_i[NUM_OUT];
-    sc_in<bool> b_rvalid_i[NUM_OUT];
-    sc_in<uint64_t> b_rdata_i[NUM_OUT];
+    sc_in<bool>      b_gnt_i[NUM_OUT];
+    sc_in<bool>      b_rvalid_i[NUM_OUT];
+    sc_in<uint64_t>  b_rdata_i[NUM_OUT];
 
     sc_signal<int> rr_ptr[NUM_OUT];
     sc_signal<int> win_[NUM_OUT];
     sc_signal<int> owner[NUM_OUT];
 
-    static int bank_of(uint64_t a)
-    {
+    static int bank_of(uint64_t a) {
         if constexpr (SEL_LEN > 0)
             return static_cast<int>((a >> SEL_START) & ((1 << SEL_LEN) - 1));
         else
             return static_cast<int>((a / BYTES_PER_WORD) % NUM_OUT);
     }
-    static uint64_t slave_addr(uint64_t a)
-    {
+    static uint64_t slave_addr(uint64_t a) {
         if constexpr (SEL_LEN > 0)
             return a;
         else
             return (a / BYTES_PER_WORD / NUM_OUT) * static_cast<uint64_t>(BYTES_PER_WORD);
     }
 
-    void comb()
-    {
-        for (int m = 0; m < NUM_IN; ++m)
-        {
+    void comb() {
+        for (int m = 0; m < NUM_IN; ++m) {
             m_gnt_o[m].write(false);
             m_rvalid_o[m].write(false);
             m_rdata_o[m].write(0);
         }
-        for (int b = 0; b < NUM_OUT; ++b)
-        {
+        for (int b = 0; b < NUM_OUT; ++b) {
             b_req_o[b].write(false);
             b_addr_o[b].write(0);
             b_we_o[b].write(false);
@@ -116,23 +110,19 @@ SC_MODULE(crossbar)
             b_wdata_o[b].write(0);
         }
 
-        for (int b = 0; b < NUM_OUT; ++b)
-        {
-            int winner = -1;
-            const int start = rr_ptr[b].read();
-            for (int k = 0; k < NUM_IN; ++k)
-            {
+        for (int b = 0; b < NUM_OUT; ++b) {
+            int       winner = -1;
+            const int start  = rr_ptr[b].read();
+            for (int k = 0; k < NUM_IN; ++k) {
                 const int m = (start + k) % NUM_IN;
-                if (m_req_i[m].read() && bank_of(m_addr_i[m].read()) == b)
-                {
+                if (m_req_i[m].read() && bank_of(m_addr_i[m].read()) == b) {
                     winner = m;
                     break;
                 }
             }
             win_[b].write(winner);
 
-            if (winner >= 0)
-            {
+            if (winner >= 0) {
                 b_req_o[b].write(true);
                 b_addr_o[b].write(slave_addr(m_addr_i[winner].read()));
                 b_we_o[b].write(m_we_i[winner].read());
@@ -142,27 +132,22 @@ SC_MODULE(crossbar)
             }
 
             const int ow = owner[b].read();
-            if (ow >= 0 && b_rvalid_i[b].read())
-            {
+            if (ow >= 0 && b_rvalid_i[b].read()) {
                 m_rvalid_o[ow].write(true);
                 m_rdata_o[ow].write(b_rdata_i[b].read());
             }
         }
     }
 
-    void seq()
-    {
-        if (!rst_ni.read())
-        {
-            for (int b = 0; b < NUM_OUT; ++b)
-            {
+    void seq() {
+        if (!rst_ni.read()) {
+            for (int b = 0; b < NUM_OUT; ++b) {
                 rr_ptr[b].write(0);
                 owner[b].write(-1);
             }
             return;
         }
-        for (int b = 0; b < NUM_OUT; ++b)
-        {
+        for (int b = 0; b < NUM_OUT; ++b) {
             const int w = win_[b].read();
             owner[b].write(w);
             if (w >= 0)
@@ -170,15 +155,12 @@ SC_MODULE(crossbar)
         }
     }
 
-    SC_CTOR(crossbar)
-    {
+    SC_CTOR(crossbar) {
         SC_METHOD(comb);
         for (int m = 0; m < NUM_IN; ++m)
-            sensitive << m_req_i[m] << m_addr_i[m] << m_we_i[m] << m_be_i[m]
-                      << m_wdata_i[m];
+            sensitive << m_req_i[m] << m_addr_i[m] << m_we_i[m] << m_be_i[m] << m_wdata_i[m];
         for (int b = 0; b < NUM_OUT; ++b)
-            sensitive << b_gnt_i[b] << b_rvalid_i[b] << b_rdata_i[b] << rr_ptr[b]
-                      << owner[b];
+            sensitive << b_gnt_i[b] << b_rvalid_i[b] << b_rdata_i[b] << rr_ptr[b] << owner[b];
 
         SC_METHOD(seq);
         sensitive << clk_i.pos();

@@ -46,8 +46,7 @@
 
 #include <cstdint>
 
-template <int NUM_REQ = 4, int NUM_WORD = 8>
-SC_MODULE(buf) {
+template <int NUM_REQ = 4, int NUM_WORD = 8> SC_MODULE(buf) {
     static constexpr int GROUPS = NUM_WORD / NUM_REQ;
     static constexpr int DOUT   = 4;
 
@@ -55,8 +54,8 @@ SC_MODULE(buf) {
     static_assert(NUM_WORD >= NUM_REQ && NUM_WORD % NUM_REQ == 0,
                   "NUM_WORD must be a positive multiple of NUM_REQ");
 
-    sc_in<bool>      clk_i;
-    sc_in<bool>      rst_ni;
+    sc_in<bool> clk_i;
+    sc_in<bool> rst_ni;
 
     sc_in<bool>      a_req_i[NUM_REQ];
     sc_in<uint64_t>  a_addr_i;
@@ -76,15 +75,15 @@ SC_MODULE(buf) {
     sc_in<bool>      m_rvalid_i[NUM_WORD];
     sc_in<uint64_t>  m_rdata_i[NUM_WORD];
 
-    sc_signal<int>  pp_;
-    bool            pp_we_;
+    sc_signal<int> pp_;
+    bool           pp_we_;
 
     sc_signal<bool> f_busy_;
-    bool     f_ready_;
-    bool     f_we_;
-    uint64_t f_base_;
-    uint32_t f_be_;
-    uint64_t f_wdata_[NUM_WORD];
+    bool            f_ready_;
+    bool            f_we_;
+    uint64_t        f_base_;
+    uint32_t        f_be_;
+    uint64_t        f_wdata_[NUM_WORD];
 
     sc_signal<bool>     m_busy_;
     sc_signal<bool>     m_we_;
@@ -92,8 +91,8 @@ SC_MODULE(buf) {
     sc_signal<uint32_t> m_be_;
     sc_signal<bool>     m_sec_[NUM_WORD];
     sc_signal<uint64_t> m_wdata_[NUM_WORD];
-    bool     m_got_[NUM_WORD];
-    uint64_t m_rdata_[NUM_WORD];
+    bool                m_got_[NUM_WORD];
+    uint64_t            m_rdata_[NUM_WORD];
 
     bool     o_we_[DOUT];
     uint64_t o_rdata_[DOUT][NUM_WORD];
@@ -101,7 +100,8 @@ SC_MODULE(buf) {
 
     void comb() {
         const bool g = rst_ni.read() && (pp_.read() != 0 || !f_busy_.read());
-        for (int p = 0; p < NUM_REQ; ++p) a_gnt_o[p].write(g);
+        for (int p = 0; p < NUM_REQ; ++p)
+            a_gnt_o[p].write(g);
 
         const bool mb = m_busy_.read();
         for (int w = 0; w < NUM_WORD; ++w) {
@@ -115,71 +115,124 @@ SC_MODULE(buf) {
 
     void step() {
         if (!rst_ni.read()) {
-            pp_.write(0); pp_we_ = false;
-            f_busy_.write(false); f_ready_ = false; f_we_ = false; f_base_ = 0; f_be_ = 0;
-            m_busy_.write(false); m_we_.write(false); m_base_.write(0); m_be_.write(0);
+            pp_.write(0);
+            pp_we_ = false;
+            f_busy_.write(false);
+            f_ready_ = false;
+            f_we_    = false;
+            f_base_  = 0;
+            f_be_    = 0;
+            m_busy_.write(false);
+            m_we_.write(false);
+            m_base_.write(0);
+            m_be_.write(0);
             for (int w = 0; w < NUM_WORD; ++w) {
-                m_sec_[w].write(false); m_wdata_[w].write(0);
-                m_got_[w] = false; m_rdata_[w] = 0; f_wdata_[w] = 0;
+                m_sec_[w].write(false);
+                m_wdata_[w].write(0);
+                m_got_[w]   = false;
+                m_rdata_[w] = 0;
+                f_wdata_[w] = 0;
             }
-            o_rd_ = 0; o_cnt_ = 0; o_ndel_ = 0;
-            for (int p = 0; p < NUM_REQ; ++p) { a_rvalid_o[p].write(false); a_rdata_o[p].write(0); }
+            o_rd_   = 0;
+            o_cnt_  = 0;
+            o_ndel_ = 0;
+            for (int p = 0; p < NUM_REQ; ++p) {
+                a_rvalid_o[p].write(false);
+                a_rdata_o[p].write(0);
+            }
             return;
         }
 
         const bool present = a_req_i[0].read();
-        int  pp = pp_.read();
-        const bool g = (pp != 0 || !f_busy_.read());
+        int        pp      = pp_.read();
+        const bool g       = (pp != 0 || !f_busy_.read());
 
         bool     f_busy = f_busy_.read(), f_ready = f_ready_;
         bool     m_busy = m_busy_.read(), m_we = m_we_.read();
         uint64_t m_base = m_base_.read();
-        uint32_t m_be = m_be_.read();
+        uint32_t m_be   = m_be_.read();
         bool     m_sec[NUM_WORD];
         uint64_t m_wd[NUM_WORD];
-        for (int w = 0; w < NUM_WORD; ++w) { m_sec[w] = m_sec_[w].read(); m_wd[w] = m_wdata_[w].read(); }
+        for (int w = 0; w < NUM_WORD; ++w) {
+            m_sec[w] = m_sec_[w].read();
+            m_wd[w]  = m_wdata_[w].read();
+        }
         int ocnt = o_cnt_;
 
         if (m_busy) {
             for (int w = 0; w < NUM_WORD; ++w) {
-                if (m_rvalid_i[w].read()) { m_got_[w] = true; if (!m_we) m_rdata_[w] = m_rdata_i[w].read(); }
-                if (!m_sec[w] && m_gnt_i[w].read()) m_sec[w] = true;
+                if (m_rvalid_i[w].read()) {
+                    m_got_[w] = true;
+                    if (!m_we)
+                        m_rdata_[w] = m_rdata_i[w].read();
+                }
+                if (!m_sec[w] && m_gnt_i[w].read())
+                    m_sec[w] = true;
             }
         }
 
         bool m_all = m_busy;
-        for (int w = 0; w < NUM_WORD; ++w) if (!m_got_[w]) { m_all = false; break; }
+        for (int w = 0; w < NUM_WORD; ++w)
+            if (!m_got_[w]) {
+                m_all = false;
+                break;
+            }
         if (m_busy && m_all && ocnt < DOUT) {
             const int wi = (o_rd_ + ocnt) % DOUT;
-            o_we_[wi] = m_we;
-            for (int w = 0; w < NUM_WORD; ++w) o_rdata_[wi][w] = m_rdata_[w];
+            o_we_[wi]    = m_we;
+            for (int w = 0; w < NUM_WORD; ++w)
+                o_rdata_[wi][w] = m_rdata_[w];
             ++ocnt;
-            m_busy = false; m_we = false; m_base = 0; m_be = 0;
-            for (int w = 0; w < NUM_WORD; ++w) { m_sec[w] = false; m_wd[w] = 0; m_got_[w] = false; m_rdata_[w] = 0; }
+            m_busy = false;
+            m_we   = false;
+            m_base = 0;
+            m_be   = 0;
+            for (int w = 0; w < NUM_WORD; ++w) {
+                m_sec[w]    = false;
+                m_wd[w]     = 0;
+                m_got_[w]   = false;
+                m_rdata_[w] = 0;
+            }
         }
 
         if (present && g) {
             if (pp == 0) {
-                f_busy = true; f_we_ = a_we_i.read(); f_base_ = a_addr_i.read(); f_be_ = a_be_i.read();
-                pp_we_ = a_we_i.read();
-                for (int w = 0; w < NUM_WORD; ++w) f_wdata_[w] = 0;
+                f_busy  = true;
+                f_we_   = a_we_i.read();
+                f_base_ = a_addr_i.read();
+                f_be_   = a_be_i.read();
+                pp_we_  = a_we_i.read();
+                for (int w = 0; w < NUM_WORD; ++w)
+                    f_wdata_[w] = 0;
                 if (a_we_i.read()) {
-                    for (int p = 0; p < NUM_REQ; ++p) f_wdata_[p] = a_wdata_i[p].read();
+                    for (int p = 0; p < NUM_REQ; ++p)
+                        f_wdata_[p] = a_wdata_i[p].read();
                     f_ready = (GROUPS == 1);
                 } else {
                     f_ready = true;
                 }
             } else if (pp_we_) {
-                for (int p = 0; p < NUM_REQ; ++p) f_wdata_[pp * NUM_REQ + p] = a_wdata_i[p].read();
-                if (pp == GROUPS - 1) f_ready = true;
+                for (int p = 0; p < NUM_REQ; ++p)
+                    f_wdata_[pp * NUM_REQ + p] = a_wdata_i[p].read();
+                if (pp == GROUPS - 1)
+                    f_ready = true;
             }
             pp = (pp + 1) % GROUPS;
         }
 
         if (f_busy && f_ready && !m_busy) {
-            m_busy = true; m_we = f_we_; m_base = f_base_; m_be = f_be_;
-            for (int w = 0; w < NUM_WORD; ++w) { m_sec[w] = false; m_got_[w] = false; m_wd[w] = f_wdata_[w]; m_rdata_[w] = 0; }
-            f_busy = false; f_ready = false;
+            m_busy = true;
+            m_we   = f_we_;
+            m_base = f_base_;
+            m_be   = f_be_;
+            for (int w = 0; w < NUM_WORD; ++w) {
+                m_sec[w]    = false;
+                m_got_[w]   = false;
+                m_wd[w]     = f_wdata_[w];
+                m_rdata_[w] = 0;
+            }
+            f_busy  = false;
+            f_ready = false;
         }
 
         const bool deliver = ocnt > 0 && o_ndel_ < NUM_WORD;
@@ -189,21 +242,46 @@ SC_MODULE(buf) {
         }
         if (deliver) {
             o_ndel_ += NUM_REQ;
-            if (o_ndel_ >= NUM_WORD) { o_rd_ = (o_rd_ + 1) % DOUT; --ocnt; o_ndel_ = 0; }
+            if (o_ndel_ >= NUM_WORD) {
+                o_rd_ = (o_rd_ + 1) % DOUT;
+                --ocnt;
+                o_ndel_ = 0;
+            }
         }
 
         pp_.write(pp);
-        f_busy_.write(f_busy); f_ready_ = f_ready;
-        m_busy_.write(m_busy); m_we_.write(m_we); m_base_.write(m_base); m_be_.write(m_be);
-        for (int w = 0; w < NUM_WORD; ++w) { m_sec_[w].write(m_sec[w]); m_wdata_[w].write(m_wd[w]); }
+        f_busy_.write(f_busy);
+        f_ready_ = f_ready;
+        m_busy_.write(m_busy);
+        m_we_.write(m_we);
+        m_base_.write(m_base);
+        m_be_.write(m_be);
+        for (int w = 0; w < NUM_WORD; ++w) {
+            m_sec_[w].write(m_sec[w]);
+            m_wdata_[w].write(m_wd[w]);
+        }
         o_cnt_ = ocnt;
     }
 
     SC_CTOR(buf) {
-        pp_we_ = false; f_ready_ = false; f_we_ = false; f_base_ = 0; f_be_ = 0;
-        for (int w = 0; w < NUM_WORD; ++w) { m_got_[w] = false; m_rdata_[w] = 0; f_wdata_[w] = 0; }
-        o_rd_ = 0; o_cnt_ = 0; o_ndel_ = 0;
-        for (int d = 0; d < DOUT; ++d) { o_we_[d] = false; for (int w = 0; w < NUM_WORD; ++w) o_rdata_[d][w] = 0; }
+        pp_we_   = false;
+        f_ready_ = false;
+        f_we_    = false;
+        f_base_  = 0;
+        f_be_    = 0;
+        for (int w = 0; w < NUM_WORD; ++w) {
+            m_got_[w]   = false;
+            m_rdata_[w] = 0;
+            f_wdata_[w] = 0;
+        }
+        o_rd_   = 0;
+        o_cnt_  = 0;
+        o_ndel_ = 0;
+        for (int d = 0; d < DOUT; ++d) {
+            o_we_[d] = false;
+            for (int w = 0; w < NUM_WORD; ++w)
+                o_rdata_[d][w] = 0;
+        }
 
         SC_METHOD(step);
         sensitive << clk_i.pos();
@@ -211,7 +289,8 @@ SC_MODULE(buf) {
 
         SC_METHOD(comb);
         sensitive << rst_ni << pp_ << f_busy_ << m_busy_ << m_we_ << m_base_ << m_be_;
-        for (int w = 0; w < NUM_WORD; ++w) sensitive << m_sec_[w] << m_wdata_[w];
+        for (int w = 0; w < NUM_WORD; ++w)
+            sensitive << m_sec_[w] << m_wdata_[w];
     }
 };
 

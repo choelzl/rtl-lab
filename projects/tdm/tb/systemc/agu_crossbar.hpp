@@ -57,8 +57,7 @@
 #include <string>
 #include <vector>
 
-template <int NUM_REQ = 4, int BYTES_PER_WORD = 4>
-SC_MODULE(agu_crossbar) {
+template <int NUM_REQ = 4, int BYTES_PER_WORD = 4> SC_MODULE(agu_crossbar) {
     sc_in<bool>      clk_i;
     sc_in<bool>      rst_ni;
     sc_out<bool>     req_o[NUM_REQ];
@@ -71,14 +70,22 @@ SC_MODULE(agu_crossbar) {
     sc_in<uint64_t>  rdata_i[NUM_REQ];
     sc_out<bool>     done_o;
 
-    struct access_t { uint64_t cycle; uint64_t addr; bool we; uint64_t data; };
+    struct access_t {
+        uint64_t cycle;
+        uint64_t addr;
+        bool     we;
+        uint64_t data;
+    };
     std::vector<access_t> log_;
 
-    static constexpr uint32_t kBeFull =
-        (BYTES_PER_WORD >= 32) ? ~0u : ((1u << BYTES_PER_WORD) - 1);
+    static constexpr uint32_t kBeFull = (BYTES_PER_WORD >= 32) ? ~0u : ((1u << BYTES_PER_WORD) - 1);
 
-    std::string                out_path_;
-    struct trace_entry_t { uint64_t addr; bool we; uint64_t data; };
+    std::string out_path_;
+    struct trace_entry_t {
+        uint64_t addr;
+        bool     we;
+        uint64_t data;
+    };
     std::vector<trace_entry_t> trace_;
     std::size_t                n_groups_;
     std::size_t                group_;
@@ -94,14 +101,15 @@ SC_MODULE(agu_crossbar) {
         return g * static_cast<std::size_t>(NUM_REQ) + p < trace_.size();
     }
 
-    static std::string trim(const std::string& s) {
+    static std::string trim(const std::string &s) {
         const std::size_t b = s.find_first_not_of(" \t\r\n");
-        if (b == std::string::npos) return std::string();
+        if (b == std::string::npos)
+            return std::string();
         const std::size_t e = s.find_last_not_of(" \t\r\n");
         return s.substr(b, e - b + 1);
     }
 
-    void load_trace(const std::string& path) {
+    void load_trace(const std::string &path) {
         std::ifstream f(path.c_str());
         if (!f) {
             SC_REPORT_INFO(name(), ("no stimuli (" + path + "), will be idle").c_str());
@@ -109,18 +117,20 @@ SC_MODULE(agu_crossbar) {
         }
         std::string line;
         while (std::getline(f, line))
-            if (!trim(line).empty()) break;
+            if (!trim(line).empty())
+                break;
         while (std::getline(f, line)) {
             const std::size_t c1 = line.find(',');
-            if (c1 == std::string::npos) continue;
+            if (c1 == std::string::npos)
+                continue;
             const std::size_t c2 = line.find(',', c1 + 1);
-            const std::string a = trim(line.substr(0, c1));
-            const std::string w = trim(c2 == std::string::npos
-                                           ? line.substr(c1 + 1)
-                                           : line.substr(c1 + 1, c2 - c1 - 1));
+            const std::string a  = trim(line.substr(0, c1));
+            const std::string w  = trim(c2 == std::string::npos ? line.substr(c1 + 1)
+                                                                : line.substr(c1 + 1, c2 - c1 - 1));
             const std::string d =
                 (c2 == std::string::npos) ? std::string() : trim(line.substr(c2 + 1));
-            if (a.empty() || a == "addr") continue;
+            if (a.empty() || a == "addr")
+                continue;
             trace_entry_t e;
             e.addr = std::strtoull(a.c_str(), nullptr, 0);
             e.we   = (std::atoi(w.c_str()) != 0);
@@ -159,7 +169,7 @@ SC_MODULE(agu_crossbar) {
         for (int p = 0; p < NUM_REQ; ++p) {
             if (if_valid_[p] && rvalid_i[p].read()) {
                 const uint64_t data = if_we_[p] ? if_data_[p] : rdata_i[p].read();
-                access_t rec;
+                access_t       rec;
                 rec.cycle = cycle_;
                 rec.addr  = if_addr_[p];
                 rec.we    = if_we_[p];
@@ -172,21 +182,25 @@ SC_MODULE(agu_crossbar) {
         for (int p = 0; p < NUM_REQ; ++p) {
             if (req_o[p].read() && gnt_i[p].read()) {
                 const trace_entry_t e = trace_[group_ * NUM_REQ + p];
-                granted_[p]  = true;
-                if_valid_[p] = true;
-                if_addr_[p]  = e.addr;
-                if_we_[p]    = e.we;
-                if_data_[p]  = e.we ? e.data : 0;
+                granted_[p]           = true;
+                if_valid_[p]          = true;
+                if_addr_[p]           = e.addr;
+                if_we_[p]             = e.we;
+                if_data_[p]           = e.we ? e.data : 0;
             }
         }
 
         if (group_ < n_groups_) {
             bool group_granted = true;
             for (int p = 0; p < NUM_REQ; ++p)
-                if (has_row(group_, p) && !granted_[p]) { group_granted = false; break; }
+                if (has_row(group_, p) && !granted_[p]) {
+                    group_granted = false;
+                    break;
+                }
             if (group_granted) {
                 ++group_;
-                for (int p = 0; p < NUM_REQ; ++p) granted_[p] = false;
+                for (int p = 0; p < NUM_REQ; ++p)
+                    granted_[p] = false;
             }
         }
 
@@ -204,34 +218,42 @@ SC_MODULE(agu_crossbar) {
         }
 
         bool inflight = false;
-        for (int p = 0; p < NUM_REQ; ++p) if (if_valid_[p]) { inflight = true; break; }
+        for (int p = 0; p < NUM_REQ; ++p)
+            if (if_valid_[p]) {
+                inflight = true;
+                break;
+            }
         done_o.write(group_ >= n_groups_ && !inflight);
     }
 
     void end_of_simulation() override {
-        if (out_path_.empty()) return;
+        if (out_path_.empty())
+            return;
         std::ofstream f(out_path_.c_str());
         if (!f) {
             SC_REPORT_WARNING(name(), ("cannot write log: " + out_path_).c_str());
             return;
         }
         f << "cycle,addr,we,data\n";
-        for (const access_t& a : log_) {
-            f << a.cycle << ",0x" << std::hex << std::setw(8) << std::setfill('0')
-              << a.addr << "," << std::dec << (a.we ? 1 : 0) << ",0x" << std::hex
-              << std::setw(8) << std::setfill('0') << a.data << std::dec << "\n";
+        for (const access_t &a : log_) {
+            f << a.cycle << ",0x" << std::hex << std::setw(8) << std::setfill('0') << a.addr << ","
+              << std::dec << (a.we ? 1 : 0) << ",0x" << std::hex << std::setw(8)
+              << std::setfill('0') << a.data << std::dec << "\n";
         }
     }
 
-    agu_crossbar(sc_core::sc_module_name nm, const std::string& trace_path,
-        const std::string& out_path = std::string())
+    agu_crossbar(sc_core::sc_module_name nm, const std::string &trace_path,
+                 const std::string &out_path = std::string())
         : sc_module(nm), out_path_(out_path) {
         load_trace(trace_path);
 
         n_groups_ = (trace_.size() + NUM_REQ - 1) / NUM_REQ;
         group_    = 0;
         cycle_    = 0;
-        for (int p = 0; p < NUM_REQ; ++p) { granted_[p] = false; if_valid_[p] = false; }
+        for (int p = 0; p < NUM_REQ; ++p) {
+            granted_[p]  = false;
+            if_valid_[p] = false;
+        }
 
         SC_METHOD(step);
         sensitive << clk_i.pos();

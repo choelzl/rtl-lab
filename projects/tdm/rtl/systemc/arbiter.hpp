@@ -27,12 +27,11 @@
 
 #include <systemc.h>
 
-template <int NUM_AGU = 2>
-SC_MODULE(arbiter) {
-    sc_in<bool>  clk_i;
-    sc_in<bool>  rst_ni;
-    sc_out<int>  sel_req_o;
-    sc_out<int>  sel_rsp_o;
+template <int NUM_AGU = 2> SC_MODULE(arbiter) {
+    sc_in<bool> clk_i;
+    sc_in<bool> rst_ni;
+    sc_out<int> sel_req_o;
+    sc_out<int> sel_rsp_o;
 
     static_assert(NUM_AGU >= 1, "NUM_AGU must be >= 1");
 

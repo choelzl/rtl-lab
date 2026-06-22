@@ -58,23 +58,23 @@ SC_MODULE(top_tdm) {
     static constexpr int NUM_REQT = NUM_AGU * NUM_REQ;
     static constexpr int NUM_IN   = NUM_AGU * NUM_WORD;
 
-    sc_in<bool>         clk_i;
-    sc_in<bool>         rst_ni;
+    sc_in<bool> clk_i;
+    sc_in<bool> rst_ni;
 
-    sc_in<bool>         a_req_i[NUM_REQT];
-    sc_in<uint64_t>     a_wdata_i[NUM_REQT];
-    sc_out<bool>        a_gnt_o[NUM_REQT];
-    sc_out<bool>        a_rvalid_o[NUM_REQT];
-    sc_out<uint64_t>    a_rdata_o[NUM_REQT];
-    sc_in<uint64_t>     a_addr_i[NUM_AGU];
-    sc_in<bool>         a_we_i[NUM_AGU];
-    sc_in<uint32_t>     a_be_i[NUM_AGU];
-    sc_in<uint64_t>     a_num_banks_i[NUM_AGU];
-    sc_in<uint64_t>     a_bank_width_i[NUM_AGU];
-    sc_in<uint64_t>     a_r_i[NUM_AGU];
-    sc_in<uint64_t>     a_c_i[NUM_AGU];
-    sc_in<uint64_t>     a_l_i[NUM_AGU];
-    sc_in<uint64_t>     a_store_mode_i[NUM_AGU];
+    sc_in<bool>      a_req_i[NUM_REQT];
+    sc_in<uint64_t>  a_wdata_i[NUM_REQT];
+    sc_out<bool>     a_gnt_o[NUM_REQT];
+    sc_out<bool>     a_rvalid_o[NUM_REQT];
+    sc_out<uint64_t> a_rdata_o[NUM_REQT];
+    sc_in<uint64_t>  a_addr_i[NUM_AGU];
+    sc_in<bool>      a_we_i[NUM_AGU];
+    sc_in<uint32_t>  a_be_i[NUM_AGU];
+    sc_in<uint64_t>  a_num_banks_i[NUM_AGU];
+    sc_in<uint64_t>  a_bank_width_i[NUM_AGU];
+    sc_in<uint64_t>  a_r_i[NUM_AGU];
+    sc_in<uint64_t>  a_c_i[NUM_AGU];
+    sc_in<uint64_t>  a_l_i[NUM_AGU];
+    sc_in<uint64_t>  a_store_mode_i[NUM_AGU];
 
     sc_signal<bool>     bx_req[NUM_IN], bx_gnt[NUM_IN], bx_rvalid[NUM_IN];
     sc_signal<uint64_t> bx_wdata[NUM_IN], bx_rdata[NUM_IN];
@@ -99,17 +99,17 @@ SC_MODULE(top_tdm) {
     sc_signal<int>      sel_req, sel_rsp;
     sc_signal<uint64_t> map_num_banks, map_bank_width, map_r, map_c, map_l, map_store_mode;
 
-    sc_vector<buf<NUM_REQ, NUM_WORD>>            bufs;
-    arbiter<NUM_AGU>                             arb;
-    x_obi_mux<NUM_AGU, NUM_WORD>                 xmux;
-    tdm_mux<NUM_AGU>                             tmux;
-    tdm<NUM_WORD, NUM_BANK, BYTES_PER_WORD>      mapf;
-    crossbar<NUM_MGR, NUM_BANK, BYTES_PER_WORD>  xbar;
-    sc_vector<bank<NUM_ROW, BYTES_PER_WORD>>     banks;
+    sc_vector<buf<NUM_REQ, NUM_WORD>>           bufs;
+    arbiter<NUM_AGU>                            arb;
+    x_obi_mux<NUM_AGU, NUM_WORD>                xmux;
+    tdm_mux<NUM_AGU>                            tmux;
+    tdm<NUM_WORD, NUM_BANK, BYTES_PER_WORD>     mapf;
+    crossbar<NUM_MGR, NUM_BANK, BYTES_PER_WORD> xbar;
+    sc_vector<bank<NUM_ROW, BYTES_PER_WORD>>    banks;
 
     SC_CTOR(top_tdm)
-        : bufs("buf"), arb("arb"), xmux("xmux"), tmux("tmux"), mapf("tdm"),
-          xbar("xbar"), banks("bank") {
+        : bufs("buf"), arb("arb"), xmux("xmux"), tmux("tmux"), mapf("tdm"), xbar("xbar"),
+          banks("bank") {
         bufs.init(NUM_AGU);
         banks.init(NUM_BANK);
 
