@@ -1,0 +1,49 @@
+name: Unit Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      projects: ${{ steps.find.outputs.projects }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find projects with unit tests
+        id: find
+        run: |
+          projects=()
+          for dir in projects/*/tb/unit; do
+            if ls "${dir}"/tb_*.cpp &>/dev/null 2>&1; then
+              project=$(echo "$dir" | cut -d/ -f2)
+              projects+=("\"$project\"")
+            fi
+          done
+          if [ ${#projects[@]} -eq 0 ]; then
+            echo "projects=[]" >> "$GITHUB_OUTPUT"
+          else
+            list=$(IFS=,; echo "[${projects[*]}]")
+            echo "projects=$list" >> "$GITHUB_OUTPUT"
+          fi
+
+  unit-test:
+    needs: discover
+    if: needs.discover.outputs.projects != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.discover.outputs.projects) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v14
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Run unit tests — ${{ matrix.project }}
+        run: nix develop --command make unit-test PROJECT=${{ matrix.project }}
