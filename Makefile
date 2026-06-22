@@ -13,6 +13,7 @@ TB_DEFS        ?= none
 KEEP_HIERARCHY ?= 0
 IN_DIR         ?=
 EXP            ?=
+VENDOR_ARGS    ?=
 
 PROJ_DIR := $(RTL_LAB_HOME)/projects/$(PROJECT)
 
@@ -27,7 +28,14 @@ export SEL_TB_DEFS        := $(TB_DEFS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 export SEL_IN_DIR         := $(if $(findstring /,$(IN_DIR)),$(abspath $(IN_DIR)),$(IN_DIR))
 
-.PHONY: init flow-list flow-run flow-ext flow-gen format format-sv format-sc
+.PHONY: init flow-list flow-run flow-ext flow-gen unit-test format format-sv format-sc
+
+unit-test:
+	cd $(RTL_LAB_HOME)/scripts/unit-test && \
+	mkdir -p $(PROJ_DIR)/sim/unit && \
+	./run.sh
+
+init:
 	mkdir -p $(PROJ_DIR)/sim
 	mkdir -p $(PROJ_DIR)/imp
 
