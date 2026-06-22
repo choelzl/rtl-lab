@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Author: Simone Machetti
+# Author: Simone Machetti, Cedric Hölzl
 # -----------------------------------------------------------------------------
 
 PROJECT        ?=
@@ -27,26 +27,11 @@ export SEL_TB_DEFS        := $(TB_DEFS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 export SEL_IN_DIR         := $(if $(findstring /,$(IN_DIR)),$(abspath $(IN_DIR)),$(IN_DIR))
 
-.PHONY: _check_project _check_exp init flow-list flow-run flow-ext flow-gen
-
-_check_project:
-	@if [ -z "$(PROJECT)" ]; then \
-		echo "error: PROJECT is not set. Pass PROJECT=<name>, e.g. 'make $(MAKECMDGOALS) PROJECT=ai-core'."; \
-		echo "       Projects currently in your checkout:"; \
-		ls -1 $(RTL_LAB_HOME)/projects 2>/dev/null | sed 's/^/         - /' || true; \
-		exit 1; \
-	fi; \
-	if [ ! -d "$(PROJ_DIR)" ]; then \
-		echo "error: project '$(PROJECT)' is not in your checkout."; \
-		echo "       Add it with: git sparse-checkout add projects/$(PROJECT)"; \
-		exit 1; \
-	fi
-
-init: _check_project
+.PHONY: init flow-list flow-run flow-ext flow-gen format format-sv format-sc
 	mkdir -p $(PROJ_DIR)/sim
 	mkdir -p $(PROJ_DIR)/imp
 
-sim: _check_project clean-sim
+sim: clean-sim
 	cd $(RTL_LAB_HOME)/scripts/sim && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
@@ -56,7 +41,7 @@ sim: _check_project clean-sim
 	mv $(RTL_LAB_HOME)/scripts/sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
-sim-sc: _check_project clean-sim
+sim-sc: clean-sim
 	cd $(RTL_LAB_HOME)/scripts/sim-sc && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
@@ -66,21 +51,21 @@ sim-sc: _check_project clean-sim
 	mv $(RTL_LAB_HOME)/scripts/sim-sc/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
-syn: _check_project clean-imp
+syn: clean-imp
 	cd $(RTL_LAB_HOME)/scripts/syn && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
 	yosys -l $(PROJ_DIR)/imp/$(OUT_DIR)/output/yosys.log -c $(RTL_LAB_HOME)/scripts/syn/run.tcl
 
-post-syn-sta: _check_project clean-imp
+post-syn-sta: clean-imp
 	cd $(RTL_LAB_HOME)/scripts/post-syn-sta && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
 	sta -no_splash -exit $(RTL_LAB_HOME)/scripts/post-syn-sta/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
 
-post-syn-sim: _check_project clean-sim
+post-syn-sim: clean-sim
 	cd $(RTL_LAB_HOME)/scripts/post-syn-sim && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/sim/$(OUT_DIR)/build && \
@@ -90,46 +75,52 @@ post-syn-sim: _check_project clean-sim
 	mv $(RTL_LAB_HOME)/scripts/post-syn-sim/activity.vcd $(PROJ_DIR)/sim/$(OUT_DIR)/output; \
 	fi
 
-post-syn-dpa: _check_project clean-imp
+post-syn-dpa: clean-imp
 	cd $(RTL_LAB_HOME)/scripts/post-syn-dpa && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR) && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/report && \
 	mkdir -p $(PROJ_DIR)/imp/$(OUT_DIR)/output && \
 	sta -no_splash -exit $(RTL_LAB_HOME)/scripts/post-syn-dpa/run.tcl | tee $(PROJ_DIR)/imp/$(OUT_DIR)/output/opensta.log
 
-flow-list: _check_project
-	@echo "Experiments in project '$(PROJECT)':"
-	@ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/  - /' || true
-
-_check_exp: _check_project
-	@if [ -z "$(EXP)" ]; then \
-		echo "error: EXP is not set. Pass EXP=<experiment>, e.g. 'make $(MAKECMDGOALS) EXP=<experiment> PROJECT=$(PROJECT)'."; \
-		echo "       Experiments available in project '$(PROJECT)':"; \
-		ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/         - /' || true; \
-		exit 1; \
-	fi; \
-	if [ ! -d "$(PROJ_DIR)/scripts/flow/$(EXP)" ]; then \
-		echo "error: experiment '$(EXP)' does not exist in project '$(PROJECT)'."; \
-		echo "       Experiments available:"; \
-		ls -1 $(PROJ_DIR)/scripts/flow 2>/dev/null | sed 's/^/         - /' || true; \
-		exit 1; \
-	fi
-
-flow-run: _check_exp
+flow-run:
 	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/run.py
 
-flow-ext: _check_exp
+flow-ext:
 	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/ext.py
 
-flow-gen: _check_exp
+flow-gen:
 	python3 $(PROJ_DIR)/scripts/flow/$(EXP)/gen.py
 
-clean-all: _check_project
+clean-all:
 	rm -rf $(PROJ_DIR)/sim
 	rm -rf $(PROJ_DIR)/imp
 
-clean-sim: _check_project
+clean-sim:
 	rm -rf $(PROJ_DIR)/sim/$(OUT_DIR)
 
-clean-imp: _check_project
+clean-imp:
 	rm -rf $(PROJ_DIR)/imp/$(OUT_DIR)
+
+SC_GIT_LIST := $(shell git ls-files -co --exclude-standard "*.cpp" "*.h" "*.hpp")
+SV_GIT_LIST := $(shell git ls-files -co --exclude-standard "*.sv" "*.v")
+SC_SOURCES := $(foreach f,$(SC_GIT_LIST),$(if $(wildcard $(f)),$(f)))
+SV_SOURCES := $(foreach f,$(SV_GIT_LIST),$(if $(wildcard $(f)),$(f)))
+SV_FLAGS := --indentation_spaces=4 --wrap_spaces=4 --column_limit=100 \
+            --assignment_statement_alignment=align --named_port_alignment=align \
+            --module_net_variable_alignment=align --port_declarations_alignment=align \
+            --struct_union_members_alignment=align
+
+SC_STYLE := "{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4, \
+              TabWidth: 4, UseTab: Never, ColumnLimit: 100, \
+              AlignConsecutiveAssignments: true, AlignConsecutiveDeclarations: true, \
+              AlignConsecutiveMacros: true, AlignTrailingComments: true, \
+              AllowShortFunctionsOnASingleLine: Inline}"
+format: format-sv format-sc
+
+format-sv:
+	@echo "Formatting SystemVerilog ..."
+	@$(if $(SV_SOURCES),verible-verilog-format $(SV_FLAGS) --inplace $(SV_SOURCES),echo "No SV files.")
+
+format-sc:
+	@echo "Formatting SystemC ..."
+	@$(if $(SC_SOURCES),clang-format -style=$(SC_STYLE) -i $(SC_SOURCES),echo "No SC files.")
