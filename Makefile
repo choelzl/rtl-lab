@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Author: Simone Machetti
+# Author: Simone Machetti, Cedric Hölzl
 # -----------------------------------------------------------------------------
 
 PROJECT        ?=
@@ -28,7 +28,12 @@ export SEL_TB_DEFS        := $(TB_DEFS)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 export SEL_IN_DIR         := $(if $(findstring /,$(IN_DIR)),$(abspath $(IN_DIR)),$(IN_DIR))
 
-.PHONY: init vendor flow-list flow-run flow-ext flow-gen
+.PHONY: init vendor flow-list flow-run flow-ext flow-gen unit-test format format-sv format-sc
+
+unit-test:
+	cd $(RTL_LAB_HOME)/scripts/unit-test && \
+	mkdir -p $(PROJ_DIR)/sim/unit && \
+	./run.sh
 
 init:
 	mkdir -p $(PROJ_DIR)/sim
@@ -109,3 +114,27 @@ clean-sim:
 
 clean-imp:
 	rm -rf $(PROJ_DIR)/imp/$(OUT_DIR)
+
+SC_GIT_LIST := $(shell git ls-files -co --exclude-standard "*.cpp" "*.h" "*.hpp")
+SV_GIT_LIST := $(shell git ls-files -co --exclude-standard "*.sv" "*.v")
+SC_SOURCES := $(foreach f,$(SC_GIT_LIST),$(if $(wildcard $(f)),$(f)))
+SV_SOURCES := $(foreach f,$(SV_GIT_LIST),$(if $(wildcard $(f)),$(f)))
+SV_FLAGS := --indentation_spaces=4 --wrap_spaces=4 --column_limit=100 \
+            --assignment_statement_alignment=align --named_port_alignment=align \
+            --module_net_variable_alignment=align --port_declarations_alignment=align \
+            --struct_union_members_alignment=align
+
+SC_STYLE := "{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4, \
+              TabWidth: 4, UseTab: Never, ColumnLimit: 100, \
+              AlignConsecutiveAssignments: true, AlignConsecutiveDeclarations: true, \
+              AlignConsecutiveMacros: true, AlignTrailingComments: true, \
+              AllowShortFunctionsOnASingleLine: Inline}"
+format: format-sv format-sc
+
+format-sv:
+	@echo "Formatting SystemVerilog ..."
+	@$(if $(SV_SOURCES),verible-verilog-format $(SV_FLAGS) --inplace $(SV_SOURCES),echo "No SV files.")
+
+format-sc:
+	@echo "Formatting SystemC ..."
+	@$(if $(SC_SOURCES),clang-format -style=$(SC_STYLE) -i $(SC_SOURCES),echo "No SC files.")

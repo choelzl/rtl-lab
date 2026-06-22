@@ -21,6 +21,8 @@ This README documents the shared EDA flow: the `make` targets, their parameters,
 │   │   └── run.sh        # Verilator compile and run script
 │   ├── sim-sc/           # SystemC simulation flow (Verilator --sc)
 │   │   └── run.sh        # Verilator --sc compile and run script
+│   ├── unit-test/        # SystemC Unit Tests (Supports internal SystemVerilog)
+│   │   └── run.sh        # Verilator --sc compile and run script for unit tests
 │   ├── syn/              # Logic synthesis flow
 │   │   ├── run.tcl       # Yosys top-level synthesis script (ASAP7)
 │   │   ├── compile.tcl   # RTL read and elaboration script
@@ -175,6 +177,9 @@ make post-syn-sta PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_
 
 # Post-synthesis dynamic power analysis
 make post-syn-dpa PROJECT=<project> TOP_LEVEL=<top_level> CLK_PERIOD_NS=1.0 OUT_DIR=<name> NETLIST_DIR=<name> VCD_DIR=<name>
+
+# Unit Testing you can specify  TOP_LEVEL=<test_name> to run a single test called tb_<test_name>.cpp
+make unit-test PROJECT=<project>
 ```
 
 `PROJECT` and `TOP_LEVEL` are required on every command — there is no default. See `projects/<project>/README.md` for the available `TOP_LEVEL` values and runnable examples.
