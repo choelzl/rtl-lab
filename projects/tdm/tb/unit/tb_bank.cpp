@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// Author: Cedric Hoelzl
+// Author: Cedric Hölzl
 //
 // Unit tests for bank<NUM_ROW, BYTES_PER_WORD>.
 //
@@ -26,9 +26,10 @@
 #include <cstdlib>
 #include <systemc.h>
 
-static constexpr int kNumRows   = 8;
-static constexpr int kBytesWord = 4;
-using DUT                       = bank<kNumRows, kBytesWord>;
+static constexpr int kNumRows  = 8;
+static constexpr int kBytesRow = 4;
+using DUT                      = bank<kNumRows, kBytesRow>;
+using data_t                   = DUT::data_t;
 
 // ---------------------------------------------------------------------------
 // Test accounting
@@ -57,10 +58,10 @@ SC_MODULE(tb) {
     sc_signal<uint64_t> addr_i{"addr_i"};
     sc_signal<bool>     we_i{"we_i"};
     sc_signal<uint32_t> be_i{"be_i"};
-    sc_signal<uint64_t> wdata_i{"wdata_i"};
+    sc_signal<data_t>   wdata_i{"wdata_i"};
     sc_signal<bool>     gnt_o{"gnt_o"};
     sc_signal<bool>     rvalid_o{"rvalid_o"};
-    sc_signal<uint64_t> rdata_o{"rdata_o"};
+    sc_signal<data_t>   rdata_o{"rdata_o"};
 
     DUT *dut;
 
@@ -100,7 +101,7 @@ SC_MODULE(tb) {
         addr_i.write(0);
         we_i.write(false);
         be_i.write(0);
-        wdata_i.write(0ULL);
+        wdata_i.write(data_t(0));
     }
 
     void do_reset() {
@@ -117,7 +118,7 @@ SC_MODULE(tb) {
         req_i.write(true);
         we_i.write(true);
         addr_i.write(addr);
-        wdata_i.write(data);
+        wdata_i.write(data_t(static_cast<unsigned long long>(data)));
         be_i.write(be);
         tick();
         idle_inputs();
@@ -130,7 +131,7 @@ SC_MODULE(tb) {
         addr_i.write(addr);
         be_i.write(0xF);
         tick();
-        uint64_t result = rdata_o.read();
+        uint64_t result = rdata_o.read().to_uint64();
         idle_inputs();
         return result;
     }
@@ -149,7 +150,7 @@ SC_MODULE(tb) {
         rst_n.write(false);
         tick();
         CHECK(!rvalid_o.read(), "T01 rvalid_o=0 during reset");
-        CHECK(rdata_o.read() == 0ULL, "T01 rdata_o=0 during reset");
+        CHECK(rdata_o.read().to_uint64() == 0ULL, "T01 rdata_o=0 during reset");
         rst_n.write(true);
         tick();
 
@@ -185,7 +186,7 @@ SC_MODULE(tb) {
         be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T04 rvalid_o=1 on read response");
-        CHECK(rdata_o.read() == 0ULL, "T04 rdata_o=0 from zero-init");
+        CHECK(rdata_o.read().to_uint64() == 0ULL, "T04 rdata_o=0 from zero-init");
         idle_inputs();
 
         // -------------------------------------------------------------------
@@ -204,11 +205,11 @@ SC_MODULE(tb) {
         req_i.write(true);
         we_i.write(true);
         addr_i.write(0);
-        wdata_i.write(0xDEADBEEFULL);
+        wdata_i.write(data_t(0xDEADBEEFULL));
         be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T06 rvalid_o=1 on write response");
-        CHECK(rdata_o.read() == 0ULL, "T06 rdata_o=0 on write (no read data)");
+        CHECK(rdata_o.read().to_uint64() == 0ULL, "T06 rdata_o=0 on write (no read data)");
         idle_inputs();
 
         // -------------------------------------------------------------------
@@ -225,7 +226,7 @@ SC_MODULE(tb) {
         be_i.write(0xF);
         tick();
         CHECK(rvalid_o.read(), "T07 rvalid_o=1 on read response");
-        CHECK(rdata_o.read() == 0xCAFEBABEULL, "T07 rdata_o matches written value");
+        CHECK(rdata_o.read().to_uint64() == 0xCAFEBABEULL, "T07 rdata_o matches written value");
         idle_inputs();
 
         // -------------------------------------------------------------------
@@ -273,12 +274,12 @@ SC_MODULE(tb) {
         addr_i.write(0);
         tick();
         bool     rv0 = rvalid_o.read();
-        uint64_t rd0 = rdata_o.read();
+        uint64_t rd0 = rdata_o.read().to_uint64();
 
         addr_i.write(4); // keep req_i high, change address
         tick();
         bool     rv1 = rvalid_o.read();
-        uint64_t rd1 = rdata_o.read();
+        uint64_t rd1 = rdata_o.read().to_uint64();
         idle_inputs();
 
         CHECK(rv0, "T10 first read rvalid=1");

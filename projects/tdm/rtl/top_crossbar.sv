@@ -61,15 +61,15 @@ module top_crossbar
 
     for (genvar a = 0; a < NUM_RD; a++) begin : gen_ragu_pack
         assign ragu_obi_req[a] = '{
-            req:   ragu_req_i[a].req,
-            we:    ragu_req_i[a].we,
-            be:    ragu_req_i[a].be,
-            addr:  addr_hash(ragu_req_i[a].addr),
-            wdata: ragu_req_i[a].wdata
-        };
-        assign ragu_resp_o[a].gnt    = ragu_obi_resp[a].gnt;
+                req: ragu_req_i[a].req,
+                we: ragu_req_i[a].we,
+                be: ragu_req_i[a].be,
+                addr: addr_hash(ragu_req_i[a].addr),
+                wdata: ragu_req_i[a].wdata
+            };
+        assign ragu_resp_o[a].gnt = ragu_obi_resp[a].gnt;
         assign ragu_resp_o[a].rvalid = ragu_obi_resp[a].rvalid;
-        assign ragu_resp_o[a].rdata  = ragu_obi_resp[a].rdata;
+        assign ragu_resp_o[a].rdata = ragu_obi_resp[a].rdata;
     end
 
     // --------------------------------------------------------------------------
@@ -80,15 +80,15 @@ module top_crossbar
 
     for (genvar a = 0; a < NUM_WR; a++) begin : gen_wagu_pack
         assign wagu_obi_req[a] = '{
-            req:   wagu_req_i[a].req,
-            we:    wagu_req_i[a].we,
-            be:    wagu_req_i[a].be,
-            addr:  addr_hash(wagu_req_i[a].addr),
-            wdata: wagu_req_i[a].wdata
-        };
-        assign wagu_resp_o[a].gnt    = wagu_obi_resp[a].gnt;
+                req: wagu_req_i[a].req,
+                we: wagu_req_i[a].we,
+                be: wagu_req_i[a].be,
+                addr: addr_hash(wagu_req_i[a].addr),
+                wdata: wagu_req_i[a].wdata
+            };
+        assign wagu_resp_o[a].gnt = wagu_obi_resp[a].gnt;
         assign wagu_resp_o[a].rvalid = wagu_obi_resp[a].rvalid;
-        assign wagu_resp_o[a].rdata  = wagu_obi_resp[a].rdata;
+        assign wagu_resp_o[a].rdata = wagu_obi_resp[a].rdata;
     end
 
     obi_req_t  [NUM_RAGU-1:0][NUM_REQ-1:0] rd_l1_l2_req;
@@ -103,9 +103,9 @@ module top_crossbar
         ) crossbar_level_1_i (
             .clk_i,
             .rst_ni,
-            .master_req_i (ragu_obi_req [j*NUM_REQ +: NUM_REQ]),
-            .master_resp_o(ragu_obi_resp[j*NUM_REQ +: NUM_REQ]),
-            .slave_req_o  (rd_l1_l2_req [j]),
+            .master_req_i (ragu_obi_req[j*NUM_REQ+:NUM_REQ]),
+            .master_resp_o(ragu_obi_resp[j*NUM_REQ+:NUM_REQ]),
+            .slave_req_o  (rd_l1_l2_req[j]),
             .slave_resp_i (rd_l1_l2_resp[j])
         );
     end
@@ -122,9 +122,9 @@ module top_crossbar
         ) crossbar_level_1_i (
             .clk_i,
             .rst_ni,
-            .master_req_i (wagu_obi_req [j*NUM_REQ +: NUM_REQ]),
-            .master_resp_o(wagu_obi_resp[j*NUM_REQ +: NUM_REQ]),
-            .slave_req_o  (wr_l1_l2_req [j]),
+            .master_req_i (wagu_obi_req[j*NUM_REQ+:NUM_REQ]),
+            .master_resp_o(wagu_obi_resp[j*NUM_REQ+:NUM_REQ]),
+            .slave_req_o  (wr_l1_l2_req[j]),
             .slave_resp_i (wr_l1_l2_resp[j])
         );
     end
@@ -149,8 +149,8 @@ module top_crossbar
             .rst_ni,
             .master_req_i (l2_master_req),
             .master_resp_o(l2_master_resp),
-            .slave_req_o  (rd_l2_l3_req [k*NUM_BANK_GRP +: NUM_BANK_GRP]),
-            .slave_resp_i (rd_l2_l3_resp[k*NUM_BANK_GRP +: NUM_BANK_GRP])
+            .slave_req_o  (rd_l2_l3_req[k*NUM_BANK_GRP+:NUM_BANK_GRP]),
+            .slave_resp_i (rd_l2_l3_resp[k*NUM_BANK_GRP+:NUM_BANK_GRP])
         );
     end
 
@@ -174,8 +174,8 @@ module top_crossbar
             .rst_ni,
             .master_req_i (l2_master_req),
             .master_resp_o(l2_master_resp),
-            .slave_req_o  (wr_l2_l3_req [k*NUM_BANK_GRP +: NUM_BANK_GRP]),
-            .slave_resp_i (wr_l2_l3_resp[k*NUM_BANK_GRP +: NUM_BANK_GRP])
+            .slave_req_o  (wr_l2_l3_req[k*NUM_BANK_GRP+:NUM_BANK_GRP]),
+            .slave_resp_i (wr_l2_l3_resp[k*NUM_BANK_GRP+:NUM_BANK_GRP])
         );
     end
 
@@ -199,24 +199,26 @@ module top_crossbar
             .rst_ni,
             .master_req_i (l3_master_req),
             .master_resp_o(l3_master_resp),
-            .slave_req_o  (bank_req [k*2 +: 2]),
-            .slave_resp_i (bank_resp[k*2 +: 2])
+            .slave_req_o  (bank_req[k*2+:2]),
+            .slave_resp_i (bank_resp[k*2+:2])
         );
     end
 
-    for (genvar i = 0; i < NUM_BANK*2; i++) begin : gen_banks
+    for (genvar i = 0; i < NUM_BANK * 2; i++) begin : gen_banks
         obi_req_t bank_local_req;
         assign bank_local_req = '{
-            req:   bank_req[i].req,
-            we:    bank_req[i].we,
-            be:    bank_req[i].be,
-            addr:  {{ROUTE_BITS{1'b0}},
+                req: bank_req[i].req,
+                we: bank_req[i].we,
+                be: bank_req[i].be,
+                addr: {
+                    {ROUTE_BITS{1'b0}},
                     bank_req[i].addr[31 : ROUTE_LSB+ROUTE_BITS],
-                    bank_req[i].addr[ROUTE_LSB-1 : 0]},
-            wdata: bank_req[i].wdata
-        };
+                    bank_req[i].addr[ROUTE_LSB-1 : 0]
+                },
+                wdata: bank_req[i].wdata
+            };
         bank #(
-            .NUM_ROW       (NUM_ROW/2),
+            .NUM_ROW       (NUM_ROW / 2),
             .WORDS_PER_ROW (WORDS_PER_ROW),
             .BYTES_PER_WORD(BYTES_PER_WORD)
         ) bank_i (

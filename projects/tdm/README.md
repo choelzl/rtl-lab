@@ -1,93 +1,140 @@
-# Tdm
+# TDM
 
 Memory-interconnect designs that compare a full **crossbar** against a
 **time-division-multiplexed (TDM)** scheme, measuring the delay penalty that
 bank conflicts cost each architecture.
 
-This project plugs into the repository-level EDA flow. See the [root README](../../README.md) for the `make` targets, their generic parameters, and the typical pipeline. This document covers the parts specific to `tdm`. The crossbar architecture is the one implemented so far — full design notes are in [doc/specs/crossbar.md](doc/specs/crossbar.md) (protocol: [doc/specs/obi.md](doc/specs/obi.md)).
+This project plugs into the repository-level EDA flow. See the [root README](../../README.md) for the `make` targets, their generic parameters, and the typical pipeline. This document covers the parts specific to `tdm`. Full design notes are in [doc/specs/crossbar.md](doc/specs/crossbar.md), [doc/specs/tdm.md](doc/specs/tdm.md), and the OBI protocol subset is documented in [doc/specs/obi.md](doc/specs/obi.md).
 
-The design is **pure SystemC** (no SV): the synthesizable DUT lives under `rtl/systemc/`, the verification drivers + harness under `tb/systemc/`. It runs through the `make sim-sc` flow, which builds a pure-SystemC project directly with `g++`.
+The SystemC simulation flow now uses one project top:
 
-## Quick start
+- `TOP_LEVEL=top` selects the unified SystemC wrapper in [rtl/systemc/top.hpp](rtl/systemc/top.hpp).
+- `IMPL=<name>` selects the implementation behind that wrapper.
+- The unified harness is [tb/systemc/tb_top.cpp](tb/systemc/tb_top.cpp).
+
+## Quick Start
 
 ```bash
 source ../../sourceme.sh   # or: source sourceme.sh from the repository root
 
-make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=run0
+make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=crossbar OUT_DIR=run_crossbar
+make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=tdm      OUT_DIR=run_tdm
 ```
 
-This builds [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp), runs it on the stimuli in [tb/stimuli/](tb/stimuli/), and prints timing statistics. `tdm` is selected with `PROJECT=tdm` on every `make` command.
+`PROJECT=tdm` selects this project, `TOP_LEVEL=top` selects the single SystemC testbench/wrapper pair, and `IMPL` selects the backend/blackbox used by the wrapper.
 
-To run the Verilated SV DUT instead, prefix the top-level with `V` and pass the full parameter set (Verilator needs them as `-G` flags, which `PARAMS` provides):
+Override the design size with `PARAMS`:
 
 ```bash
-make sim-sc PROJECT=tdm TOP_LEVEL=Vtop_crossbar OUT_DIR=run0 \
-    PARAMS="N_RAGU=7 N_REQ=4 N_BANK=32 N_ROW=1024"
+make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=top_crossbar OUT_DIR=big \
+    PARAMS="N_BANK=16 N_ROW=1024 WORD_BYTES=4 WORDS_PER_ROW=4"
 ```
 
-Override the design size with `PARAMS` (each becomes a `-D`):
+For SV-backed implementations, `PARAMS` is also forwarded to Verilator as `-G` parameters. Keep the parameter set complete enough for the selected SV top.
+
+## Implementation Selector
+
+| `IMPL`         | Backend selected by `top`                              | Notes                                                                 |
+| -------------- | ------------------------------------------------------- | --------------------------------------------------------------------- |
+| `crossbar`     | Native SystemC crossbar in [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | Default-style reference backend.                                      |
+| `top_crossbar` | Verilated SV crossbar in [rtl/top_crossbar.sv](rtl/top_crossbar.sv) | Uses the same harness through the SystemC wrapper.                    |
+| `tdm`          | Native SystemC TDM in [rtl/systemc/top_tdm.hpp](rtl/systemc/top_tdm.hpp) | Uses TDM-mode RAGU stimulus parsing and defaults to `sample_tdm`.     |
+| `top_tdm`      | Verilated SV TDM in [rtl/top_tdm.sv](rtl/top_tdm.sv) | SV-backed TDM backend selected through the same `TOP_LEVEL=top` flow. |
+
+The `sim-sc` script uppercases `IMPL` and passes it to C++ as `-DIMPL_<NAME>`. The `top_*` implementations are SV-backed and use the matching `rtl/<IMPL>.sv` as the Verilator `--top-module`; native `crossbar` and `tdm` build directly with `g++`.
+
+## Unified Top And Harness
+
+| Component | File | Description |
+| --------- | ---- | ----------- |
+| `top` | [rtl/systemc/top.hpp](rtl/systemc/top.hpp) | Fixed SystemC wrapper around the selected backend. Packs the RAGU/WAGU port groups onto the flat port arrays used by the implementation tops. |
+| `tb_top` | [tb/systemc/tb_top.cpp](tb/systemc/tb_top.cpp) | `sc_main`: instantiates `top`, connects the RAGU/WAGU trace drivers, runs to completion, and prints/writes timing statistics. |
+
+The wrapper exposes this fixed port map:
+
+| Driver | Ports | Flat OBI buses |
+| ------ | ----- | -------------- |
+| `RAGU_A` | 4 | 16 |
+| `RAGU_B` | 2 | 8 |
+| `RAGU_C` | 1 | 4 |
+| `RAGU_D` | 1 | 4 |
+| `RAGU_DMA` | 1 | 4 |
+| `WAGU_A` | 4 | 16 |
+| `WAGU_B` | 2 | 8 |
+| `WAGU_D` | 1 | 4 |
+| `WAGU_DMA` | 1 | 4 |
+
+Each driver owns `NUM_REQ=4` independent OBI buses per port. The backends receive 9 read ports and 8 write ports through the same wrapper shape.
+
+DUT submodules include [crossbar.hpp](rtl/systemc/crossbar.hpp) / [crossbar.sv](rtl/crossbar.sv), [bank.hpp](rtl/systemc/bank.hpp) / [bank.sv](rtl/bank.sv), and the TDM mapping/buffer blocks under `rtl/systemc/` and `rtl/`.
+
+## RTL Elaboration Parameters
+
+Passed via `PARAMS="NAME=VALUE ..."`; defaults below.
+
+| Parameter       | Meaning                        | Default |
+| --------------- | ------------------------------ | ------- |
+| `N_BANK`        | number of memory banks         | 32      |
+| `N_ROW`         | rows per bank                  | 1024    |
+| `WORD_BYTES`    | bytes per word / OBI data beat | 4       |
+| `WORDS_PER_ROW` | words per bank row             | 4       |
+
+The unified top fixes the architectural RPORT/WPORT grouping described above and derives the flat read/write port counts from that grouping. Total bank capacity is `N_BANK * N_ROW * WORDS_PER_ROW * WORD_BYTES` bytes.
+
+## Stimuli And Outputs
+
+**Stimuli** live under [tb/stimuli/](tb/stimuli/). The unified harness expects one log per RAGU/WAGU trace driver: `ragu_a.log`, `ragu_b.log`, `ragu_c.log`, `ragu_d.log`, `ragu_dma.log`, `wagu_a.log`, `wagu_b.log`, `wagu_d.log`, `wagu_dma.log`. Each driver is connected to its matching RPORT/WPORT group as shown in the table above (see [tb/systemc/tb_top.cpp](tb/systemc/tb_top.cpp)).
+
+Each stimulus file is CSV-like. The first line carries the TDM mapping parameters:
+
+```text
+num_banks,bank_width,C,R,L,store_mode
+```
+
+Access rows follow as:
+
+```text
+addr,we,data
+```
+
+where `addr` is a hex byte address, `we` is `1` for write and `0` for read, and `data` is the write value or empty on reads. Crossbar-mode AGUs skip the first metadata line; TDM-mode RAGUs parse and validate it.
+
+Select stimuli with `IN_DIR`:
 
 ```bash
-make sim-sc PROJECT=tdm TOP_LEVEL=top_crossbar OUT_DIR=big \
-    PARAMS="N_BANK=16 N_REQ=8"
+make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=crossbar IN_DIR=sample OUT_DIR=run_sample
+make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=tdm      IN_DIR=sample_tdm OUT_DIR=run_sample_tdm
 ```
 
-## Top-level modules
+A bare `IN_DIR` name is resolved under `tb/stimuli/`. A value containing `/` is treated as a filesystem path, relative to where you run `make` unless absolute. If unset, the harness defaults to `sample` for crossbar mode and `sample_tdm` for TDM mode.
 
-| Top-level      | File                                                         | Description                                                                                                                                    |
-| -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `top_crossbar`  | [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | DUT: the `N_MGR × N_BANK` crossbar interconnect plus `N_BANK` memory banks. Exposes the manager-side OBI ports; the harness attaches the AGUs. |
-| `Vtop_crossbar` | [rtl/top_crossbar.sv](rtl/top_crossbar.sv)             | Alternative DUT: the two-level SV crossbar (Verilated into a SystemC module). Use `TOP_LEVEL=Vtop_crossbar` to select it. The same harness and AGUs are used; pass the full parameter set via `PARAMS` (see below). |
+**Outputs** are written to `sim/<OUT_DIR>/output/`:
 
-DUT submodules: [crossbar.hpp](rtl/systemc/crossbar.hpp) (round-robin per-bank arbiter, word-interleaved routing) and [bank.hpp](rtl/systemc/bank.hpp) (single-port OBI RAM, 1-cycle latency).
+- `compile.log` and `run.log`
+- one completed-access CSV per AGU, such as `ragu_a.csv`
+- `stats.log` with `actual_cycles`, `ideal_cycles`, `overhead_pct`, and per-group counts
+- `activity.vcd` when produced by the flow
 
-## RTL elaboration parameters
-
-Passed via `PARAMS="NAME=VALUE …"` (forwarded as `-DNAME=VALUE`); defaults below.
-
-| Parameter    | Meaning                        | Default |
-| ------------ | ------------------------------ | ------- |
-| `N_RAGU`     | number of AGUs (managers)      | 2       |
-| `N_WAGU`     | number of AGUs (managers)      | 2       |
-| `N_REQ`      | request ports per AGU          | 4       |
-| `N_BANK`     | number of memory banks         | 32      |
-| `N_ROW`      | rows (words) per bank          | 1024    |
-| `WORD_BYTES` | bytes per word / OBI data beat | 4       |
-
-`N_WAGU · N_REQ` request ports; total capacity `N_BANK · N_ROW · WORD_BYTES` bytes. See [doc/specs/crossbar.md](doc/specs/crossbar.md#configuration-parameters) for the address decode and full semantics.
-
-## Testbenches
-
-| Testbench         | File                                                             | Drives                                                                                                                       |
-| ----------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `tb_top_crossbar` | [tb/systemc/tb_top_crossbar.cpp](tb/systemc/tb_top_crossbar.cpp) | `sc_main`: instantiates `top_crossbar` (native SC) or `Vtop_crossbar` (Verilated SV, selected by `TOP_LEVEL=Vtop_crossbar`) + `N_AGU` [AGUs](tb/systemc/agu_crossbar.hpp), runs to completion, prints statistics. The Verilated wrapper is in [tb/systemc/top_crossbar_sv.hpp](tb/systemc/top_crossbar_sv.hpp). |
-
-**Stimuli** ([tb/stimuli/](tb/stimuli/)): `mem_<i>.log`, one CSV per AGU. The **first line** carries the TDM mapping parameters (`num_banks,bank_width,C,R,L,store_mode`; consumed by the TDM AGU, skipped by the crossbar AGU); the access rows follow as `addr,we,data` (hex byte address, 1=write/0=read, write value or empty on reads). The `sample` stimuli write random data to a set of addresses then read them back. The stimuli folder is selected with `IN_DIR`: a bare name (e.g. `IN_DIR=sample`) is a subfolder of `tb/stimuli/`, while a value containing a `/` (e.g. `IN_DIR=/data/my_stim` or `IN_DIR=./cases/run1`) is used as a filesystem path (relative paths resolve from where you run `make`). Unset, it defaults to `tb/stimuli/sample`.
-
-**Outputs** (in `sim/<OUT_DIR>/output/`): `out_<i>.log` (per-AGU completed accesses `cycle,addr,we,data` for inspection — a read should return the value of its matching write), plus `compile.log` / `run.log`.
-
-## Statistics & the conflict metric
+## Statistics And Conflict Metric
 
 The harness reports:
 
-- **actual cycles** — measured cycles from reset release until every AGU has drained its trace.
-- **ideal cycles** — the conflict-free analytical estimate (derivation below).
-- **delay penalty** — `100 · (actual − ideal) / ideal` %, i.e. the cost of bank conflicts.
+- **actual cycles**: measured cycles from reset release until every AGU has drained its trace.
+- **ideal cycles**: the conflict-free analytical estimate.
+- **overhead**: `100 * (actual - ideal) / ideal` %, i.e. the cost of structural conflicts relative to the ideal.
 
-### How the ideal (conflict-free) cycles are computed
+### Ideal Cycles
 
-The AGU is **pipelined and group-synchronized**: it issues a group of `N_REQ` requests and advances to the next group as soon as all `N_REQ` ports are **granted** — it does *not* wait for the responses, which return one cycle later and overlap the next group's address phase. With no bank conflict every port is granted each cycle, so it issues **one group per cycle** (throughput 1 group/cycle).
+The AGU is pipelined and group-synchronized: it issues a group of `NUM_REQ` requests and advances to the next group as soon as all ports in that group are granted. It does not wait for responses, which return one cycle later and overlap the next group's address phase.
 
-A single AGU with `G` groups therefore finishes in `G + 2` cycles: `G` to stream the groups (1/cycle), plus a fixed 2-cycle pipeline fill to drain the last group (issue → grant → response). Measured exactly: G=2→4, G=4→6, G=8→10.
+With no conflict every port is granted each cycle, so an AGU streams one group per cycle. A fixed 2-cycle pipeline fill drains the last group:
 
-In the conflict-free ideal the AGUs never interfere, so they run fully in parallel and the run ends with the slowest one:
-
-```
-ideal = G_max + 2,   G_a = ceil(len_a / N_REQ),  G_max = max_a G_a
+```text
+ideal = max_groups + 2
 ```
 
-Any cycles beyond `ideal` are arbitration stalls — the conflict penalty. (The `+2` fill is a property of the module timing; it is a named constant in the harness and must be updated if that timing changes.)
+where `max_groups` is the largest group count across all connected AGUs. Any cycles beyond `ideal` are arbitration or backend stalls and show up as overhead.
 
-## Experiments (automation scripts)
+## Experiments
 
 _None yet. Add experiment subfolders under `scripts/flow/`._

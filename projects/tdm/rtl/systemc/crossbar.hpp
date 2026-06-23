@@ -1,9 +1,9 @@
 // -----------------------------------------------------------------------------
-// Author: Simone Machetti
+// Author: Simone Machetti, Cedric Hölzl
 //
 // Description:
 //   Native SystemC crossbar interconnect for the crossbar design — an
-//   NUM_IN x NUM_OUT switch between OBI managers (AGU request ports) and OBI
+//   NUM_IN x NUM_OUT switch between OBI manager ports and OBI
 //   subordinate banks. Implements the simplified single-channel OBI protocol
 //   (see doc/specs/obi.md) with word-interleaved banking and a per-bank
 //   round-robin arbiter.
@@ -24,7 +24,7 @@
 //     - Each cycle, for every bank, the requesters targeting it are arbitrated
 //       round-robin (rr_ptr advances past the winner). The winner's request is
 //       forwarded to the bank and its grant returned; losing managers keep
-//       their request asserted (the AGU holds it) until their turn — the source
+//       their request asserted until their turn — the source
 //       of the conflict penalty.
 //     - Connection / response routing: the bank's response arrives one cycle
 //       after its grant (1-cycle bank latency), so the manager that won bank b
@@ -35,14 +35,15 @@
 //   Reset is active-low (rst_ni). Banks are always-ready (gnt = req), so the
 //   arbiter winner is effectively granted every cycle.
 //
-// Template parameters (NUM_IN = N_AGU*N_REQ; NUM_OUT, BYTES_PER_WORD from PARAMS):
+// Template parameters (NUM_IN = port_count*NUM_REQ; NUM_OUT, BYTES_PER_ROW from PARAMS):
 //   NUM_IN        - number of manager request ports (default 8)
 //   NUM_OUT       - number of slave ports (default 8)
-//   BYTES_PER_WORD - bytes per word; used only when SEL_LEN == 0 (default 4)
+//   BYTES_PER_ROW - bytes per OBI data beat = WORDS_PER_ROW*BYTES_PER_WORD; used
+//                   when SEL_LEN == 0 to compute bank index and slave address (default 16)
 //   SEL_START      - LSB of routing address slice; ignored when SEL_LEN == 0 (default 0)
 //   SEL_LEN        - slice width; 0 = use legacy word-interleaved routing (default 0)
 //
-//   When SEL_LEN == 0 (default): routes by (addr/BYTES_PER_WORD) % NUM_OUT and
+//   When SEL_LEN == 0 (default): routes by (addr/BYTES_PER_ROW) % NUM_OUT and
 //   delivers the bank-local address to the slave (routing bits stripped).
 //   When SEL_LEN > 0: routes by (addr >> SEL_START) & mask and passes the full
 //   address through to the slave unchanged (caller strips routing bits).
@@ -53,31 +54,34 @@
 
 #include <systemc.h>
 
+#include "obi_data.hpp"
 #include <cstdint>
 
-template <int NUM_IN = 8, int NUM_OUT = 8, int BYTES_PER_WORD = 4, int SEL_START = 0,
+template <int NUM_IN = 8, int NUM_OUT = 8, int BYTES_PER_ROW = 4 * 4, int SEL_START = 0,
           int SEL_LEN = 0>
 SC_MODULE(crossbar) {
+    using data_t = obi_data<BYTES_PER_ROW>;
+
     sc_in<bool> clk_i;
     sc_in<bool> rst_ni;
 
-    sc_in<bool>      m_req_i[NUM_IN];
-    sc_in<uint64_t>  m_addr_i[NUM_IN];
-    sc_in<bool>      m_we_i[NUM_IN];
-    sc_in<uint32_t>  m_be_i[NUM_IN];
-    sc_in<uint64_t>  m_wdata_i[NUM_IN];
-    sc_out<bool>     m_gnt_o[NUM_IN];
-    sc_out<bool>     m_rvalid_o[NUM_IN];
-    sc_out<uint64_t> m_rdata_o[NUM_IN];
+    sc_in<bool>     m_req_i[NUM_IN];
+    sc_in<uint64_t> m_addr_i[NUM_IN];
+    sc_in<bool>     m_we_i[NUM_IN];
+    sc_in<uint32_t> m_be_i[NUM_IN];
+    sc_in<data_t>   m_wdata_i[NUM_IN];
+    sc_out<bool>    m_gnt_o[NUM_IN];
+    sc_out<bool>    m_rvalid_o[NUM_IN];
+    sc_out<data_t>  m_rdata_o[NUM_IN];
 
     sc_out<bool>     b_req_o[NUM_OUT];
     sc_out<uint64_t> b_addr_o[NUM_OUT];
     sc_out<bool>     b_we_o[NUM_OUT];
     sc_out<uint32_t> b_be_o[NUM_OUT];
-    sc_out<uint64_t> b_wdata_o[NUM_OUT];
+    sc_out<data_t>   b_wdata_o[NUM_OUT];
     sc_in<bool>      b_gnt_i[NUM_OUT];
     sc_in<bool>      b_rvalid_i[NUM_OUT];
-    sc_in<uint64_t>  b_rdata_i[NUM_OUT];
+    sc_in<data_t>    b_rdata_i[NUM_OUT];
 
     sc_signal<int> rr_ptr[NUM_OUT];
     sc_signal<int> win_[NUM_OUT];
@@ -87,13 +91,13 @@ SC_MODULE(crossbar) {
         if constexpr (SEL_LEN > 0)
             return static_cast<int>((a >> SEL_START) & ((1 << SEL_LEN) - 1));
         else
-            return static_cast<int>((a / BYTES_PER_WORD) % NUM_OUT);
+            return static_cast<int>((a / BYTES_PER_ROW) % NUM_OUT);
     }
     static uint64_t slave_addr(uint64_t a) {
         if constexpr (SEL_LEN > 0)
             return a;
         else
-            return (a / BYTES_PER_WORD / NUM_OUT) * static_cast<uint64_t>(BYTES_PER_WORD);
+            return (a / BYTES_PER_ROW / NUM_OUT) * static_cast<uint64_t>(BYTES_PER_ROW);
     }
 
     void comb() {

@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// Author: Simone Machetti
+// Author: Simone Machetti, Cedric Hölzl
 //
 // Description:
 //   Native SystemC single-port memory bank — an OBI subordinate wrapping a
@@ -27,9 +27,9 @@
 //
 //   Reset is active-low (rst_ni), matching OBI reset_n directly.
 //
-// Template parameters (set from PARAMS macros N_ROW, WORD_BYTES):
-//   NUM_ROW    - rows (words) per bank (default 1024)
-//   BYTES_PER_WORD - bytes per word / OBI data beat (default 4)
+// Template parameters (set from PARAMS macros N_ROW, BYTES_PER_ROW):
+//   NUM_ROW      - rows per bank (default 1024)
+//   BYTES_PER_ROW - bytes per OBI data beat = WORDS_PER_ROW * BYTES_PER_WORD (default 16)
 // -----------------------------------------------------------------------------
 
 #ifndef BANK_HPP
@@ -37,36 +37,35 @@
 
 #include <systemc.h>
 
+#include "obi_data.hpp"
 #include <cstdint>
 #include <sstream>
 #include <vector>
 
-template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4> SC_MODULE(bank) {
-    sc_in<bool>      clk_i;
-    sc_in<bool>      rst_ni;
-    sc_in<bool>      req_i;
-    sc_in<uint64_t>  addr_i;
-    sc_in<bool>      we_i;
-    sc_in<uint32_t>  be_i;
-    sc_in<uint64_t>  wdata_i;
-    sc_out<bool>     gnt_o;
-    sc_out<bool>     rvalid_o;
-    sc_out<uint64_t> rdata_o;
+template <int NUM_ROW = 1024, int BYTES_PER_ROW = 4 * 4> SC_MODULE(bank) {
+    using data_t = obi_data<BYTES_PER_ROW>;
 
-    static constexpr int kDepthWords = NUM_ROW;
+    sc_in<bool>     clk_i;
+    sc_in<bool>     rst_ni;
+    sc_in<bool>     req_i;
+    sc_in<uint64_t> addr_i;
+    sc_in<bool>     we_i;
+    sc_in<uint32_t> be_i;
+    sc_in<data_t>   wdata_i;
+    sc_out<bool>    gnt_o;
+    sc_out<bool>    rvalid_o;
+    sc_out<data_t>  rdata_o;
 
-    static_assert(BYTES_PER_WORD >= 1, "BYTES_PER_WORD must be >= 1");
+    static constexpr int kDepthRows = NUM_ROW;
 
-    std::vector<uint64_t> mem;
+    static_assert(BYTES_PER_ROW >= 1, "BYTES_PER_ROW must be >= 1");
 
-    static uint64_t apply_be(uint64_t old_w, uint64_t new_w, uint32_t be) {
-        uint64_t out = old_w;
-        for (int l = 0; l < BYTES_PER_WORD; ++l) {
-            if (be & (1u << l)) {
-                const uint64_t m = static_cast<uint64_t>(0xFF) << (8 * l);
-                out              = (out & ~m) | (new_w & m);
-            }
-        }
+    std::vector<data_t> mem;
+
+    static data_t apply_be(data_t out, const data_t &new_w, uint32_t be) {
+        for (int l = 0; l < BYTES_PER_ROW; ++l)
+            if (be & (1u << l))
+                out.range(l * 8 + 7, l * 8) = new_w.range(l * 8 + 7, l * 8);
         return out;
     }
 
@@ -77,20 +76,20 @@ template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4> SC_MODULE(bank) {
             return;
         }
 
-        bool     rv = false;
-        uint64_t rd = 0;
+        bool   rv = false;
+        data_t rd = 0;
         if (req_i.read()) {
-            const uint64_t word = addr_i.read() / BYTES_PER_WORD;
-            if (word >= static_cast<uint64_t>(kDepthWords)) {
+            const uint64_t row = addr_i.read() / BYTES_PER_ROW;
+            if (row >= static_cast<uint64_t>(kDepthRows)) {
                 std::ostringstream os;
-                os << "OBI access out of range: bank-local word " << word << " >= capacity "
-                   << kDepthWords;
+                os << "OBI access out of range: bank-local row " << row << " >= capacity "
+                   << kDepthRows;
                 SC_REPORT_FATAL(name(), os.str().c_str());
             }
             if (we_i.read()) {
-                mem[word] = apply_be(mem[word], wdata_i.read(), be_i.read());
+                mem[row] = apply_be(mem[row], wdata_i.read(), be_i.read());
             } else {
-                rd = mem[word];
+                rd = mem[row];
             }
             rv = true;
         }
@@ -102,7 +101,7 @@ template <int NUM_ROW = 1024, int BYTES_PER_WORD = 4> SC_MODULE(bank) {
         gnt_o.write(req_i.read());
     }
 
-    SC_CTOR(bank) : mem(kDepthWords, 0) {
+    SC_CTOR(bank) : mem(kDepthRows, 0) {
         SC_METHOD(step);
         sensitive << clk_i.pos();
         dont_initialize();

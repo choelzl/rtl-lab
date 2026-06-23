@@ -24,19 +24,16 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// AGU / manager side
+// DUT port side
 // ---------------------------------------------------------------------------
-#ifndef N_RAGU
-#define N_RAGU 7
+#ifndef N_RPORT
+#define N_RPORT 9
 #endif
-#ifndef N_WAGU
-#define N_WAGU 6
+#ifndef N_WPORT
+#define N_WPORT 8
 #endif
 #ifndef N_REQ
 #define N_REQ 4
-#endif
-#ifndef N_MGR
-#define N_MGR (N_AGU * N_REQ)
 #endif
 
 // ---------------------------------------------------------------------------

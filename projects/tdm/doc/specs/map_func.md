@@ -34,7 +34,7 @@ resolve to the same location.
 
 The five non-address inputs are **kernel-wide constants** (they describe the
 access pattern of the whole kernel, not one access). In the TDM design they are
-read once from the first line of the trace by [agu_tdm.hpp](../../tb/systemc/agu_tdm.hpp)
+read once from the first line of the trace by [agu.hpp](../../tb/systemc/agu.hpp)
 and selected per time slot by [tdm_mux.hpp](../../rtl/systemc/tdm_mux.hpp); see
 [tdm.md](tdm.md).
 

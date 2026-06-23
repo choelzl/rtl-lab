@@ -3,13 +3,14 @@
 # -----------------------------------------------------------------------------
 
 PROJECT        ?=
-TOP_LEVEL      ?=
+TOP_LEVEL      ?= top
 OUT_DIR        ?= no_name
 NETLIST_DIR    ?= no_name
 VCD_DIR        ?= no_name
 CLK_PERIOD_NS  ?= 1
 PARAMS         ?= none
 TB_DEFS        ?= none
+IMPL           ?= none
 KEEP_HIERARCHY ?= 0
 IN_DIR         ?=
 EXP            ?=
@@ -25,6 +26,7 @@ export SEL_VCD_DIR        := $(VCD_DIR)
 export SEL_CLK_PERIOD_NS  := $(CLK_PERIOD_NS)
 export SEL_PARAMS         := $(PARAMS)
 export SEL_TB_DEFS        := $(TB_DEFS)
+export SEL_IMPL           := $(IMPL)
 export SEL_KEEP_HIERARCHY := $(KEEP_HIERARCHY)
 export SEL_IN_DIR         := $(if $(findstring /,$(IN_DIR)),$(abspath $(IN_DIR)),$(IN_DIR))
 

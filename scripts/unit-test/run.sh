@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # -----------------------------------------------------------------------------
-# Author: Cedric Hoelzl
+# Author: Cedric Hölzl
 #
 # Unit test flow.
 #

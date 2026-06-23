@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 
 # -----------------------------------------------------------------------------
-# Author: Simone Machetti
+# Author: Simone Machetti, Cedric Hölzl
 #
-# SystemC simulation flow. If the project has SV sources (any .sv under rtl/),
-# they are Verilated into sc_modules and linked against the C++/SystemC harness
-# named by SEL_TOP_LEVEL (tb/systemc/tb_<top>.cpp), which becomes sc_main; that
-# harness instantiates the SystemC design top (rtl/systemc/<top>.hpp) wiring the
-# Verilated SV DUT(s) to native SystemC modules. If the project has no SV (a
-# pure-SystemC design), the harness is instead built directly with g++ against
-# the SystemC library. Either way it is simulation only -- never synthesized.
+# SystemC simulation flow.  Testbench: tb/systemc/tb_${TOP_LEVEL}.cpp.
+#
+# Build mode:
+#   SV files present  — Verilator (--sc --exe).
+#   No SV files       — g++ directly against the SystemC library.
+#
+# IMPL (optional) is uppercased and forwarded as -DIMPL_<UPPER> so project
+# headers can respond with #ifdef guards.  Its meaning is project-defined.
+# Native SystemC IMPL values can coexist with SV helper files in rtl/.
+# Only IMPL values that name top-level SV backends should drive Verilator's
+# --top-module; native backends leave the SV top unspecified unless TOP_LEVEL
+# itself names an SV module.
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
@@ -20,9 +25,9 @@ SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 g_flags=()
 cflags="-std=c++17 -I${PROJ}/tb/systemc -I${PROJ}/rtl/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
 
-if [[ "${SEL_TOP_LEVEL}" == V* ]]; then
-    SEL_TOP_LEVEL="${SEL_TOP_LEVEL#V}"
-    cflags="${cflags} -DSV"
+if [ "${SEL_IMPL:-none}" != "none" ]; then
+    impl_flag=$(echo "${SEL_IMPL}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+    cflags="${cflags} -DIMPL_${impl_flag}"
 fi
 
 if [ "${SEL_PARAMS}" != "none" ]; then
@@ -42,6 +47,17 @@ shopt -s nullglob globstar
 rtl_files=("${PROJ}"/rtl/**/*.sv)
 shopt -u nullglob globstar
 
+# The TDM project has both native SystemC and SV-backed implementations in one
+# rtl tree.  Native IMPL values should build directly with g++; top_* values use
+# Verilator and select the matching SV top.
+if [ "${SEL_PROJECT}" = "tdm" ]; then
+    case "${SEL_IMPL:-none}" in
+        none|crossbar|tdm|tdm_sc)
+            rtl_files=()
+            ;;
+    esac
+fi
+
 inc_flags=()
 while IFS= read -r d; do
     inc_flags+=(-I"$d")
@@ -53,9 +69,18 @@ while IFS= read -r f; do
 done < <(find "${PROJ}/rtl" -name "*.vlt" | sort)
 
 top_flags=()
-if [ -n "$(find "${PROJ}/rtl" -name "${SEL_TOP_LEVEL}.sv" -print -quit)" ]; then
-    top_flags=(--top-module "${SEL_TOP_LEVEL}")
-fi
+case "${SEL_IMPL:-none}" in
+    top_*)
+        if [ -n "$(find "${PROJ}/rtl" -name "${SEL_IMPL}.sv" -print -quit)" ]; then
+            top_flags=(--top-module "${SEL_IMPL}")
+        fi
+        ;;
+    none)
+        if [ -n "$(find "${PROJ}/rtl" -name "${SEL_TOP_LEVEL}.sv" -print -quit)" ]; then
+            top_flags=(--top-module "${SEL_TOP_LEVEL}")
+        fi
+        ;;
+esac
 
 if [ "${#rtl_files[@]}" -gt 0 ]; then
     verilator \

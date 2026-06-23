@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -----------------------------------------------------------------------------
-# Author: Cedric Hoelzl
+# Author: Cedric Hölzl
 # Description: This script sets up environment variables for EDA tools used in the RTL Lab.
 # -----------------------------------------------------------------------------
 
