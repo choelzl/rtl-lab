@@ -22,6 +22,8 @@ UNIT_SRC="${PROJ}/tb/unit"
 BUILD="${PROJ}/sim/unit/build"
 BIN_DIR="${PROJ}/sim/unit"
 
+export SC_COPYRIGHT_MESSAGE=DISABLE
+
 mkdir -p "${BUILD}" "${BIN_DIR}"
 
 cflags="-std=c++17 -O0 -g -Wall -Wextra -Wno-cpp"

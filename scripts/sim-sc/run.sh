@@ -22,6 +22,8 @@ set -euo pipefail
 PROJ="${RTL_LAB_HOME}/projects/${SEL_PROJECT}"
 SIM="${PROJ}/sim/${SEL_OUT_DIR}"
 
+export SC_COPYRIGHT_MESSAGE=DISABLE
+
 g_flags=()
 cflags="-std=c++17 -I${PROJ}/tb/systemc -I${PROJ}/rtl/systemc -DCLK_PERIOD_NS=${SEL_CLK_PERIOD_NS}"
 
