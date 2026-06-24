@@ -110,8 +110,8 @@ template <int BYTES_PER_ROW = 16> SC_MODULE(buffer_cell) {
   public:
     explicit buffer_cell(sc_module_name nm) : sc_module(nm) {
         SC_METHOD(comb_proc);
-        sensitive << state_q << fetch_q << addr_q << data_q << all_valid_i
-                  << m_rvalid_i << m_rdata_i << p_addr_i;
+        sensitive << state_q << fetch_q << addr_q << data_q << all_valid_i << m_rvalid_i
+                  << m_rdata_i << p_addr_i;
 
         SC_THREAD(seq_proc);
         sensitive << clk_i.pos();

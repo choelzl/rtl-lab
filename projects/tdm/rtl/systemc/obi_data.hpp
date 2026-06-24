@@ -14,7 +14,6 @@
 
 #include <systemc.h>
 
-template <int BYTES>
-using obi_data = sc_bv<BYTES * 8>;
+template <int BYTES> using obi_data = sc_bv<BYTES * 8>;
 
 #endif
