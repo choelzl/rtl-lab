@@ -76,6 +76,8 @@ SC_MODULE(tb) {
     sc_signal<bool>     m_rvalid_i{"m_rvalid_i"};
     sc_signal<data_t>   m_rdata_i{"m_rdata_i"};
     sc_signal<bool>     p_req_i{"p_req_i"};
+    sc_signal<data_t>   p_wdata_i{"p_wdata_i"}; // unused in read-mode tests; held at 0
+    sc_signal<uint32_t> p_be_i{"p_be_i"};       // unused in read-mode tests; held at 0
     sc_signal<bool>     all_valid_i{"all_valid_i"};
     sc_signal<bool>     reset_window_i{"reset_window_i"};
 
@@ -84,6 +86,7 @@ SC_MODULE(tb) {
     sc_signal<uint64_t> m_addr_o{"m_addr_o"};
     sc_signal<bool>     m_we_o{"m_we_o"};
     sc_signal<uint32_t> m_be_o{"m_be_o"};
+    sc_signal<data_t>   m_wdata_o{"m_wdata_o"}; // sink; unused in read-mode tests
     sc_signal<bool>     p_gnt_o{"p_gnt_o"};
     sc_signal<bool>     p_rvalid_o{"p_rvalid_o"};
     sc_signal<data_t>   p_rdata_o{"p_rdata_o"};
@@ -105,12 +108,15 @@ SC_MODULE(tb) {
         dut->m_rdata_i(m_rdata_i);
         dut->p_req_i(p_req_i);
         dut->p_addr_i(p_addr_s); // tracks last latched addr; addr_i may change after latch
+        dut->p_wdata_i(p_wdata_i);
+        dut->p_be_i(p_be_i);
         dut->all_valid_i(all_valid_i);
         dut->reset_window_i(reset_window_i);
         dut->m_req_o(m_req_o);
         dut->m_addr_o(m_addr_o);
         dut->m_we_o(m_we_o);
         dut->m_be_o(m_be_o);
+        dut->m_wdata_o(m_wdata_o);
         dut->p_gnt_o(p_gnt_o);
         dut->p_rvalid_o(p_rvalid_o);
         dut->p_rdata_o(p_rdata_o);
