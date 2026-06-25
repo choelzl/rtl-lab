@@ -27,6 +27,7 @@
     {
       devShells.${system}.default = pkgs.mkShellNoCC {
         packages = builtins.attrValues hwPkgs ++ [
+          pkgs.gcc
           pkgs.clang-tools
           pkgs.yosys
         ];
