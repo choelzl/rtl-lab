@@ -15,14 +15,17 @@ else
 
     : "${SYSTEMC_INCLUDE:=$SYSTEMC_HOME/include}"
     if [ -d "$SYSTEMC_HOME/lib64" ]; then
-        : "${SYSTEMC_LIBDIR:=$SYSTEMC_HOME/lib64}"
+        : "${SYSTEMC_LIB:=$SYSTEMC_HOME/lib64}"
     else
-        : "${SYSTEMC_LIBDIR:=$SYSTEMC_HOME/lib}"
+        : "${SYSTEMC_LIB:=$SYSTEMC_HOME/lib}"
     fi
     : "${ASAP7_HOME:=$PDK_HOME/OpenROAD-flow-scripts/flow/platforms/asap7}"
-    export SYSTEMC_INCLUDE SYSTEMC_LIBDIR ASAP7_HOME
+    export SYSTEMC_INCLUDE SYSTEMC_LIB ASAP7_HOME
 fi
 
 export SC_COPYRIGHT_MESSAGE=DISABLE
+
+# rtfs — RTL flow scripts CLI
+export PATH="${RTL_LAB_HOME}/scripts:${PATH}"
 
 unset _SCRIPT_DIR

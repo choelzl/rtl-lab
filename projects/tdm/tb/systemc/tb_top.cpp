@@ -202,20 +202,28 @@ int sc_main(int, char *[]) {
     const double      overhead   = ideal > 0 ? 100.0 * (actual - ideal) / ideal : 0.0;
 
     printf("\n=========== top statistics (%s) ===========\n",
-#if defined(IMPL_TDM) || defined(IMPL_TDM_SC)
-           "tdm"
-#elif defined(IMPL_TOP_TDM)
+#if defined(IMPL_TDM)
+#if defined(IMPL_SV)
            "top_tdm"
-#elif defined(IMPL_TOP_CROSSBAR)
+#else
+           "tdm"
+#endif
+#elif defined(IMPL_CROSSBAR)
+#if defined(IMPL_SV)
            "top_crossbar"
 #else
            "crossbar"
 #endif
+#endif
     );
-    printf(" groups     : RAGU_A=%zu RAGU_B=%zu RAGU_C=%zu RAGU_D=%zu RAGU_DMA=%zu\n",
+    printf(" hw ports   : RAGU_A=%d RAGU_B=%d RAGU_C=%d RAGU_D=%d RAGU_DMA=%d\n", dut_t::NUM_RAGU_A,
+           dut_t::NUM_RAGU_B, dut_t::NUM_RAGU_C, dut_t::NUM_RAGU_D, dut_t::NUM_RAGU_DMA);
+    printf("              WAGU_A=%d WAGU_B=%d WAGU_D=%d WAGU_DMA=%d\n", dut_t::NUM_WAGU_A,
+           dut_t::NUM_WAGU_B, dut_t::NUM_WAGU_D, dut_t::NUM_WAGU_DMA);
+    printf(" stim groups: RAGU_A=%zu RAGU_B=%zu RAGU_C=%zu RAGU_D=%zu RAGU_DMA=%zu\n",
            ragu_a_src->n_groups_, ragu_b_src->n_groups_, ragu_c_src->n_groups_,
            ragu_d_src->n_groups_, ragu_dma_src->n_groups_);
-    printf("             WAGU_A=%zu WAGU_B=%zu WAGU_D=%zu WAGU_DMA=%zu\n", wagu_a_src->n_groups_,
+    printf("              WAGU_A=%zu WAGU_B=%zu WAGU_D=%zu WAGU_DMA=%zu\n", wagu_a_src->n_groups_,
            wagu_b_src->n_groups_, wagu_d_src->n_groups_, wagu_dma_src->n_groups_);
     printf(" actual     : %d cycles\n", actual);
     printf(" ideal      : %d cycles (pipeline=%d + max_groups=%zu)\n", ideal, kPipeFill,

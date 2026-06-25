@@ -28,19 +28,26 @@
 #ifndef TOP_HPP
 #define TOP_HPP
 
+#include "obi_data.hpp"
 #include <cstdint>
 #include <systemc.h>
 
-#include "obi_data.hpp"
+#if !defined(IMPL_TDM) && !defined(IMPL_CROSSBAR)
+#define IMPL_CROSSBAR
+#endif
 
-#if defined(IMPL_TOP_CROSSBAR)
+#if defined(IMPL_CROSSBAR)
+#if defined(IMPL_SV)
 #include "top_crossbar_sv.hpp"
-#elif defined(IMPL_TOP_TDM)
-#include "top_tdm_sv.hpp"
-#elif defined(IMPL_TDM) || defined(IMPL_TDM_SC)
-#include "top_tdm.hpp"
 #else
 #include "top_crossbar.hpp"
+#endif
+#elif defined(IMPL_TDM)
+#if defined(IMPL_SV)
+#include "top_tdm_sv.hpp"
+#else
+#include "top_tdm.hpp"
+#endif
 #endif
 
 template <int NUM_BANK = 32, int NUM_ROW = 1024, int BYTES_PER_WORD = 4, int WORDS_PER_ROW = 4>
@@ -91,7 +98,7 @@ SC_MODULE(top) {
     static constexpr int BYTES_PER_ROW = WORDS_PER_ROW * BYTES_PER_WORD;
     using data_t                       = obi_data<BYTES_PER_ROW>;
 
-#if defined(IMPL_TOP_CROSSBAR) || defined(IMPL_TOP_TDM)
+#if defined(IMPL_SV)
     using impl_data_t = uint64_t;
 #else
     using impl_data_t = data_t;
@@ -185,9 +192,6 @@ SC_MODULE(top) {
     sc_out<data_t>  wagu_dma_rdata_o[WAGU_DMA_PORTS];
 
     // Internal flat signals: NUM_RPORT_FLAT = NUM_RPORT * NUM_REQ = 36
-#if defined(IMPL_TDM) || defined(IMPL_TDM_SC)
-    sc_signal<bool> r0_fetch_valid_s_; // ties r0_fetch_valid_i true for the unified wrapper
-#endif
 
     sc_signal<bool>        impl_rport_req[NUM_RPORT_FLAT];
     sc_signal<uint64_t>    impl_rport_addr[NUM_RPORT_FLAT];
@@ -208,23 +212,27 @@ SC_MODULE(top) {
     sc_signal<bool>        impl_wport_rvalid[NUM_WPORT_FLAT];
     sc_signal<impl_data_t> impl_wport_rdata[NUM_WPORT_FLAT];
 
-#if defined(IMPL_TOP_CROSSBAR)
+#if defined(IMPL_CROSSBAR)
+#if defined(IMPL_SV)
     // SV_NUM_REQ=4 matches NUM_REQ above.
     top_crossbar_sv<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW,
                     4>
         impl;
-#elif defined(IMPL_TOP_TDM)
-    top_tdm_sv<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
-        impl;
-#elif defined(IMPL_TDM) || defined(IMPL_TDM_SC)
-    top_tdm<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW> impl;
 #else
     top_crossbar<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
         impl;
 #endif
+#elif defined(IMPL_TDM)
+#if defined(IMPL_SV)
+    top_tdm_sv<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
+        impl;
+#else
+    top_tdm<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW> impl;
+#endif
+#endif
 
     static impl_data_t to_impl_data(const data_t &data) {
-#if defined(IMPL_TOP_CROSSBAR) || defined(IMPL_TOP_TDM)
+#if defined(IMPL_SV)
         return data.to_uint64();
 #else
         return data;
@@ -232,7 +240,7 @@ SC_MODULE(top) {
     }
 
     static data_t from_impl_data(const impl_data_t &data) {
-#if defined(IMPL_TOP_CROSSBAR) || defined(IMPL_TOP_TDM)
+#if defined(IMPL_SV)
         return data_t(static_cast<unsigned long long>(data));
 #else
         return data;
@@ -333,11 +341,6 @@ SC_MODULE(top) {
     SC_CTOR(top) : impl("impl") {
         impl.clk_i(clk_i);
         impl.rst_ni(rst_ni);
-
-#if defined(IMPL_TDM) || defined(IMPL_TDM_SC)
-        r0_fetch_valid_s_.write(true);
-        impl.r0_fetch_valid_i(r0_fetch_valid_s_);
-#endif
 
         for (int i = 0; i < NUM_RPORT_FLAT; ++i) {
             impl.rport_req_i[i](impl_rport_req[i]);

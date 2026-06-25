@@ -6,10 +6,11 @@ bank conflicts cost each architecture.
 
 This project plugs into the repository-level EDA flow. See the [root README](../../README.md) for the `make` targets, their generic parameters, and the typical pipeline. This document covers the parts specific to `tdm`. Full design notes are in [doc/specs/crossbar.md](doc/specs/crossbar.md), [doc/specs/tdm.md](doc/specs/tdm.md), and the OBI protocol subset is documented in [doc/specs/obi.md](doc/specs/obi.md).
 
-The SystemC simulation flow now uses one project top:
+The SystemC simulation flow uses one unified project top:
 
-- `TOP_LEVEL=top` selects the unified SystemC wrapper in [rtl/systemc/top.hpp](rtl/systemc/top.hpp).
+- `top.hpp` is the fixed SystemC wrapper in [rtl/systemc/top.hpp](rtl/systemc/top.hpp).
 - `IMPL=<name>` selects the implementation behind that wrapper.
+- `IMPL=<base>,sv SV_MODS=<sv_top>` additionally selects a Verilated SV backend.
 - The unified harness is [tb/systemc/tb_top.cpp](tb/systemc/tb_top.cpp).
 
 ## Quick Start
@@ -17,31 +18,35 @@ The SystemC simulation flow now uses one project top:
 ```bash
 source ../../sourceme.sh   # or: source sourceme.sh from the repository root
 
-make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=crossbar OUT_DIR=run_crossbar
-make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=tdm      OUT_DIR=run_tdm
+# Native SystemC backends
+edaf sim IMPL=crossbar MODE=sc
+edaf sim IMPL=tdm      MODE=sc
+
+# Verilated SV backends
+edaf sim IMPL=crossbar,sv MODE=sc SV_MODS=top_crossbar
+edaf sim IMPL=tdm,sv      MODE=sc SV_MODS=top_tdm
 ```
 
-`PROJECT=tdm` selects this project, `TOP_LEVEL=top` selects the single SystemC testbench/wrapper pair, and `IMPL` selects the backend/blackbox used by the wrapper.
+All commands are run from inside `projects/tdm/` or any subdirectory; `PROJECT` is inferred from the working directory.
 
 Override the design size with `PARAMS`:
 
 ```bash
-make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=top_crossbar OUT_DIR=big \
-    PARAMS="N_BANK=16 N_ROW=1024 WORD_BYTES=4 WORDS_PER_ROW=4"
+edaf sim IMPL=crossbar MODE=sc PARAMS="N_BANK=16,N_ROW=1024,WORD_BYTES=4,WORDS_PER_ROW=4"
 ```
 
-For SV-backed implementations, `PARAMS` is also forwarded to Verilator as `-G` parameters. Keep the parameter set complete enough for the selected SV top.
+For SV-backed implementations, `PARAMS` values are forwarded to Verilator as `-G` parameters.
 
 ## Implementation Selector
 
-| `IMPL`         | Backend selected by `top`                              | Notes                                                                 |
-| -------------- | ------------------------------------------------------- | --------------------------------------------------------------------- |
-| `crossbar`     | Native SystemC crossbar in [rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp) | Default-style reference backend.                                      |
-| `top_crossbar` | Verilated SV crossbar in [rtl/top_crossbar.sv](rtl/top_crossbar.sv) | Uses the same harness through the SystemC wrapper.                    |
-| `tdm`          | Native SystemC TDM in [rtl/systemc/top_tdm.hpp](rtl/systemc/top_tdm.hpp) | Uses TDM-mode RAGU stimulus parsing and defaults to `sample_tdm`.     |
-| `top_tdm`      | Verilated SV TDM in [rtl/top_tdm.sv](rtl/top_tdm.sv) | SV-backed TDM backend selected through the same `TOP_LEVEL=top` flow. |
+| `IMPL`          | Extra flags             | Backend                                                               |
+| --------------- | ----------------------- | --------------------------------------------------------------------- |
+| `crossbar`      | —                       | Native SystemC crossbar ([rtl/systemc/top_crossbar.hpp](rtl/systemc/top_crossbar.hpp)) |
+| `crossbar,sv`   | `SV_MODS=top_crossbar`  | Verilated SV crossbar ([rtl/top_crossbar.sv](rtl/top_crossbar.sv)) wrapped in SystemC |
+| `tdm`           | —                       | Native SystemC TDM ([rtl/systemc/top_tdm.hpp](rtl/systemc/top_tdm.hpp)) |
+| `tdm,sv`        | `SV_MODS=top_tdm`       | Verilated SV TDM ([rtl/top_tdm.sv](rtl/top_tdm.sv)) wrapped in SystemC |
 
-The `sim-sc` script uppercases `IMPL` and passes it to C++ as `-DIMPL_<NAME>`. The `top_*` implementations are SV-backed and use the matching `rtl/<IMPL>.sv` as the Verilator `--top-module`; native `crossbar` and `tdm` build directly with `g++`.
+`IMPL` values are split on commas and passed to C++ as preprocessor defines (`crossbar` → `-DIMPL_CROSSBAR`, `sv` → `-DIMPL_SV`). SV variants use Verilator to compile the named `SV_MODS` top and link the resulting archive with the SystemC harness.
 
 ## Unified Top And Harness
 
@@ -85,35 +90,40 @@ The unified top fixes the architectural RPORT/WPORT grouping described above and
 
 **Stimuli** live under [tb/stimuli/](tb/stimuli/). The unified harness expects one log per RAGU/WAGU trace driver: `ragu_a.log`, `ragu_b.log`, `ragu_c.log`, `ragu_d.log`, `ragu_dma.log`, `wagu_a.log`, `wagu_b.log`, `wagu_d.log`, `wagu_dma.log`. Each driver is connected to its matching RPORT/WPORT group as shown in the table above (see [tb/systemc/tb_top.cpp](tb/systemc/tb_top.cpp)).
 
-Each stimulus file is CSV-like. The first line carries the TDM mapping parameters:
+Each stimulus file is CSV-like. The **first line** is a descriptor:
 
 ```text
-num_banks,bank_width,C,R,L,store_mode
+start_cycle,ports_used_groups,C,R,L,store_mode
 ```
 
-Access rows follow as:
+**WAGU access rows** (one per address group):
 
 ```text
-addr,we,data
+addr,data
 ```
 
-where `addr` is a hex byte address, `we` is `1` for write and `0` for read, and `data` is the write value or empty on reads. Crossbar-mode AGUs skip the first metadata line; TDM-mode RAGUs parse and validate it.
+**RAGU access rows** (one per address group):
 
-Select stimuli with `IN_DIR`:
+```text
+addr
+```
+
+where `addr` is a hex byte address and `data` is the 128-bit write value in hex. TDM-mode RAGUs also parse the descriptor header to drive the TDM mapping; crossbar-mode drivers use it only for timing (`start_cycle`).
+
+Select stimuli with `SEL_IN_DIR`:
 
 ```bash
-make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=crossbar IN_DIR=sample OUT_DIR=run_sample
-make sim-sc PROJECT=tdm TOP_LEVEL=top IMPL=tdm      IN_DIR=sample_tdm OUT_DIR=run_sample_tdm
+SEL_IN_DIR=sample     edaf sim IMPL=crossbar MODE=sc
+SEL_IN_DIR=sample_tdm edaf sim IMPL=tdm      MODE=sc
 ```
 
-A bare `IN_DIR` name is resolved under `tb/stimuli/`. A value containing `/` is treated as a filesystem path, relative to where you run `make` unless absolute. If unset, the harness defaults to `sample` for crossbar mode and `sample_tdm` for TDM mode.
+A bare `SEL_IN_DIR` name is resolved under `tb/stimuli/`. A value containing `/` is treated as a filesystem path. If unset, the harness defaults to `sample`.
 
-**Outputs** are written to `sim/<OUT_DIR>/output/`:
+**Outputs** are written to `sim/<SEL_OUT_DIR>/output/` (defaults to `.`):
 
 - `compile.log` and `run.log`
 - one completed-access CSV per AGU, such as `ragu_a.csv`
 - `stats.log` with `actual_cycles`, `ideal_cycles`, `overhead_pct`, and per-group counts
-- `activity.vcd` when produced by the flow
 
 ## Statistics And Conflict Metric
 

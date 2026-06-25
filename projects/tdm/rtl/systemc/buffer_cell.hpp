@@ -18,28 +18,29 @@
 //     VALID    → INVALID  : window drained (all_valid_i, driven by parent buffer)
 //     any      → MISSING  : reset_window_i (buffer signals end of window)
 //
-//   TDM OBI (this cell is manager):
-//     A-channel: linear fetch sub-state drives req+addr until grant received.
-//       IDLE       — waiting for address trigger
-//       REQUESTING — address latched, req asserted until m_gnt_i
-//       GRANTED    — grant received, req deasserted, waiting for m_rvalid_i
-//     R-channel: m_rvalid_i completes the transaction.
+//   TDM OBI A-channel sub-state (fetch_q):
+//     IDLE       — waiting for trigger
+//     LATCHED    — (write mode only) port data captured; parent re-asserts
+//                  p_req_i (flush pulse) to trigger the TDM write
+//     REQUESTING — addr latched, req asserted until m_gnt_i
+//     GRANTED    — grant received, req deasserted, waiting for m_rvalid_i
+//   R-channel: m_rvalid_i completes the transaction.
 //
 //   Read mode (IS_WRITE=false):
-//     Address latched from addr_i when en_i fires while IDLE.
-//     m_we_o always 0; full byte-enable computed from BYTES_PER_ROW.
-//     TDM rdata latched into data_q; forwarded to port on drain.
-//     Same-cycle forwarding (is_fwd): when m_rvalid_i arrives while GRANTED,
-//     valid_o asserts combinatorially so the parent buffer can drain in the
-//     same cycle TDM fill completes.
+//     Address latched from addr_i when en_i fires while IDLE (IDLE→REQUESTING
+//     directly — no LATCHED stage).  m_we_o always 0; full byte-enable
+//     computed from BYTES_PER_ROW.  TDM rdata latched into data_q; forwarded
+//     to port on drain.  Same-cycle forwarding (is_fwd): when m_rvalid_i
+//     arrives while GRANTED, valid_o asserts combinatorially so the parent
+//     buffer can drain in the same cycle TDM fill completes.
 //
-//   Write mode (IS_WRITE=true):
-//     Address, wdata, and be latched from p_addr_i/p_wdata_i/p_be_i when
-//     p_req_i fires while IDLE (triggered by the parent buffer routing the
-//     port's group request).  m_we_o=1 during REQUESTING; m_wdata_o and
-//     m_be_o driven from latched values.  p_rdata_o always 0 (write response
-//     carries no data).  Same-cycle forwarding applies to valid_o: when the
-//     TDM write ack arrives, valid_o asserts combinatorially.
+//   Write mode (IS_WRITE=true) — accumulate-then-flush:
+//     addr/wdata/be latched from p_addr_i/p_wdata_i/p_be_i when p_req_i
+//     fires while IDLE → LATCHED.  Cell stays silent on TDM (m_req=0) until
+//     the parent re-asserts p_req_i (FLUSH phase) → REQUESTING.
+//     m_we_o=1 during REQUESTING; m_wdata_o and m_be_o
+//     driven from latched values.  p_rdata_o always 0 (write carries no
+//     read data).  Same-cycle forwarding applies to valid_o on TDM ack.
 //
 //   Port OBI (this cell is subordinate):
 //     p_gnt_o and p_rvalid_o are sunk in buffer.hpp; the parent drives port
@@ -79,7 +80,8 @@ template <int BYTES_PER_ROW = 16, bool IS_WRITE = false> SC_MODULE(buffer_cell) 
     // -----------------------------------------------------------------------
     // Port OBI
     // -----------------------------------------------------------------------
-    sc_in<bool>     p_req_i;    // write mode: triggers IDLE→REQUESTING; read: unused in grant logic
+    sc_in<bool> p_req_i; // write mode: IDLE→LATCHED (capture) and LATCHED→REQUESTING (flush pulse);
+                         // read: unused
     sc_in<uint64_t> p_addr_i;   // write mode: latched as address
     sc_in<data_t>   p_wdata_i;  // write mode: latched as TDM write data; ignored in read mode
     sc_in<uint32_t> p_be_i;     // write mode: latched as byte-enable; ignored in read mode
@@ -110,7 +112,8 @@ template <int BYTES_PER_ROW = 16, bool IS_WRITE = false> SC_MODULE(buffer_cell) 
     // =======================================================================
   private:
     enum State : uint8_t { MISSING = 0, VALID = 1, INVALID = 2 };
-    enum FetchPhase : uint8_t { IDLE = 0, REQUESTING = 1, GRANTED = 2 };
+    // LATCHED (write mode only): port data latched; parent re-asserts p_req_i to flush.
+    enum FetchPhase : uint8_t { IDLE = 0, REQUESTING = 1, GRANTED = 2, LATCHED = 3 };
 
     sc_signal<uint8_t>  state_q;
     sc_signal<uint8_t>  fetch_q;
@@ -126,7 +129,7 @@ template <int BYTES_PER_ROW = 16, bool IS_WRITE = false> SC_MODULE(buffer_cell) 
         sensitive << state_q << fetch_q << addr_q << data_q << all_valid_i << m_rvalid_i
                   << m_rdata_i << p_addr_i;
         if constexpr (IS_WRITE)
-            sensitive << be_q;
+            sensitive << be_q << p_req_i;
 
         SC_THREAD(seq_proc);
         sensitive << clk_i.pos();
@@ -192,14 +195,13 @@ template <int BYTES_PER_ROW = 16, bool IS_WRITE = false> SC_MODULE(buffer_cell) 
                 fetch = IDLE;
             } else {
                 if (st == MISSING) {
-                    // IDLE → REQUESTING: latch address (and data in write mode)
                     if (fetch == IDLE) {
                         if constexpr (IS_WRITE) {
                             if (p_req_i.read()) {
                                 addr  = p_addr_i.read();
                                 dat   = p_wdata_i.read();
                                 be    = p_be_i.read();
-                                fetch = REQUESTING;
+                                fetch = LATCHED;
                             }
                         } else {
                             if (en_i.read()) {
@@ -207,6 +209,10 @@ template <int BYTES_PER_ROW = 16, bool IS_WRITE = false> SC_MODULE(buffer_cell) 
                                 fetch = REQUESTING;
                             }
                         }
+                    } else if constexpr (IS_WRITE) {
+                        // LATCHED → REQUESTING: parent re-asserts p_req_i during FLUSH phase
+                        if (fetch == LATCHED && p_req_i.read())
+                            fetch = REQUESTING;
                     }
 
                     // REQUESTING → GRANTED: TDM accepts the request
