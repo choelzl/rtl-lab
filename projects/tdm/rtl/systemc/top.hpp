@@ -228,6 +228,10 @@ SC_MODULE(top) {
         impl;
 #else
     top_tdm<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW> impl;
+    // Active-mode signals: one per buffer (r0..r4=0..4, w0..w3=5..8).
+    // Written by the testbench after trace loading (from stimuli ports_used_groups).
+    static constexpr int  NUM_TDM_BUF = 9;
+    sc_signal<uint32_t>   impl_buf_active_mode[NUM_TDM_BUF];
 #endif
 #endif
 
@@ -362,6 +366,11 @@ SC_MODULE(top) {
             impl.wport_rvalid_o[i](impl_wport_rvalid[i]);
             impl.wport_rdata_o[i](impl_wport_rdata[i]);
         }
+
+#if defined(IMPL_TDM) && !defined(IMPL_SV)
+        for (int i = 0; i < NUM_TDM_BUF; ++i)
+            impl.buf_active_mode_i[i](impl_buf_active_mode[i]);
+#endif
 
         SC_METHOD(pack_rport_inputs);
         add_input_sensitivity(ragu_a_req_i, ragu_a_addr_i, ragu_a_we_i, ragu_a_be_i,

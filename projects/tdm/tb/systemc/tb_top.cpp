@@ -167,6 +167,26 @@ int sc_main(int, char *[]) {
     bind_agu(*wagu_d_src, clk, rst_ni, done[7], wagu_d);
     bind_agu(*wagu_dma_src, clk, rst_ni, done[8], wagu_dma);
 
+#if defined(IMPL_TDM) && !defined(IMPL_SV)
+    // Drive each buffer's active_mode from the corresponding AGU's ports_used_groups.
+    // Encoding: 0→1 group (4 beats), 1→2 groups (8 beats), 2→4 groups (16 beats).
+    {
+        auto tdm_mode = [](int ports_used, int num_req) -> uint32_t {
+            const int g = (num_req > 0 && ports_used > 0) ? ports_used / num_req : 1;
+            return (g <= 1) ? 0u : (g <= 2) ? 1u : 2u;
+        };
+        dut.impl_buf_active_mode[0].write(tdm_mode(ragu_a_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[1].write(tdm_mode(ragu_b_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[2].write(tdm_mode(ragu_c_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[3].write(tdm_mode(ragu_d_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[4].write(tdm_mode(ragu_dma_src->ports_used_, dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[5].write(tdm_mode(wagu_a_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[6].write(tdm_mode(wagu_b_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[7].write(tdm_mode(wagu_d_src->ports_used_,   dut_t::NUM_REQ));
+        dut.impl_buf_active_mode[8].write(tdm_mode(wagu_dma_src->ports_used_, dut_t::NUM_REQ));
+    }
+#endif
+
     rst_ni.write(false);
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
     rst_ni.write(true);

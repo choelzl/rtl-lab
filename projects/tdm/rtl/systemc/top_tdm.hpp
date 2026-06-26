@@ -9,17 +9,23 @@
 //     WPORT groups --> buf_w{0..3} -+--> mux (arbiter sel) --> tdm --> crossbar --> bank[NUM_BANK]
 //
 //   Read buffers (IS_WRITE=false):
-//     buf_r0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (RAGU_A, active_mode: mode_4p)
-//     buf_r1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (RAGU_B, active_mode: mode_2p)
-//     buf_r2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_C, active_mode: mode_1p)
-//     buf_r3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_D, active_mode: mode_1p)
-//     buf_r4 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_DMA, active_mode: mode_1p)
+//     buf_r0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (RAGU_A)
+//     buf_r1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (RAGU_B)
+//     buf_r2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_C)
+//     buf_r3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_D)
+//     buf_r4 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_DMA)
 //
 //   Write buffers (IS_WRITE=true):
-//     buf_w0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (WAGU_A, active_mode: mode_4p)
-//     buf_w1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (WAGU_B, active_mode: mode_2p)
-//     buf_w2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_D, active_mode: mode_1p)
-//     buf_w3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_DMA, active_mode: mode_1p)
+//     buf_w0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (WAGU_A)
+//     buf_w1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (WAGU_B)
+//     buf_w2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_D)
+//     buf_w3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_DMA)
+//
+//   active_mode encoding per buffer (driven from buf_active_mode_i[0..NUM_TOTAL_BUF-1]):
+//     0 → 1 active port group  (active_beats = NUM_REQ)
+//     1 → 2 active port groups (active_beats = 2*NUM_REQ)
+//     2 → 4 active port groups (active_beats = 4*NUM_REQ, clamped to PORT_COUNT)
+//   Set from stimuli ports_used_groups field; indices: buf_r0..r4=0..4, buf_w0..w3=5..8.
 //
 //   Each read buffer's fetch_addr_i[0..N-1] is wired from the corresponding
 //   rport_addr_i group (N = PORT_COUNT * NUM_REQ).  Slots [N..NUM_BANK-1] are
@@ -171,9 +177,12 @@ SC_MODULE(top_tdm) {
     sc_signal<data_t>   xbar_bank_rdata[NUM_BANK];
 
     sc_signal<int>      arb_req_sel, arb_rsp_sel;
-    sc_signal<uint32_t> mode_4p, mode_2p, mode_1p;
     sc_signal<bool>     fetch_valid_const;
     sc_signal<uint64_t> zero_addr_const;
+
+    // active_mode per buffer driven by the testbench (from stimuli ports_used_groups):
+    //   buf_r0..r4 → indices 0..4,  buf_w0..w3 → indices 5..8
+    sc_in<uint32_t> buf_active_mode_i[NUM_TOTAL_BUF];
 
     sc_signal<uint64_t> map_num_banks_cfg, map_bank_width_cfg, map_r_cfg, map_c_cfg;
     sc_signal<uint64_t> map_l_cfg, map_store_mode_cfg;
@@ -301,9 +310,6 @@ SC_MODULE(top_tdm) {
 
         banks.init(NUM_BANK);
 
-        mode_4p.write(2);
-        mode_2p.write(1);
-        mode_1p.write(0);
         fetch_valid_const.write(true);
         zero_addr_const.write(0);
 
@@ -362,7 +368,7 @@ SC_MODULE(top_tdm) {
         // ---- buf_r0 : RAGU_A, PORT_COUNT=4 ------------------------------------
         buf_r0.clk_i(clk_i);
         buf_r0.rst_ni(rst_ni);
-        buf_r0.active_mode(mode_4p);
+        buf_r0.active_mode(buf_active_mode_i[0]);
         buf_r0.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < RD0_PORTS; ++p) {
             buf_r0.p_req_i[p](rport_req_i[p]);
@@ -374,14 +380,16 @@ SC_MODULE(top_tdm) {
             buf_r0.p_rdata_o[p](rport_rdata_o[p]);
         }
         // fetch_addr_i: first RD0_PORTS slots from port addresses; rest tied zero
-        for (int w = 0; w < NUM_BANK; ++w)
-            buf_r0.fetch_addr_i[w](w < RD0_PORTS ? rport_addr_i[w] : zero_addr_const);
+        for (int w = 0; w < NUM_BANK; ++w) {
+            if (w < RD0_PORTS) buf_r0.fetch_addr_i[w](rport_addr_i[w]);
+            else                buf_r0.fetch_addr_i[w](zero_addr_const);
+        }
         bind_tdm(buf_r0, 0);
 
         // ---- buf_r1 : RAGU_B, PORT_COUNT=2 ------------------------------------
         buf_r1.clk_i(clk_i);
         buf_r1.rst_ni(rst_ni);
-        buf_r1.active_mode(mode_2p);
+        buf_r1.active_mode(buf_active_mode_i[1]);
         buf_r1.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < RD1_PORTS; ++p) {
             const int rp = RD1_BASE + p;
@@ -393,14 +401,16 @@ SC_MODULE(top_tdm) {
             buf_r1.p_rvalid_o[p](rport_rvalid_o[rp]);
             buf_r1.p_rdata_o[p](rport_rdata_o[rp]);
         }
-        for (int w = 0; w < NUM_BANK; ++w)
-            buf_r1.fetch_addr_i[w](w < RD1_PORTS ? rport_addr_i[RD1_BASE + w] : zero_addr_const);
+        for (int w = 0; w < NUM_BANK; ++w) {
+            if (w < RD1_PORTS) buf_r1.fetch_addr_i[w](rport_addr_i[RD1_BASE + w]);
+            else                buf_r1.fetch_addr_i[w](zero_addr_const);
+        }
         bind_tdm(buf_r1, 1);
 
         // ---- buf_r2 : RAGU_C, PORT_COUNT=1 ------------------------------------
         buf_r2.clk_i(clk_i);
         buf_r2.rst_ni(rst_ni);
-        buf_r2.active_mode(mode_1p);
+        buf_r2.active_mode(buf_active_mode_i[2]);
         buf_r2.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < RD2_PORTS; ++p) {
             const int rp = RD2_BASE + p;
@@ -412,14 +422,16 @@ SC_MODULE(top_tdm) {
             buf_r2.p_rvalid_o[p](rport_rvalid_o[rp]);
             buf_r2.p_rdata_o[p](rport_rdata_o[rp]);
         }
-        for (int w = 0; w < NUM_BANK; ++w)
-            buf_r2.fetch_addr_i[w](w < RD2_PORTS ? rport_addr_i[RD2_BASE + w] : zero_addr_const);
+        for (int w = 0; w < NUM_BANK; ++w) {
+            if (w < RD2_PORTS) buf_r2.fetch_addr_i[w](rport_addr_i[RD2_BASE + w]);
+            else                buf_r2.fetch_addr_i[w](zero_addr_const);
+        }
         bind_tdm(buf_r2, 2);
 
         // ---- buf_r3 : RAGU_D, PORT_COUNT=1 ------------------------------------
         buf_r3.clk_i(clk_i);
         buf_r3.rst_ni(rst_ni);
-        buf_r3.active_mode(mode_1p);
+        buf_r3.active_mode(buf_active_mode_i[3]);
         buf_r3.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < RD3_PORTS; ++p) {
             const int rp = RD3_BASE + p;
@@ -431,14 +443,16 @@ SC_MODULE(top_tdm) {
             buf_r3.p_rvalid_o[p](rport_rvalid_o[rp]);
             buf_r3.p_rdata_o[p](rport_rdata_o[rp]);
         }
-        for (int w = 0; w < NUM_BANK; ++w)
-            buf_r3.fetch_addr_i[w](w < RD3_PORTS ? rport_addr_i[RD3_BASE + w] : zero_addr_const);
+        for (int w = 0; w < NUM_BANK; ++w) {
+            if (w < RD3_PORTS) buf_r3.fetch_addr_i[w](rport_addr_i[RD3_BASE + w]);
+            else                buf_r3.fetch_addr_i[w](zero_addr_const);
+        }
         bind_tdm(buf_r3, 3);
 
         // ---- buf_r4 : RAGU_DMA, PORT_COUNT=1 ----------------------------------
         buf_r4.clk_i(clk_i);
         buf_r4.rst_ni(rst_ni);
-        buf_r4.active_mode(mode_1p);
+        buf_r4.active_mode(buf_active_mode_i[4]);
         buf_r4.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < RD4_PORTS; ++p) {
             const int rp = RD4_BASE + p;
@@ -450,14 +464,16 @@ SC_MODULE(top_tdm) {
             buf_r4.p_rvalid_o[p](rport_rvalid_o[rp]);
             buf_r4.p_rdata_o[p](rport_rdata_o[rp]);
         }
-        for (int w = 0; w < NUM_BANK; ++w)
-            buf_r4.fetch_addr_i[w](w < RD4_PORTS ? rport_addr_i[RD4_BASE + w] : zero_addr_const);
+        for (int w = 0; w < NUM_BANK; ++w) {
+            if (w < RD4_PORTS) buf_r4.fetch_addr_i[w](rport_addr_i[RD4_BASE + w]);
+            else                buf_r4.fetch_addr_i[w](zero_addr_const);
+        }
         bind_tdm(buf_r4, 4);
 
         // ---- buf_w0 : WAGU_A, PORT_COUNT=4, IS_WRITE=true ---------------------
         buf_w0.clk_i(clk_i);
         buf_w0.rst_ni(rst_ni);
-        buf_w0.active_mode(mode_4p);
+        buf_w0.active_mode(buf_active_mode_i[5]);
         buf_w0.fetch_addr_valid_i(fetch_valid_const); // unused in write mode
         for (int p = 0; p < WR0_PORTS; ++p) {
             buf_w0.p_req_i[p](wport_req_i[p]);
@@ -475,7 +491,7 @@ SC_MODULE(top_tdm) {
         // ---- buf_w1 : WAGU_B, PORT_COUNT=2, IS_WRITE=true ---------------------
         buf_w1.clk_i(clk_i);
         buf_w1.rst_ni(rst_ni);
-        buf_w1.active_mode(mode_2p);
+        buf_w1.active_mode(buf_active_mode_i[6]);
         buf_w1.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < WR1_PORTS; ++p) {
             const int wp = WR1_BASE + p;
@@ -494,7 +510,7 @@ SC_MODULE(top_tdm) {
         // ---- buf_w2 : WAGU_D, PORT_COUNT=1, IS_WRITE=true ---------------------
         buf_w2.clk_i(clk_i);
         buf_w2.rst_ni(rst_ni);
-        buf_w2.active_mode(mode_1p);
+        buf_w2.active_mode(buf_active_mode_i[7]);
         buf_w2.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < WR2_PORTS; ++p) {
             const int wp = WR2_BASE + p;
@@ -513,7 +529,7 @@ SC_MODULE(top_tdm) {
         // ---- buf_w3 : WAGU_DMA, PORT_COUNT=1, IS_WRITE=true -------------------
         buf_w3.clk_i(clk_i);
         buf_w3.rst_ni(rst_ni);
-        buf_w3.active_mode(mode_1p);
+        buf_w3.active_mode(buf_active_mode_i[8]);
         buf_w3.fetch_addr_valid_i(fetch_valid_const);
         for (int p = 0; p < WR3_PORTS; ++p) {
             const int wp = WR3_BASE + p;
