@@ -20,6 +20,12 @@
 //   T02  Write then read — single wport write / single rport read, data integrity
 //   T03  Full conflict — all NR rport buses read the same address; all eventually served
 //   T04  No conflict — NR rport buses each target a unique bank; all served in one cycle
+//   T05  64-address sequential write-then-read — data integrity and response ordering
+//   T06  Overwrite — second write to same address overwrites first (last write wins)
+//   T07  Alternating bit patterns (0xAA.../0x55...) — stuck-at-0/1 detection
+//   T08  Cross-address independence — writes to set B do not corrupt set A
+//   T09  Port response isolation — rvalid/gnt asserts only on the requesting port
+//   T10  Simultaneous multi-port write then read — all NW wports and NR rports in parallel
 // -----------------------------------------------------------------------------
 
 #include "top_crossbar.hpp"
@@ -318,6 +324,243 @@ SC_MODULE(tb) {
 
         for (int m = 0; m < NR; ++m)
             idle_rport(m);
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T05: Sequential write-then-read — 64 addresses, data and order ===");
+        // -------------------------------------------------------------------
+        // Write 64 distinct rows (address stride = BYTES_PER_ROW = 0x10) with a
+        // unique per-address payload, then read them back in the same order and
+        // verify both data correctness and address ordering.  This catches bank
+        // aliasing, routing conflicts, and row-collision bugs that a single-address
+        // write-read (T02) would miss.
+        do_reset();
+
+        static constexpr int      N_ADDRS   = 64;
+        static constexpr uint64_t ADDR_STEP = 0x10;
+
+        data_t t05_wdata[N_ADDRS];
+        for (int i = 0; i < N_ADDRS; ++i) {
+            // Fill all four 32-bit words with the same value so make_row() applies.
+            t05_wdata[i] = make_row(0x01010101U * static_cast<uint32_t>(i + 1));
+            do_write(0, static_cast<uint64_t>(i) * ADDR_STEP, t05_wdata[i]);
+        }
+
+        bool t05_order_ok = true;
+        bool t05_data_ok  = true;
+        for (int i = 0; i < N_ADDRS; ++i) {
+            const uint64_t addr = static_cast<uint64_t>(i) * ADDR_STEP;
+            rport_req[0].write(true);
+            rport_addr[0].write(addr);
+            rport_we[0].write(false);
+            rport_be[0].write(FULL_BE);
+            tick();
+            if (!rport_rvalid[0].read()) {
+                t05_order_ok = false;
+                std::printf("  FAIL  T05: no rvalid for addr 0x%03llx (i=%d)\n",
+                            (unsigned long long)addr, i);
+                ++g_fail;
+            } else {
+                const data_t rd = rport_rdata[0].read();
+                if (!(rd == t05_wdata[i])) {
+                    t05_data_ok = false;
+                    std::printf("  FAIL  T05: data mismatch at addr 0x%03llx (i=%d)\n",
+                                (unsigned long long)addr, i);
+                    ++g_fail;
+                } else {
+                    ++g_pass;
+                }
+            }
+            idle_rport(0);
+        }
+        if (t05_order_ok)
+            std::puts("  PASS  T05a all 64 reads received rvalid in order");
+        if (t05_data_ok)
+            std::puts("  PASS  T05b all 64 read-back data values match written data");
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T06: Overwrite — last write wins at the same address ===");
+        // -------------------------------------------------------------------
+        // Write value A then value B to the same address.  A subsequent read
+        // must return B; returning A means the second write was lost.
+        do_reset();
+
+        const data_t t06_first  = make_row(0xDEADBEEFU);
+        const data_t t06_second = make_row(0x01234567U);
+        do_write(0, 0x00, t06_first);
+        do_write(0, 0x00, t06_second);
+        CHECK(do_read(0, 0x00) == t06_second, "T06 overwrite: rdata equals second written value");
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T07: Alternating bit patterns — stuck-at-0 and stuck-at-1 detection ===");
+        // -------------------------------------------------------------------
+        // Write 0xAAAAAAAA (alternating 1/0) to even-indexed addresses and
+        // 0x55555555 (alternating 0/1) to odd-indexed addresses.  Read all back
+        // and verify each pattern survives the round-trip intact.
+        do_reset();
+
+        static constexpr int N_PAT = 8;
+        const data_t         t07_aa = make_row(0xAAAAAAAAU);
+        const data_t         t07_55 = make_row(0x55555555U);
+        for (int i = 0; i < N_PAT; ++i) {
+            const uint64_t addr = static_cast<uint64_t>(i) * ADDR_STEP;
+            do_write(0, addr, (i % 2 == 0) ? t07_aa : t07_55);
+        }
+        bool t07_ok = true;
+        for (int i = 0; i < N_PAT; ++i) {
+            const uint64_t addr     = static_cast<uint64_t>(i) * ADDR_STEP;
+            const data_t   expected = (i % 2 == 0) ? t07_aa : t07_55;
+            if (!(do_read(0, addr) == expected)) {
+                std::printf("  FAIL  T07: pattern mismatch at addr 0x%03llx (i=%d)\n",
+                            (unsigned long long)addr, i);
+                t07_ok = false;
+                ++g_fail;
+            } else {
+                ++g_pass;
+            }
+        }
+        if (t07_ok)
+            std::puts("  PASS  T07 all alternating-pattern reads match written data");
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T08: Cross-address independence — writes to set B do not corrupt set A ===");
+        // -------------------------------------------------------------------
+        // Write set A (lower addresses) with payload_A, then write set B (higher
+        // addresses) with payload_B.  Re-read set A: it must still hold payload_A.
+        // This catches address aliasing and row-collision bugs.
+        do_reset();
+
+        static constexpr int N_AB    = 8;
+        const uint64_t       BASE_A  = 0x000;
+        const uint64_t       BASE_B  = 0x200;  // well-separated to avoid accidental aliasing
+        data_t               t08_A[N_AB], t08_B[N_AB];
+        for (int i = 0; i < N_AB; ++i) {
+            t08_A[i] = make_row(0xA0000001U + static_cast<uint32_t>(i));
+            t08_B[i] = make_row(0xB0000001U + static_cast<uint32_t>(i));
+            do_write(0, BASE_A + static_cast<uint64_t>(i) * ADDR_STEP, t08_A[i]);
+        }
+        for (int i = 0; i < N_AB; ++i)
+            do_write(0, BASE_B + static_cast<uint64_t>(i) * ADDR_STEP, t08_B[i]);
+
+        bool t08_ok = true;
+        for (int i = 0; i < N_AB; ++i) {
+            const uint64_t addr = BASE_A + static_cast<uint64_t>(i) * ADDR_STEP;
+            if (!(do_read(0, addr) == t08_A[i])) {
+                std::printf("  FAIL  T08: set-A addr 0x%03llx corrupted after set-B writes\n",
+                            (unsigned long long)addr);
+                t08_ok = false;
+                ++g_fail;
+            } else {
+                ++g_pass;
+            }
+        }
+        if (t08_ok)
+            std::puts("  PASS  T08 set-A data unchanged after set-B overwrites");
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T09: Port response isolation — rvalid fires only on the requesting port ===");
+        // -------------------------------------------------------------------
+        // Assert a request on exactly one port.  No other port's rvalid/gnt should
+        // assert as a side-effect (OBI: each response targets its own initiator).
+        do_reset();
+
+        // wport side: only wport[0] requests
+        for (int m = 1; m < NW; ++m)
+            idle_wport(m);
+        wport_req[0].write(true);
+        wport_addr[0].write(0x00);
+        wport_we[0].write(true);
+        wport_be[0].write(FULL_BE);
+        wport_wdata[0].write(make_row(0xFEDCBA98U));
+        tick();
+        CHECK(wport_rvalid[0].read(), "T09a wport[0] rvalid fired");
+        {
+            bool no_leak = true;
+            for (int m = 1; m < NW; ++m)
+                no_leak &= !wport_rvalid[m].read() && !wport_gnt[m].read();
+            CHECK(no_leak, "T09b no other wport rvalid/gnt asserted");
+        }
+        idle_wport(0);
+
+        // rport side: only rport[0] requests
+        for (int m = 1; m < NR; ++m)
+            idle_rport(m);
+        rport_req[0].write(true);
+        rport_addr[0].write(0x00);
+        rport_we[0].write(false);
+        rport_be[0].write(FULL_BE);
+        tick();
+        CHECK(rport_rvalid[0].read(), "T09c rport[0] rvalid fired");
+        {
+            bool no_leak = true;
+            for (int m = 1; m < NR; ++m)
+                no_leak &= !rport_rvalid[m].read() && !rport_gnt[m].read();
+            CHECK(no_leak, "T09d no other rport rvalid/gnt asserted");
+        }
+        idle_rport(0);
+
+        // -------------------------------------------------------------------
+        std::puts("\n=== T10: Simultaneous multi-port write then read ===");
+        // -------------------------------------------------------------------
+        // Drive all NW wports to distinct addresses in the same cycle, then
+        // drain rvalids (serialisation may spread them across cycles).  Read
+        // all NR rports simultaneously and verify every read-back value matches
+        // what was written.
+        do_reset();
+
+        data_t   t10_data[NW];
+        uint64_t t10_addr[NW];
+        for (int m = 0; m < NW; ++m) {
+            t10_addr[m] = static_cast<uint64_t>(m) * ADDR_STEP;
+            t10_data[m] = make_row(0x10101010U * static_cast<uint32_t>(m + 1));
+            wport_req[m].write(true);
+            wport_addr[m].write(t10_addr[m]);
+            wport_we[m].write(true);
+            wport_be[m].write(FULL_BE);
+            wport_wdata[m].write(t10_data[m]);
+        }
+        {
+            bool w_done[NW] = {};
+            int  w_got      = 0;
+            for (int iter = 0; iter < NW * 4 && w_got < NW; ++iter) {
+                tick();
+                for (int m = 0; m < NW; ++m) {
+                    if (!w_done[m] && wport_rvalid[m].read()) {
+                        w_done[m] = true;
+                        ++w_got;
+                        idle_wport(m);
+                    }
+                }
+            }
+            CHECK(w_got == NW, "T10a all NW parallel writes completed");
+        }
+
+        for (int m = 0; m < NR; ++m) {
+            rport_req[m].write(true);
+            rport_addr[m].write(t10_addr[m]);
+            rport_we[m].write(false);
+            rport_be[m].write(FULL_BE);
+        }
+        {
+            bool r_done[NR]    = {};
+            bool r_data_ok[NR] = {};
+            int  r_got         = 0;
+            for (int iter = 0; iter < NR * 4 && r_got < NR; ++iter) {
+                tick();
+                for (int m = 0; m < NR; ++m) {
+                    if (!r_done[m] && rport_rvalid[m].read()) {
+                        r_data_ok[m] = (rport_rdata[m].read() == t10_data[m]);
+                        r_done[m]    = true;
+                        ++r_got;
+                        idle_rport(m);
+                    }
+                }
+            }
+            CHECK(r_got == NR, "T10b all NR parallel reads completed");
+            bool t10_all_ok = true;
+            for (int m = 0; m < NR; ++m)
+                t10_all_ok &= r_data_ok[m];
+            CHECK(t10_all_ok, "T10c all parallel read data values match written data");
+        }
 
         // -------------------------------------------------------------------
         std::puts("\n=== Summary ===");

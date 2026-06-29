@@ -60,6 +60,7 @@
 #include "buffer.hpp"
 #include "crossbar.hpp"
 #include "obi_data.hpp"
+#include "obi_monitor.hpp"
 #include "tdm.hpp"
 
 template <int NUM_RPORT = 9, int NUM_WPORT = 8, int NUM_REQ = 4, int NUM_BANK = 32,
@@ -207,6 +208,7 @@ SC_MODULE(top_tdm) {
     tdm<NUM_BANK, NUM_BANK, BYTES_PER_ROW>      mapf;
     crossbar<NUM_BANK, NUM_BANK, BYTES_PER_ROW> xbar;
     sc_vector<bank<NUM_ROW, BYTES_PER_ROW>>     banks;
+    obi_monitor<NUM_BANK, BYTES_PER_ROW>       *bank_mon = nullptr;
 
     // -----------------------------------------------------------------------
     // Inline mux: route arb_req_sel buffer's TDM bus to tdm module;
@@ -302,6 +304,8 @@ SC_MODULE(top_tdm) {
                 << std::endl;
         }
     }
+
+    ~top_tdm() { delete bank_mon; }
 
     SC_CTOR(top_tdm)
         : buf_r0("buf_r0"), buf_r1("buf_r1"), buf_r2("buf_r2"), buf_r3("buf_r3"), buf_r4("buf_r4"),
@@ -606,6 +610,32 @@ SC_MODULE(top_tdm) {
             banks[b].gnt_o(xbar_bank_gnt[b]);
             banks[b].rvalid_o(xbar_bank_rvalid[b]);
             banks[b].rdata_o(xbar_bank_rdata[b]);
+        }
+
+        // ---- Bank-side OBI monitor ---------------------------------------------
+        {
+            const char       *ch      = std::getenv("RTL_LAB_HOME");
+            const char       *proj    = std::getenv("SEL_PROJECT");
+            const char       *od      = std::getenv("SEL_OUT_DIR");
+            const std::string pname   = proj ? proj : "tdm";
+            const std::string pdir    = ch ? std::string(ch) + "/projects/" + pname
+                                           : "projects/" + pname;
+            const std::string out_dir = od ? pdir + "/sim/" + od + "/output" : ".";
+
+            bank_mon = new obi_monitor<NUM_BANK, BYTES_PER_ROW>(
+                "bank_mon", "xbar_bank", out_dir + "/bank_obi.csv");
+            bank_mon->clk_i(clk_i);
+            bank_mon->rst_ni(rst_ni);
+            for (int b = 0; b < NUM_BANK; ++b) {
+                bank_mon->req_i[b](xbar_bank_req[b]);
+                bank_mon->addr_i[b](xbar_bank_addr[b]);
+                bank_mon->we_i[b](xbar_bank_we[b]);
+                bank_mon->be_i[b](xbar_bank_be[b]);
+                bank_mon->wdata_i[b](xbar_bank_wdata[b]);
+                bank_mon->gnt_i[b](xbar_bank_gnt[b]);
+                bank_mon->rvalid_i[b](xbar_bank_rvalid[b]);
+                bank_mon->rdata_i[b](xbar_bank_rdata[b]);
+            }
         }
     }
 };

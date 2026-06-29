@@ -30,6 +30,7 @@
 
 #include "agu.hpp"
 #include "constants.hpp"
+#include "obi_monitor.hpp"
 
 static constexpr int kPipeFill = 2;
 using dut_t                    = top<N_BANK, N_ROW, WORD_BYTES, WORDS_PER_ROW>;
@@ -46,6 +47,23 @@ template <int N> struct obi_group_signals {
     sc_signal<uint32_t> be[N];
     sc_signal<data_t>   wdata[N], rdata[N];
 };
+
+template <int N>
+static void bind_monitor(obi_monitor<N, BYTES_PER_ROW> &mon, sc_clock &clk,
+                         sc_signal<bool> &rst_ni, obi_group_signals<N> &bus) {
+    mon.clk_i(clk);
+    mon.rst_ni(rst_ni);
+    for (int p = 0; p < N; ++p) {
+        mon.req_i[p](bus.req[p]);
+        mon.addr_i[p](bus.addr[p]);
+        mon.we_i[p](bus.we[p]);
+        mon.be_i[p](bus.be[p]);
+        mon.wdata_i[p](bus.wdata[p]);
+        mon.gnt_i[p](bus.gnt[p]);
+        mon.rvalid_i[p](bus.rvalid[p]);
+        mon.rdata_i[p](bus.rdata[p]);
+    }
+}
 
 template <int N, int NPG>
 static void bind_agu(agu<N, data_t, BYTES_PER_ROW, NPG> &src, sc_clock &clk,
@@ -166,6 +184,50 @@ int sc_main(int, char *[]) {
     bind_agu(*wagu_b_src, clk, rst_ni, done[6], wagu_b);
     bind_agu(*wagu_d_src, clk, rst_ni, done[7], wagu_d);
     bind_agu(*wagu_dma_src, clk, rst_ni, done[8], wagu_dma);
+
+    // OBI monitors — one per AGU group; follow same path convention as AGU logs.
+    auto mon_path = [&](const char *name) -> std::string {
+        return out_dir + "/obi_" + name + ".csv";
+    };
+    auto mon_ragu_a =
+        std::make_unique<obi_monitor<dut_t::RAGU_A_PORTS, BYTES_PER_ROW>>("mon_ragu_a", "RAGU_A",
+                                                                            mon_path("ragu_a"));
+    auto mon_ragu_b =
+        std::make_unique<obi_monitor<dut_t::RAGU_B_PORTS, BYTES_PER_ROW>>("mon_ragu_b", "RAGU_B",
+                                                                            mon_path("ragu_b"));
+    auto mon_ragu_c =
+        std::make_unique<obi_monitor<dut_t::RAGU_C_PORTS, BYTES_PER_ROW>>("mon_ragu_c", "RAGU_C",
+                                                                            mon_path("ragu_c"));
+    auto mon_ragu_d =
+        std::make_unique<obi_monitor<dut_t::RAGU_D_PORTS, BYTES_PER_ROW>>("mon_ragu_d", "RAGU_D",
+                                                                            mon_path("ragu_d"));
+    auto mon_ragu_dma =
+        std::make_unique<obi_monitor<dut_t::RAGU_DMA_PORTS, BYTES_PER_ROW>>("mon_ragu_dma",
+                                                                              "RAGU_DMA",
+                                                                              mon_path("ragu_dma"));
+    auto mon_wagu_a =
+        std::make_unique<obi_monitor<dut_t::WAGU_A_PORTS, BYTES_PER_ROW>>("mon_wagu_a", "WAGU_A",
+                                                                            mon_path("wagu_a"));
+    auto mon_wagu_b =
+        std::make_unique<obi_monitor<dut_t::WAGU_B_PORTS, BYTES_PER_ROW>>("mon_wagu_b", "WAGU_B",
+                                                                            mon_path("wagu_b"));
+    auto mon_wagu_d =
+        std::make_unique<obi_monitor<dut_t::WAGU_D_PORTS, BYTES_PER_ROW>>("mon_wagu_d", "WAGU_D",
+                                                                            mon_path("wagu_d"));
+    auto mon_wagu_dma =
+        std::make_unique<obi_monitor<dut_t::WAGU_DMA_PORTS, BYTES_PER_ROW>>("mon_wagu_dma",
+                                                                              "WAGU_DMA",
+                                                                              mon_path("wagu_dma"));
+
+    bind_monitor(*mon_ragu_a,   clk, rst_ni, ragu_a);
+    bind_monitor(*mon_ragu_b,   clk, rst_ni, ragu_b);
+    bind_monitor(*mon_ragu_c,   clk, rst_ni, ragu_c);
+    bind_monitor(*mon_ragu_d,   clk, rst_ni, ragu_d);
+    bind_monitor(*mon_ragu_dma, clk, rst_ni, ragu_dma);
+    bind_monitor(*mon_wagu_a,   clk, rst_ni, wagu_a);
+    bind_monitor(*mon_wagu_b,   clk, rst_ni, wagu_b);
+    bind_monitor(*mon_wagu_d,   clk, rst_ni, wagu_d);
+    bind_monitor(*mon_wagu_dma, clk, rst_ni, wagu_dma);
 
 #if defined(IMPL_TDM) && !defined(IMPL_SV)
     // Drive each buffer's active_mode from the corresponding AGU's ports_used_groups.
