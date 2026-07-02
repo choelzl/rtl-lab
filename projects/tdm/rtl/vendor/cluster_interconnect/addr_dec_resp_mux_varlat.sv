@@ -20,23 +20,23 @@ module addr_dec_resp_mux_varlat #(
     parameter int unsigned RespDataWidth = 32,
     parameter int unsigned LogNumOut     = NumOut > 1 ? $clog2(NumOut) : 1
 ) (
-    input logic clk_i,
-    input logic rst_ni,
+    input  logic                                 clk_i,
+    input  logic                                 rst_ni,
     // master side
-    input logic req_i,  // request from this master
-    input logic [LogNumOut-1:0] add_i,  // bank selection index to be decoded
-    input logic [ReqDataWidth-1:0] data_i,  // data to be transported to slaves
-    output logic gnt_o,  // grant to master
-    output logic vld_o,  // read/write response
-    output logic [RespDataWidth-1:0] rdata_o,  // read response
+    input  logic                                 req_i,    // request from this master
+    input  logic             [    LogNumOut-1:0] add_i,    // bank selection index to be decoded
+    input  logic             [ ReqDataWidth-1:0] data_i,   // data to be transported to slaves
+    output logic                                 gnt_o,    // grant to master
+    output logic                                 vld_o,    // read/write response
+    output logic             [RespDataWidth-1:0] rdata_o,  // read response
     // slave side
     /* verilator lint_off UNOPTFLAT */
-    output logic [NumOut-1:0] req_o,  // request signals after decoding
+    output logic             [       NumOut-1:0] req_o,    // request signals after decoding
     /* verilator lint_on UNOPTFLAT */
-    input logic [NumOut-1:0] gnt_i,  // grants from slaves
-    input logic [NumOut-1:0] vld_i,  // valid response from slaves
-    output logic [NumOut-1:0][ReqDataWidth-1:0] data_o,  // data to be transported to slaves
-    input logic [NumOut-1:0][RespDataWidth-1:0] rdata_i  // read responses from slaves
+    input  logic             [       NumOut-1:0] gnt_i,    // grants from slaves
+    input  logic             [       NumOut-1:0] vld_i,    // valid response from slaves
+    output logic [NumOut-1:0][ ReqDataWidth-1:0] data_o,   // data to be transported to slaves
+    input  logic [NumOut-1:0][RespDataWidth-1:0] rdata_i   // read responses from slaves
 );
 
     logic valid_inflight_d, valid_inflight_q;

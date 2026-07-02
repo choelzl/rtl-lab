@@ -1,0 +1,4 @@
+# Proprietary stimuli — never commit. Distributed out-of-band; see report
+# Appendix A.8 / doc/report/README.md for provenance and placement.
+*
+!.gitignore

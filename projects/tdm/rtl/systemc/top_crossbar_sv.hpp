@@ -10,9 +10,9 @@
 //   Each flat read/write port group is driven by one RAGU/WAGU trace driver.
 //   The port-group mapping (established in top.hpp and tb_top.cpp) is:
 //     read : ports 0-3 → RAGU_A, ports 4-5 → RAGU_B, port 6 → RAGU_C,
-//            port 7 → RAGU_D, port 8 → RAGU_DMA
+//            port 7 → RAGU_D, port 8 → RAGU_E
 //     write: ports 0-3 → WAGU_A, ports 4-5 → WAGU_B, port 6 → WAGU_D,
-//            port 7 → WAGU_DMA
+//            port 7 → WAGU_E
 //   In the TDM backend the RAGU drivers feed per-group buffers; the TDM
 //   arbiter and slot-allocation logic sit between those buffers and the
 //   crossbar/bank backend. In the crossbar backend the mapping is direct.

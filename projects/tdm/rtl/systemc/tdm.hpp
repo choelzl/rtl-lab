@@ -2,19 +2,22 @@
 // Author: Simone Machetti, Cedric Hölzl
 //
 // Description:
-//   Native SystemC TDM mapping function. Given an x-OBI group's single base
-//   address (see doc/specs/x_obi.md) and a set of kernel-wide mapping parameters
+//   Native SystemC TDM mapping function. Given a request group's base
+//   address (a group = NUM_WORD parallel OBI lanes, one mapped word each,
+//   sharing scalar we/be — see doc/specs/obi.md) and kernel-wide mapping parameters
 //   (num_banks, bank_width, R, C, L, store_mode), it places each of the NUM_WORD
 //   words of the group (logical address base + w*BYTES_PER_WORD) into a
 //   (bank_id, row_id) location with an XOR-skewed banking scheme, then emits
-//   NUM_WORD single-word OBI requests for a downstream word-interleaved
-//   interconnect.
+//   one OBI request per lane for a downstream beat-interleaved interconnect
+//   (the word exists only in the placement math — the emitted requests are
+//   ordinary full-beat OBI, routed by the reused crossbar as bank = beat %
+//   NUM_BANK).
 //
 //   The placement scheme (parameter meaning, the get_k boundaries, the address
 //   split into con/str/l, and the 5-bit bank-id XOR matrix) is specified in
 //   doc/specs/map_func.md. The emitted OBI byte address re-encodes the placement
-//   as (row_id * NUM_BANK + bank_id) * BYTES_PER_WORD, so a downstream decode of
-//   bank = word % NUM_BANK and row = word / NUM_BANK recovers exactly that
+//   as (row_id * NUM_BANK + bank_id) * BYTES_PER_ROW, so a downstream decode of
+//   bank = beat % NUM_BANK and row = beat / NUM_BANK recovers exactly that
 //   (bank_id, row_id); a bank collision (>=2 words sharing a bank) is left for
 //   the interconnect's per-bank arbiter to serialize.
 //
@@ -36,40 +39,38 @@
 #include <systemc.h>
 
 #include "obi_data.hpp"
+#include "obi_ports.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <utility>
 
 enum class tdm_stor_mode {
-    Loop_Row_Col,
-    Loop_Row,
-    Loop_Col_Row,
-    Loop_Row_Space,
-    Row_Col_Loop,
-    Row_Loop,
-    Col_Row_Loop,
-    Row_Loop_Col,
-    Col_Loop_Row,
-    Loop_2x2_H,
-    Loop_2x2_V,
-    Loop_2i,
-    Loop_4x4_H,
-    Loop_4x4_V,
-    Loop_4i
+    Loop_Row_Col   = 0,
+    Loop_Col_Row   = 1,
+    Row_Col_Loop   = 2,
+    Col_Row_Loop   = 3,
+    Row_Loop_Col   = 4,
+    Col_Loop_Row   = 5,
+    Loop_2x2_H     = 6,
+    Loop_2x2_V     = 7,
+    Loop_4x4_H     = 8,
+    Loop_4x4_V     = 9,
+    Loop_Row       = 10,
+    Row_Loop       = 11,
+    Loop_Row_Space = 12,
+    Loop_2i        = 13,
+    Loop_3i        = 14,
+    Loop_4i        = 15
 };
 
 template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MODULE(tdm) {
     static_assert(NUM_WORD >= 1, "NUM_WORD must be >= 1");
     using data_t = obi_data<BYTES_PER_ROW>;
 
-    sc_in<bool>     g_req_i[NUM_WORD];
-    sc_in<uint64_t> g_addr_i;
-    sc_in<bool>     g_we_i;
-    sc_in<uint32_t> g_be_i;
-    sc_in<data_t>   g_wdata_i[NUM_WORD];
-    sc_out<bool>    g_gnt_o[NUM_WORD];
-    sc_out<bool>    g_rvalid_o[NUM_WORD];
-    sc_out<data_t>  g_rdata_o[NUM_WORD];
+    // g[w] : group-facing OBI (subordinate — receives the request to map)
+    // c[w] : bank-facing OBI (manager — issues the mapped request)
+    obi_subordinate_ports<data_t> g[NUM_WORD];
+    obi_manager_ports<data_t>     c[NUM_WORD];
 
     sc_in<uint64_t> num_banks_i;
     sc_in<uint64_t> bank_width_i;
@@ -77,15 +78,6 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
     sc_in<uint64_t> c_i;
     sc_in<uint64_t> l_i;
     sc_in<uint64_t> store_mode_i;
-
-    sc_out<bool>     c_req_o[NUM_WORD];
-    sc_out<uint64_t> c_addr_o[NUM_WORD];
-    sc_out<bool>     c_we_o[NUM_WORD];
-    sc_out<uint32_t> c_be_o[NUM_WORD];
-    sc_out<data_t>   c_wdata_o[NUM_WORD];
-    sc_in<bool>      c_gnt_i[NUM_WORD];
-    sc_in<bool>      c_rvalid_i[NUM_WORD];
-    sc_in<data_t>    c_rdata_i[NUM_WORD];
 
     static uint32_t ilog2(uint64_t v) {
         uint32_t r = 0;
@@ -107,6 +99,34 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
 
     static std::pair<uint32_t, uint32_t> get_k(tdm_stor_mode mode, uint32_t e, uint32_t tzR,
                                                uint32_t tzC, uint32_t tzL) {
+        const std::pair<uint32_t, uint32_t> k = get_k_raw(mode, e, tzR, tzC, tzL);
+#ifdef TDM_GETK_GUARD
+        // Degenerate-split guard (experimental; doc/report Appendix A.8): when the
+        // mode's LEADING dimension has no trailing zeros (e.g. C = 1 under
+        // Loop_Row), k1 collapses onto e, the con field is zero-width, every
+        // con term of the bank-id XOR matrix drops out, and some window
+        // layouts fold pairwise onto half the banks. Borrow up to two bits
+        // from the bottom of str so con is never empty — bank_id stays a
+        // bijection per routing field, row_id untouched. NOTE: the guard is
+        // necessarily pattern-blind (get_k sees only the geometry, not the
+        // window layout); measured statically it repairs the napa=4
+        // offender but can introduce collisions on other layouts sharing
+        // the same split — hence opt-in, see the report for the evaluation.
+        using M = tdm_stor_mode;
+        const uint32_t lead =
+            (mode == M::Loop_Row_Col || mode == M::Loop_Row || mode == M::Row_Loop_Col ||
+             mode == M::Loop_2x2_H || mode == M::Loop_4x4_H)
+                ? tzC
+            : (mode == M::Row_Col_Loop || mode == M::Row_Loop || mode == M::Col_Row_Loop) ? tzL
+                                                                                          : tzR;
+        if (lead == 0 && k.second > e)
+            return {std::min(e + 2, k.second), k.second};
+#endif
+        return k;
+    }
+
+    static std::pair<uint32_t, uint32_t> get_k_raw(tdm_stor_mode mode, uint32_t e, uint32_t tzR,
+                                                   uint32_t tzC, uint32_t tzL) {
         using M = tdm_stor_mode;
         switch (mode) {
         case M::Loop_Row_Col:
@@ -140,8 +160,12 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
         }
     }
 
-    void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_t C, uint64_t L,
-                 tdm_stor_mode mode, uint64_t &bank_id, uint64_t &row_id) const {
+    // Pure function of its arguments (all mapping parameters are passed in,
+    // no module state) — static so callers that need the placement without a
+    // live tdm instance (e.g. the crossbar-build testbench computing what the
+    // TDM map WOULD do with an address) can use it directly.
+    static void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_t C, uint64_t L,
+                        tdm_stor_mode mode, uint64_t &bank_id, uint64_t &row_id) {
         const uint32_t                      b  = ilog2(nb);
         const uint32_t                      e  = ilog2(bw);
         const std::pair<uint32_t, uint32_t> k  = get_k(mode, e, tzeros(R), tzeros(C), tzeros(L));
@@ -165,9 +189,6 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
     }
 
     void comb() {
-        const uint64_t      base = g_addr_i.read();
-        const bool          we   = g_we_i.read();
-        const uint32_t      be   = g_be_i.read();
         const uint64_t      nb   = num_banks_i.read();
         const uint64_t      bw   = bank_width_i.read();
         const uint64_t      R    = r_i.read();
@@ -176,32 +197,50 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
         const tdm_stor_mode mode = static_cast<tdm_stor_mode>(store_mode_i.read());
 
         for (int w = 0; w < NUM_WORD; ++w) {
-            uint64_t bank_id = 0, row_id = 0;
-            map_one(base + static_cast<uint64_t>(w) * BYTES_PER_ROW, nb, bw, R, C, L, mode, bank_id,
-                    row_id);
-            if (bank_id >= static_cast<uint64_t>(NUM_BANK))
-                SC_REPORT_FATAL("tdm", "bank_id >= NUM_BANK (build N_BANK too small; "
-                                       "the mapping needs N_BANK >= 32)");
-            const uint64_t word_index = row_id * static_cast<uint64_t>(NUM_BANK) + bank_id;
+            const bool     req  = g[w].req_i.read();
+            const uint64_t addr = g[w].addr_i.read();
 
-            c_req_o[w].write(g_req_i[w].read());
-            c_addr_o[w].write(word_index * static_cast<uint64_t>(BYTES_PER_ROW));
-            c_we_o[w].write(we);
-            c_be_o[w].write(be);
-            c_wdata_o[w].write(g_wdata_i[w].read());
+            if (addr == 0) {
+                // addr=0 is the NOP sentinel: suppress the bank request and
+                // grant immediately. Do NOT touch g[w].rvalid_o — fall through
+                // to always pass c[w].rvalid_i so a concurrent response for
+                // another slot (arb_rsp_sel) is never clobbered.
+                c[w].req_o.write(false);
+                c[w].addr_o.write(0);
+                c[w].we_o.write(false);
+                c[w].be_o.write(0);
+                c[w].wdata_o.write(data_t{});
+                g[w].gnt_o.write(req);
+            } else {
+                uint64_t bank_id = 0, row_id = 0;
+                map_one(addr, nb, bw, R, C, L, mode, bank_id, row_id);
+                if (bank_id >= static_cast<uint64_t>(NUM_BANK))
+                    SC_REPORT_FATAL("tdm", "bank_id >= NUM_BANK (build N_BANK too small; "
+                                           "the mapping needs N_BANK >= 32)");
+                const uint64_t word_index = row_id * static_cast<uint64_t>(NUM_BANK) + bank_id;
 
-            g_gnt_o[w].write(c_gnt_i[w].read());
-            g_rvalid_o[w].write(c_rvalid_i[w].read());
-            g_rdata_o[w].write(c_rdata_i[w].read());
+                c[w].req_o.write(req);
+                c[w].addr_o.write(word_index * static_cast<uint64_t>(BYTES_PER_ROW));
+                c[w].we_o.write(g[w].we_i.read());
+                c[w].be_o.write(g[w].be_i.read());
+                c[w].wdata_o.write(g[w].wdata_i.read());
+                g[w].gnt_o.write(c[w].gnt_i.read());
+            }
+
+            // Always pass the bank rvalid through — this must happen regardless
+            // of the addr=0 path so responses in-flight for the previous TDM
+            // slot (arb_rsp_sel) are not lost.
+            g[w].rvalid_o.write(c[w].rvalid_i.read());
+            g[w].rdata_o.write(c[w].rdata_i.read());
         }
     }
 
     SC_CTOR(tdm) {
         SC_METHOD(comb);
-        sensitive << g_addr_i << g_we_i << g_be_i << num_banks_i << bank_width_i << r_i << c_i
-                  << l_i << store_mode_i;
+        sensitive << num_banks_i << bank_width_i << r_i << c_i << l_i << store_mode_i;
         for (int w = 0; w < NUM_WORD; ++w)
-            sensitive << g_req_i[w] << g_wdata_i[w] << c_gnt_i[w] << c_rvalid_i[w] << c_rdata_i[w];
+            sensitive << g[w].addr_i << g[w].req_i << g[w].we_i << g[w].be_i << g[w].wdata_i
+                      << c[w].gnt_i << c[w].rvalid_i << c[w].rdata_i;
     }
 };
 

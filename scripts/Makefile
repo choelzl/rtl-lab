@@ -291,8 +291,18 @@ clean:
 
 # ── fmt ───────────────────────────────────────────────────────────────────────
 _SV_FLAGS := --indentation_spaces=4 --wrap_spaces=4 --column_limit=100 \
-             --assignment_statement_alignment=align --named_port_alignment=align \
-             --module_net_variable_alignment=align --port_declarations_alignment=align \
+             --assignment_statement_alignment=align \
+             --case_items_alignment=align \
+             --class_member_variable_alignment=align \
+             --distribution_items_alignment=align \
+             --enum_assignment_statement_alignment=align \
+             --formal_parameters_alignment=align \
+             --module_net_variable_alignment=align \
+             --named_parameter_alignment=align \
+             --named_port_alignment=align \
+             --port_declarations_alignment=align \
+             --port_declarations_right_align_packed_dimensions=true \
+             --port_declarations_right_align_unpacked_dimensions=true \
              --struct_union_members_alignment=align
 
 _SC_STYLE := {BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4, \
@@ -301,17 +311,20 @@ _SC_STYLE := {BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4, \
               AlignConsecutiveMacros: true, AlignTrailingComments: true, \
               AllowShortFunctionsOnASingleLine: Inline}
 
-_SC_SOURCES := $(foreach f,$(shell git -C $(RTL_LAB_HOME) ls-files -co --exclude-standard "*.cpp" "*.h" "*.hpp"),$(if $(wildcard $(RTL_LAB_HOME)/$(f)),$(RTL_LAB_HOME)/$(f)))
-_SV_SOURCES := $(foreach f,$(shell git -C $(RTL_LAB_HOME) ls-files -co --exclude-standard "*.sv" "*.v"),$(if $(wildcard $(RTL_LAB_HOME)/$(f)),$(RTL_LAB_HOME)/$(f)))
+_FMT_ROOT     := $(if $(PROJECT),$(PROJ),$(CURDIR))
+_FMT_PATHSPEC := $(if $(filter $(RTL_LAB_HOME),$(_FMT_ROOT)),.,$(patsubst $(RTL_LAB_HOME)/%,%,$(_FMT_ROOT)))
+_FMT_FILES    := $(shell git -C $(RTL_LAB_HOME) ls-files -co --exclude-standard -- "$(_FMT_PATHSPEC)")
+_SC_SOURCES   := $(foreach f,$(filter %.cpp %.h %.hpp,$(_FMT_FILES)),$(if $(wildcard $(RTL_LAB_HOME)/$(f)),$(RTL_LAB_HOME)/$(f)))
+_SV_SOURCES   := $(foreach f,$(filter %.sv %.v,$(_FMT_FILES)),$(if $(wildcard $(RTL_LAB_HOME)/$(f)),$(RTL_LAB_HOME)/$(f)))
 
 fmt: fmt-sv fmt-sc
 
 fmt-sv:
-	@echo "Formatting SystemVerilog ..."
+	@echo "Formatting SystemVerilog under $(_FMT_ROOT) ..."
 	$(if $(_SV_SOURCES),verible-verilog-format $(_SV_FLAGS) --inplace $(_SV_SOURCES),echo "No SV files.")
 
 fmt-sc:
-	@echo "Formatting SystemC ..."
+	@echo "Formatting SystemC under $(_FMT_ROOT) ..."
 	$(if $(_SC_SOURCES),clang-format -style="$(_SC_STYLE)" -i $(_SC_SOURCES),echo "No SC files.")
 
 # ── help ──────────────────────────────────────────────────────────────────────
@@ -330,7 +343,7 @@ help:
 	  dpa        Post-synthesis dynamic power analysis (OpenSTA + VCD)
 	  unit       Build and run unit tests under tb/unit/
 	  clean      Remove build outputs (see TYPE=)
-	  fmt        Format all tracked SV and C++ sources (fmt-sv / fmt-sc individually)
+	  fmt        Format SV and C++ sources under PROJECT, else current directory
 	  help       Show this message
 
 	Variables:

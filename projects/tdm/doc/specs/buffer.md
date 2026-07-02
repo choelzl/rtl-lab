@@ -1,257 +1,157 @@
 # Buffer
 
-Reference implementations:
+Reference implementation:
 
-- SystemC model: [`buffer.hpp`](../../rtl/systemc/buffer.hpp)
-- SystemVerilog RTL work item: [`buffer.sv`](../../rtl/buffer.sv)
+- SystemC model: [`buffer.hpp`](../../rtl/systemc/buffer.hpp) (window
+  orchestration) composed of [`buffer_cell.hpp`](../../rtl/systemc/buffer_cell.hpp)
+  (all per-slot state — one cell per TDM slot).
+- SystemVerilog RTL: not yet implemented (this spec is the target for it).
 
-The buffer is a read-prefetch and width-adaptation block between port-facing OBI buses and a wide TDM-side OBI interface. It fetches a full `NUM_TDM` window, stores returned words in per-slot state, exposes valid data to the port side in active groups, and recycles the full window after all slots have been consumed.
+One `buffer` instance sits between one requester group's port-facing OBI
+lanes and the 32-lane TDM-side OBI interface, in both directions:
 
-This document is the target spec for correcting both the SystemC model and the SystemVerilog RTL. The implementation should use the canonical names below. Older names are listed only as legacy context for code that has not yet been migrated.
+- **Read mode** (`IS_WRITE = false`): a prefetch buffer. Cells fetch a full
+  `NUM_TDM` window of addresses supplied by the AGU's lookahead bus and drain
+  it to the ports one group per cycle, windows streaming back to back.
+- **Write mode** (`IS_WRITE = true`): a write-combining buffer. Ports fill a
+  full window one group per cycle; a one-cycle snapshot hands the window to
+  per-cell shadow engines that burst it to the banks while the next window
+  is already filling; port acks are posted.
 
-## Canonical Naming
+Both modes achieve the same pinned property: on conflict-free traffic the
+task span equals `ceil(n_data / lanes)` — cycle-exact parity with the
+three-level crossbar backend (see `doc/report/`).
 
-Use the same logical names in SystemC and SystemVerilog. Language-specific prefixes (`a_`/`m_` in the current SystemC model, packed structs in SystemVerilog) may remain only as thin compatibility wrappers.
+## Structure
 
-| Concept | Canonical name | SystemVerilog status | SystemC status | Target action |
-| ------- | -------------- | --------------------- | --------------- | ------------- |
-| Port count | `PORT_COUNT` | implemented | implemented | Use `PORT_COUNT` in both implementations. |
-| OBI buses per port | `NUM_REQ` | implemented | implemented | Use `NUM_REQ` in both implementations. |
-| TDM lanes / fetch-window slots | `NUM_TDM` | implemented | implemented | Use `NUM_TDM` in both implementations. |
-| Buffer slots | `BUFFER_SIZE` / `NUM_TDM` | `BUFFER_SIZE` kept as compatibility parameter; internal slots use `NUM_TDM` | `BUFFER_SIZE` is an internal alias for `NUM_TDM` | Keep `BUFFER_SIZE == NUM_TDM` for this target. |
-| Total port-side OBI buses | `NUM_IO` | implemented | implemented | Prefer `NUM_IO = PORT_COUNT * NUM_REQ`. |
-| Active drain mode | `active_mode` | implemented | implemented | Use the 2-bit encoding below. |
-| Fetch addresses | `fetch_addr_i` | implemented | implemented | Latch with `fetch_addr_valid_i`. |
-| Fetch-address valid | `fetch_addr_valid_i` | implemented | implemented | Active-high latch strobe. |
-| TDM request path | `tdm_req_o` | `tdm_req_o` | `m_*_o` | SystemC may keep scalar arrays, but docs and wrappers should call this TDM request. |
-| TDM response path | `tdm_resp_i` | `tdm_resp_i` | `m_*_i` | SystemC may keep scalar arrays, but docs and wrappers should call this TDM response. |
-| Port request path | `port_req_i` | `port_req_i` | `p_*_i` | SystemC may keep scalar arrays, but docs and wrappers should call this port request. |
-| Port response path | `port_resp_o` | `port_resp_o` | `p_*_o` | SystemC may keep scalar arrays, but docs and wrappers should call this port response. |
+All per-slot state lives in the 32 `buffer_cell` instances; the parent
+`buffer` owns only window bookkeeping (two group pointers, the latched
+window geometry, a few flags) plus a combinational port⇄group router.
+Control between them is deliberately narrow:
 
-For SystemVerilog, `fetch_addr_i` uses the address width from `obi_req_t.addr`: `logic [NUM_TDM-1:0][31:0]`. Do not introduce an `OBI_ADDR_WIDTH` macro unless `obi_pkg.sv` is changed first.
+| Wire | Direction | Meaning |
+| ---- | --------- | ------- |
+| `cell_reset_window_s` | buffer → all cells | ONE broadcast pulse = "a window boundary happened": read wrap, read boot-from-idle, and write snapshot all drive it. The same pulse tells the caller to advance its lookahead one window. |
+| `cell_all_valid_s[w]` | buffer → cell w | Cell `w`'s own group is draining this cycle (arms the per-cell refetch and the same-cycle forward path). |
+| `valid_o[w]` | cell w → buffer | Read: presentable now. Write: shadow flush done. |
+| `invalid_o[w]` | cell w → buffer | Read: idle (`!valid && !pending`). Write: primary latch free. |
 
-## Role
+The buffer AND-reduces the collectors into the only three decisions it
+makes: is the current group drain-ready, are all shadows free, is the whole
+array idle (boot).
 
-One buffer instance serves one RAGU driver group. The buffer is read-oriented: it prefetches data from the TDM side and returns that data to port-side OBI buses. Port-side writes are out of scope for this module and should be handled by a separate write-buffer component with the inverse collect-and-issue behavior.
+## Interface
 
-The read-prefetch cycle is:
-
-1. All slots start `MISSING`.
-2. The buffer latches `fetch_addr_i` when `fetch_addr_valid_i` is asserted for this buffer.
-3. The buffer issues one TDM read request per slot using OBI request fields.
-4. TDM responses fill slots; filled slots become `VALID`.
-5. Ports drain `VALID` slots in active chunks of 4, 8, or 16 beats.
-6. Drained slots become `INVALID`.
-7. Once the complete `NUM_TDM` window has been consumed, all slots return to `MISSING` and the next full-window fetch starts.
-
-The port side is group-synchronized. All active OBI buses must assert `req` before any active beat receives `gnt`.
-
-## Target Interfaces
-
-### SystemVerilog
-
-| Signal | Direction | Type | Meaning |
-| ------ | --------- | ---- | ------- |
-| `clk_i` | input | `logic` | Clock. |
-| `rst_ni` | input | `logic` | Active-low asynchronous reset. |
-| `port_req_i` | input | `obi_req_t [PORT_COUNT-1:0][NUM_REQ-1:0]` | Port-side read requests. `req` participates in the group handshake. Write fields are ignored by the read buffer. |
-| `port_resp_o` | output | `obi_resp_t [PORT_COUNT-1:0][NUM_REQ-1:0]` | Port-side grant and read response data. |
-| `tdm_req_o` | output | `obi_req_t [NUM_TDM-1:0]` | TDM-side read requests, one lane per TDM fetch beat. |
-| `tdm_resp_i` | input | `obi_resp_t [NUM_TDM-1:0]` | TDM-side grants and read responses used to fill slots. |
-| `active_mode` | input | `logic [1:0]` | Active drain width. `2'b11` aliases mode16. |
-| `fetch_addr_i` | input | `logic [NUM_TDM-1:0][31:0]` | External `NUM_TDM`-wide address set for the next fetch window. |
-| `fetch_addr_valid_i` | input | `logic` | Active-high strobe. When asserted at a legal boundary, the buffer latches `fetch_addr_i`. |
-
-### SystemC
-
-The corrected SystemC model should expose the same logical interface. It may continue to represent OBI as scalar arrays instead of packed structs, but the signal names should follow the canonical naming in new code or wrappers.
-
-| Signal | Direction | Suggested SystemC type | Meaning |
-| ------ | --------- | ---------------------- | ------- |
-| `clk_i` | input | `sc_in<bool>` | Clock. |
-| `rst_ni` | input | `sc_in<bool>` | Active-low asynchronous reset. |
-| `active_mode` | input | `sc_in<sc_uint<2>>` or `sc_in<uint32_t>` | Same 2-bit mode encoding as RTL. |
-| `fetch_addr_i` | input | `sc_in<uint64_t> [NUM_TDM]` | External address set; low 32 bits map to RTL `addr`. |
-| `fetch_addr_valid_i` | input | `sc_in<bool>` | Active-high latch strobe for `fetch_addr_i`. |
-| `port_req_i` / `port_resp_o` | mixed | scalar arrays or wrapper structs | Port-facing OBI. |
-| `tdm_req_o` / `tdm_resp_i` | mixed | scalar arrays or wrapper structs | TDM-facing OBI. |
+| Signal | Direction | Meaning |
+| ------ | --------- | ------- |
+| `clk_i`, `rst_ni` | in | Clock, active-low reset. |
+| `active_mode` | in | Drain/fill width (encoding below). Latched into `window_mode_q` at each window boundary, so a mid-stream change never tears a window. |
+| `p[NUM_IO]` | subordinate | Port-side OBI, one full `obi_subordinate_ports` bundle per lane (`NUM_IO = PORT_COUNT * NUM_REQ`). `p[i].we_i` is wired but ignored — direction is fixed per instance by `IS_WRITE`. Write mode: `gnt_o` = fill accepted, `rvalid_o` = posted ack, `rdata_o` = 0. |
+| `m[NUM_TDM]` | manager | TDM-side OBI, one lane per slot; cell `w` owns `m[w]` outright. |
+| `fetch_addr_i[NUM_TDM]`, `fetch_addr_valid_i` | in | Read mode: the lookahead window's addresses (`addr == 0` = NOP lane, never issued). Unused in write mode. |
 
 ## Parameters
 
 | Parameter | Default | Meaning |
 | --------- | ------- | ------- |
-| `PORT_COUNT` | 4 | Number of Port-facing ports. Implemented as `PORT_COUNT` in both targets. |
-| `NUM_REQ` | 4 | Number of OBI buses per port. |
-| `NUM_TDM` | 32 | Number of TDM lanes and slots in one fetch window. Implemented as `NUM_TDM` in both targets. |
-| `BUFFER_SIZE` | 32 | Number of stored slots. For the first target, `BUFFER_SIZE == NUM_TDM`. |
-| `NUM_IO` | `PORT_COUNT * NUM_REQ` | Total Port-side beats. SystemC keeps `TOTAL_PORT` only as a compatibility alias. |
-| `BYTES_PER_ROW` | 16 in SystemC | Data word width in bytes. In SystemVerilog this comes from ``OBI_DATA_WIDTH / 8``. |
+| `NUM_REQ` | 4 | OBI lanes per port. |
+| `PORT_COUNT` | 1/2/4 | Ports connected to this buffer instance. |
+| `NUM_TDM` | 32 | TDM lanes = slots per window = cells. |
+| `BYTES_PER_ROW` | 16 | Data beat width (128 b). |
+| `IS_WRITE` | false | Selects read-prefetch or write-combining behavior. |
 
-Remove the old SystemVerilog `MODE_4`, `MODE_8`, and `MODE_16` parameters. Runtime mode selection comes only from `active_mode`.
+`active_mode` encoding (`lanes = active_ports * NUM_REQ`):
 
-Both implementations require `NUM_TDM >= NUM_IO` and `NUM_TDM % NUM_IO == 0` for this first target, so the full window drains without an unreachable tail. Both implementations should at least be written for:
+| `active_mode` | Active ports | Lanes / drain group |
+| ------------- | ------------ | ------------------- |
+| 0 | 1 | 4 |
+| 1 | 2 | 8 |
+| 2 or 3 | 4 (clamped to `PORT_COUNT`) | 16 |
 
-- `PORT_COUNT = 4`
-- `NUM_REQ = 4`
-- `NUM_TDM = BUFFER_SIZE = 32`
-- `NUM_IO = 16`
+## Read mode
 
-## Active Modes
+Each cell runs a private two-cycle fetch (arbiter grant, then bank
+response) and holds one value; per-cell flags are orthogonal bits
+(`valid_q / pending_q / granted_q / fetched_q / primed_q`), not a state
+machine. The group at `rd_ptr_q` drains when every cell in it is valid and
+all active lanes assert `p_req_i`; a per-cell `is_fwd` mux forwards a value
+arriving on the drain edge directly to the port.
 
-`active_mode` uses the same encoding in both implementations:
+**Per-cell refetch (the zero-bubble property).** A cell starts its next
+fetch by the single rule
 
-| `active_mode` | Name | Active ports | Active beats | Drain chunk |
-| ------------- | ---- | ------------ | ------------ | ----------- |
-| `2'b00` | mode4 | port 0 | 4 | slots `rd_ptr + 0 .. rd_ptr + 3` |
-| `2'b01` | mode8 | ports 0-1 | 8 | slots `rd_ptr + 0 .. rd_ptr + 7` |
-| `2'b10` | mode16 | ports 0-3 | 16 | slots `rd_ptr + 0 .. rd_ptr + 15` |
-| `2'b11` | mode16 alias | ports 0-3 | 16 | same as `2'b10` |
-
-Do not use the old port-strided mapping from `buffer.sv` as the target behavior. The canonical drain order is linear contiguous chunks.
-
-## Slot State Machine
-
-Each slot shall track one of three states:
-
-| State | Meaning |
-| ----- | ------- |
-| `MISSING` | Slot has no fresh data and should be fetched. |
-| `VALID` | Slot has received TDM read data and can be drained by the AGU side. |
-| `INVALID` | Slot has already been consumed and waits for full-window recycle. |
-
-On reset:
-
-- every slot becomes `MISSING`,
-- stored data is cleared or treated as invalid,
-- per-slot TDM request-granted tracking is cleared,
-- the drain pointer `rd_ptr_q` returns to zero,
-- the buffer waits for or uses a valid fetch-address set, then enters fetch mode.
-
-## Fetch Address Latching
-
-An external unit generates one `NUM_TDM`-wide address set per buffer. The buffer latches that set when `fetch_addr_valid_i` is asserted at a legal boundary. A legal boundary is either reset/startup before issuing a fetch, or full-window recycle before issuing the next fetch.
-
-Latched addresses are held in `fetch_addr_q[t]` and drive `tdm_req_o[t].addr` until lane `t` receives its response. This is required because a TDM lane may retry after conflicts or delayed grants.
-
-If `fetch_addr_valid_i` is not asserted when the buffer needs a new address set, the buffer remains in `MISSING`/idle fetch-start state and does not issue new TDM requests.
-
-## TDM Fetch Behavior
-
-The TDM side is a `NUM_TDM`-wide read interface with one OBI lane per slot. The lane-to-slot mapping is linear: lane `t` fills slot `t`. Any crossbar or interconnect reordering must be handled before data reaches this buffer interface.
-
-During fetch mode:
-
-- `tdm_req_o[t].req` stays asserted for each slot whose request has not yet been granted.
-- A per-slot `req_granted_q[t]` bit records that lane `t` has been accepted and prevents duplicate requests before its response returns.
-- `tdm_req_o[t].addr` carries `fetch_addr_q[t]`.
-- `tdm_req_o[t].we` is false.
-- `tdm_req_o[t].be` is the full-word byte mask.
-- When `tdm_resp_i[t].rvalid` is asserted, `tdm_resp_i[t].rdata` is stored in slot `t` and the slot becomes `VALID`.
-
-The buffer does not need the entire full window to be valid before starting AGU drain. Drain eligibility is checked per current active drain window.
-
-## AGU Drain Behavior
-
-A group can drain when all of these are true:
-
-- every slot in the current active drain window is `VALID`, including same-cycle TDM fills through forwarding/next-state valid logic,
-- every active `port_req_i[p][r].req` is asserted,
-- the selected drain indices are in range.
-
-When the group drains:
-
-- `port_resp_o[p][r].gnt` is asserted combinationally for active buses,
-- `port_resp_o[p][r].rvalid` is asserted one cycle after grant,
-- `port_resp_o[p][r].rdata` returns the corresponding slot data,
-- drained slots become `INVALID`,
-- `rd_ptr_q` advances by the number of active buses.
-
-Inactive ports do not receive grants or valid responses.
-
-## Drain Order
-
-The canonical drain order is linear by active chunk size:
-
-```text
-active_beats = active_ports * NUM_REQ
-index        = rd_ptr_q + active_beat_index
-rd_ptr_next  = rd_ptr_q + active_beats
+```
+start = !pending_q && en_i && (all_valid_i || !valid_q)
 ```
 
-With default `NUM_REQ = 4`:
+- `all_valid_i` — this cell's own group is draining this edge: refetch
+  starts immediately, overlapping the other groups' turns. The slot is not
+  needed again for `n_groups − 1` cycles, which hides the two-cycle round
+  trip for every real configuration, so windows stream with no transition
+  gap.
+- `!valid_q` — the cell holds nothing: covers the boot fetch after reset
+  and a parked cell (drained while `en_i` was low, e.g. behind a fence)
+  restarting the moment `en_i` returns. A start wipes nothing, so `en_i`
+  needs no edge detection or gap thresholds.
 
-- mode4 drains slots `0..3`, then `4..7`, then `8..11`, and so on,
-- mode8 drains slots `0..7`, then `8..15`, then `16..23`, and so on,
-- mode16 drains slots `0..15`, then `16..31`.
+**Boot latch.** Restart from idle is the wrap path, not a special case:
+when every cell reports idle and the fetch bus is enabled, the buffer snaps
+the staged window under the current `active_mode` and pulses the same
+`window_reset` a wraparound does.
 
-The implementation never grants partial groups.
+**Caller contract.** One pulse, one meaning: each `window_reset` pulse
+tells the AGU to advance its lookahead exactly one window. The AGU exposes
+its next `NUM_TDM` addresses on `fetch_addr_i` continuously; NOP lanes
+carry `addr = 0`.
 
-## Same-Cycle Fill And Drain
+## Write mode
 
-Same-cycle fill-and-drain forwarding is required. For example, in mode4 with `rd_ptr_q = 0`, slots `0..2` are already `VALID`, slot `3` is still `MISSING`, and all four active port requests are asserted. If `tdm_resp_i[3].rvalid` arrives in this cycle, the buffer treats slot `3` as valid for the drain decision and grants the AGU group in the same cycle.
+Three stages run concurrently (the write-side twin of the read
+pipelining):
 
-Required precedence:
+1. **Fill.** Ports latch one group per cycle into the cells' primary
+   latches (`p_gnt_o = fill_ok`), advancing straight through window
+   boundaries whenever primaries are free (`fill_ptr_q`).
+2. **Snapshot.** When the window is full and the previous burst has
+   cleared —
+   `snapshot = (fill_wrap || full_q) && shadows_free && (!resp || resp_wraps)`
+   — a one-cycle `reset_window` pulse copies every primary into its cell's
+   shadow engine atomically and frees the primaries; the next window's fill
+   begins the very next cycle.
+3. **Respond.** Port acks are **posted**: `p_rvalid_o` streams one group
+   per cycle right behind the snapshot (`rd_ptr_q` doubles as the respond
+   pointer). An ack means "the burst is in flight", not "the bank
+   committed". A slow/conflicted burst back-pressures the NEXT window's
+   snapshot (its fill parks as `full_q`) instead of stalling the ports beat
+   by beat.
 
-- Fill only: store `rdata` and mark the slot `VALID`.
-- Drain only: return stored data and mark the slot `INVALID`.
-- Fill and drain the same slot: forward incoming `rdata` to the port response path and leave the slot `INVALID` after the clock edge.
-- Fill and drain different slots: apply both updates independently.
+**Shadow lifetime.** A shadow engine requests until its grant and frees
+**at the grant** — the bank fabric samples the payload on the edge after
+the grant, so nothing downstream ever reads a freed shadow, and the
+returning `rvalid` is not tracked at all. A grant-live preview
+(`valid_o = busy && !gnt`) lets the parent snapshot on the exact edge the
+last grant lands. Consequently the effective bus round trip never exceeds
+the fill time and windows run back to back
+(`window period = max(fill, flush) = fill` on conflict-free traffic).
 
-The current `buffer.sv` same-entry overwrite behavior is not allowed because it loses the new data without forwarding it.
+**Ordering consequence.** Posted acks relocate conflict cost onto the
+following window, and read-after-write ordering across *different* buffers
+requires a fence — which the production phase structure provides at
+thousands-of-cycles granularity.
 
-## Recycle Behavior
+## Mode changes
 
-After all slots in the `NUM_TDM` window have drained and become `INVALID`:
+`window_mode_q` (and `pend_mode_q` for a parked write window) freeze the
+geometry a window was started with; `active_mode` is re-sampled only at
+window boundaries (wrap, boot, snapshot). The caller keeps `en_i`/traffic
+aligned to window boundaries; within a window the latched geometry rules.
 
-1. all slots return to `MISSING`,
-2. request-granted tracking for all slots is cleared,
-3. `rd_ptr_q` wraps to zero,
-4. the buffer waits for/latches the next `fetch_addr_i` set,
-5. the next full-window fetch begins.
+## Verification
 
-## Mode Changes
-
-`active_mode` is expected to change only at clean buffer boundaries: when the buffer is fully `MISSING` before a fetch starts, or when the fetched window is fully `VALID` before any drain has consumed slots. It must not change while the buffer contains a mixture of `VALID` and `INVALID` slots. The first RTL implementation does not need to assert or guard this rule; surrounding control logic is responsible for respecting it.
-
-## Reads And Writes
-
-This buffer is a read-prefetch buffer. Port-side write support should be implemented separately. A write buffer would collect 4, 8, or 16 AGU write beats and issue them to the TDM side as a grouped write operation.
-
-## Future Ping-Pong Reuse
-
-A future variant may avoid some TDM fetches by keeping one line from the previous fetch and reusing it when the next access overlaps. That ping-pong/cache-like behavior may require `NUM_TDM != BUFFER_SIZE` or additional valid/hit metadata. It is out of scope for the first implementation; the current drain contract remains contiguous 4-, 8-, or 16-beat chunks from the active window.
-
-## Implementation Compliance
-
-### SystemVerilog `buffer.sv`
-
-Compliance checklist:
-
-| Area | Status |
-| ---- | --------------- |
-| Parameters | Done. `MODE_4`, `MODE_8`, and `MODE_16` are removed; `BUFFER_SIZE == NUM_TDM`, `PORT_COUNT in [1,4]`, and `NUM_TDM % NUM_IO == 0` are checked for this target. |
-| Ports | Done. `fetch_addr_i [NUM_TDM][31:0]` and `fetch_addr_valid_i` are present. |
-| Slot state | Done. Uses explicit `slot_state_q` plus `slot_data_q`. |
-| Fetch requests | Done. `tdm_req_o` is driven from `fetch_addr_q`, `req_granted_q`, and `slot_state_q`. |
-| Address hold | Done. Address sets are latched at startup/recycle and held across TDM retries. |
-| Drain order | Done. Drain indices are linear from `rd_ptr_q`. |
-| Active mode | Done. `default` maps to mode16/max available ports. |
-| Same-cycle forwarding | Done. Grant and response data can use same-cycle `tdm_rvalid/rdata`. |
-| Recycle | Done. Full-window recycle resets states and can latch the next address set in the same cycle. |
-
-### SystemC `buffer.hpp`
-
-Compliance checklist:
-
-| Area | Status |
-| ---- | --------------- |
-| Naming/parameters | Done. Uses `PORT_COUNT`, `NUM_TDM`, `NUM_IO`, and `active_mode`; `TOTAL_PORT` remains only as an alias. `NUM_TDM % NUM_IO == 0` is statically checked. |
-| Active mode | Done. Uses the shared 2-bit mode encoding. |
-| Address valid | Done. `fetch_addr_i` latches only when `fetch_addr_valid_i` is high. |
-| Early drain | Done. Grant checks only the current active drain window. |
-| Same-cycle forwarding | Done. The sequential model fills before checking drain. |
-| Naming wrappers | Partially done. `fetch_addr_i` and `active_mode` are canonical; scalar `a_*`/`m_*` OBI arrays remain as the current SystemC representation. |
-
-## Open Questions
-
-No open questions remain for the first read-buffer target. Future work may reopen ping-pong reuse, write-buffer behavior, or `NUM_TDM != BUFFER_SIZE` support.
+Unit suites (see `tb/unit/`): `buffer` (154), `buffer_cell` (74),
+`buffer_pipeline` (12) for read; `buffer_wr` (63), `buffer_cell_wr` (43),
+`buffer_pipeline_write` (36) for write; `buffer_modes` (11) for the
+active_mode alias and PORT_COUNT clamp geometry. System-level timing is pinned by
+the `stim_bank_*` suites: conflict-free spans equal `ceil(n_data/lanes)`
+exactly, and same-bank streams keep the target bank 100 % utilized
+(bank-side occupancy exactly `n_data` on the adaptive build).

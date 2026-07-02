@@ -40,8 +40,8 @@
 #ifndef N_RAGU_D
 #define N_RAGU_D 1
 #endif
-#ifndef N_RAGU_DMA
-#define N_RAGU_DMA 1
+#ifndef N_RAGU_E
+#define N_RAGU_E 1
 #endif
 
 #ifndef N_WAGU_A
@@ -53,18 +53,18 @@
 #ifndef N_WAGU_D
 #define N_WAGU_D 1
 #endif
-#ifndef N_WAGU_DMA
-#define N_WAGU_DMA 1
+#ifndef N_WAGU_E
+#define N_WAGU_E 1
 #endif
 
 // ---------------------------------------------------------------------------
 // DUT port side — aggregates (derived from per-unit counts)
 // ---------------------------------------------------------------------------
 #ifndef N_RPORT
-#define N_RPORT (N_RAGU_A + N_RAGU_B + N_RAGU_C + N_RAGU_D + N_RAGU_DMA)
+#define N_RPORT (N_RAGU_A + N_RAGU_B + N_RAGU_C + N_RAGU_D + N_RAGU_E)
 #endif
 #ifndef N_WPORT
-#define N_WPORT (N_WAGU_A + N_WAGU_B + N_WAGU_D + N_WAGU_DMA)
+#define N_WPORT (N_WAGU_A + N_WAGU_B + N_WAGU_D + N_WAGU_E)
 #endif
 #ifndef N_REQ
 #define N_REQ 4

@@ -34,6 +34,7 @@
         shellHook = nixchip.lib.mkNixchipVarsHook hwPkgs + ''
           export RTL_LAB_HOME="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
           export SYSTEMC_LIBDIR="$SYSTEMC_LIB"
+          export PATH="$RTL_LAB_HOME/scripts:$PATH"
         '';
       };
     };

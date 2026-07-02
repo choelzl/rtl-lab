@@ -4,14 +4,14 @@
 // Description:
 //   Native SystemC single-port memory bank — an OBI subordinate wrapping a
 //   word-addressable RAM array. It implements the simplified single-channel OBI
-//   protocol (see doc/specs/obi.md):
+//   protocol (see doc/specs/obi.md), exposed as `obi` (see obi_ports.hpp):
 //
-//     request  (manager -> bank) : req_i, addr_i, we_i, be_i, wdata_i
-//     response (bank -> manager) : gnt_o, rvalid_o, rdata_o
+//     request  (manager -> bank) : obi.req_i, obi.addr_i, obi.we_i, obi.be_i, obi.wdata_i
+//     response (bank -> manager) : obi.gnt_o, obi.rvalid_o, obi.rdata_o
 //
 //   Behaviour (all sampled / driven on the rising edge of clk_i):
-//     - gnt_o follows req_i combinationally: the bank accepts whenever a
-//       request is present and never back-pressures. Any contention for the
+//     - obi.gnt_o follows obi.req_i combinationally: the bank accepts whenever
+//       a request is present and never back-pressures. Any contention for the
 //       bank is resolved by the upstream interconnect, which presents at most
 //       one request to this single port per cycle.
 //     - 1-cycle access latency: a request accepted at cycle T (req_i & gnt_o)
@@ -22,8 +22,9 @@
 //
 //   Addressing: addr_i is a BANK-LOCAL byte address — the bank-select field has
 //   already been stripped upstream, so word = addr_i / BYTES_PER_WORD indexes
-//   directly into this bank's array (capacity NUM_ROW words, one word per row).
-//   An access outside that range is a fatal error (SC_REPORT_FATAL).
+//   into this bank's array (capacity NUM_ROW words, one word per row). The row
+//   index is taken modulo NUM_ROW, so any address wraps to a valid row rather
+//   than faulting.
 //
 //   Reset is active-low (rst_ni), matching OBI reset_n directly.
 //
@@ -38,23 +39,16 @@
 #include <systemc.h>
 
 #include "obi_data.hpp"
+#include "obi_ports.hpp"
 #include <cstdint>
-#include <sstream>
 #include <vector>
 
 template <int NUM_ROW = 1024, int BYTES_PER_ROW = 4 * 4> SC_MODULE(bank) {
     using data_t = obi_data<BYTES_PER_ROW>;
 
-    sc_in<bool>     clk_i;
-    sc_in<bool>     rst_ni;
-    sc_in<bool>     req_i;
-    sc_in<uint64_t> addr_i;
-    sc_in<bool>     we_i;
-    sc_in<uint32_t> be_i;
-    sc_in<data_t>   wdata_i;
-    sc_out<bool>    gnt_o;
-    sc_out<bool>    rvalid_o;
-    sc_out<data_t>  rdata_o;
+    sc_in<bool>                   clk_i;
+    sc_in<bool>                   rst_ni;
+    obi_subordinate_ports<data_t> obi;
 
     static constexpr int kDepthRows = NUM_ROW;
 
@@ -62,6 +56,9 @@ template <int NUM_ROW = 1024, int BYTES_PER_ROW = 4 * 4> SC_MODULE(bank) {
 
     std::vector<data_t> mem;
 
+    // A we=1 request with be=0 is deliberately a no-op that is still
+    // granted and acknowledged like any accepted request — the row is
+    // untouched but rvalid fires (pinned by tb_bank T15).
     static data_t apply_be(data_t out, const data_t &new_w, uint32_t be) {
         for (int l = 0; l < BYTES_PER_ROW; ++l)
             if (be & (1u << l))
@@ -71,34 +68,29 @@ template <int NUM_ROW = 1024, int BYTES_PER_ROW = 4 * 4> SC_MODULE(bank) {
 
     void step() {
         if (!rst_ni.read()) {
-            rvalid_o.write(false);
-            rdata_o.write(0);
+            obi.rvalid_o.write(false);
+            obi.rdata_o.write(0);
             return;
         }
 
         bool   rv = false;
         data_t rd = 0;
-        if (req_i.read()) {
-            const uint64_t row = addr_i.read() / BYTES_PER_ROW;
-            if (row >= static_cast<uint64_t>(kDepthRows)) {
-                std::ostringstream os;
-                os << "OBI access out of range: bank-local row " << row << " >= capacity "
-                   << kDepthRows;
-                SC_REPORT_FATAL(name(), os.str().c_str());
-            }
-            if (we_i.read()) {
-                mem[row] = apply_be(mem[row], wdata_i.read(), be_i.read());
+        if (obi.req_i.read()) {
+            const uint64_t row =
+                (obi.addr_i.read() / BYTES_PER_ROW) % static_cast<uint64_t>(kDepthRows);
+            if (obi.we_i.read()) {
+                mem[row] = apply_be(mem[row], obi.wdata_i.read(), obi.be_i.read());
             } else {
                 rd = mem[row];
             }
             rv = true;
         }
-        rvalid_o.write(rv);
-        rdata_o.write(rd);
+        obi.rvalid_o.write(rv);
+        obi.rdata_o.write(rd);
     }
 
     void comb_gnt() {
-        gnt_o.write(req_i.read());
+        obi.gnt_o.write(obi.req_i.read());
     }
 
     SC_CTOR(bank) : mem(kDepthRows, 0) {
@@ -107,7 +99,7 @@ template <int NUM_ROW = 1024, int BYTES_PER_ROW = 4 * 4> SC_MODULE(bank) {
         dont_initialize();
 
         SC_METHOD(comb_gnt);
-        sensitive << req_i;
+        sensitive << obi.req_i;
     }
 };
 

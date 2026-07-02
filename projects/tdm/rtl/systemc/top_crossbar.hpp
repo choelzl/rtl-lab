@@ -59,6 +59,7 @@
 
 #include "bank.hpp"
 #include "crossbar.hpp"
+#include "obi_ports.hpp"
 
 namespace tc_detail {
 constexpr bool is_pow2(int n) {
@@ -138,58 +139,21 @@ SC_MODULE(top_crossbar) {
     //   Index [j*NUM_REQ+k]: L1 instance j, slave port k
     //                        -> L2 instance k, master port j
     // -----------------------------------------------------------------------
-    sc_signal<bool>     l1_l2_rd_req[NUM_L1_L2_RD];
-    sc_signal<uint64_t> l1_l2_rd_addr[NUM_L1_L2_RD];
-    sc_signal<bool>     l1_l2_rd_we[NUM_L1_L2_RD];
-    sc_signal<uint32_t> l1_l2_rd_be[NUM_L1_L2_RD];
-    sc_signal<data_t>   l1_l2_rd_wdata[NUM_L1_L2_RD];
-    sc_signal<bool>     l1_l2_rd_gnt[NUM_L1_L2_RD];
-    sc_signal<bool>     l1_l2_rd_rvalid[NUM_L1_L2_RD];
-    sc_signal<data_t>   l1_l2_rd_rdata[NUM_L1_L2_RD];
-
-    sc_signal<bool>     l1_l2_wr_req[NUM_L1_L2_WR];
-    sc_signal<uint64_t> l1_l2_wr_addr[NUM_L1_L2_WR];
-    sc_signal<bool>     l1_l2_wr_we[NUM_L1_L2_WR];
-    sc_signal<uint32_t> l1_l2_wr_be[NUM_L1_L2_WR];
-    sc_signal<data_t>   l1_l2_wr_wdata[NUM_L1_L2_WR];
-    sc_signal<bool>     l1_l2_wr_gnt[NUM_L1_L2_WR];
-    sc_signal<bool>     l1_l2_wr_rvalid[NUM_L1_L2_WR];
-    sc_signal<data_t>   l1_l2_wr_rdata[NUM_L1_L2_WR];
+    obi_signal_bundle<data_t> l1_l2_rd[NUM_L1_L2_RD];
+    obi_signal_bundle<data_t> l1_l2_wr[NUM_L1_L2_WR];
 
     // -----------------------------------------------------------------------
     // Inter-level wires: L2 -> L3
     //   Index [k*NUM_BANK_GRP+g]: L2 instance k, slave g -> L3 logical bank b
     // -----------------------------------------------------------------------
-    sc_signal<bool>     l2_l3_rd_req[NUM_L2_L3];
-    sc_signal<uint64_t> l2_l3_rd_addr[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_rd_we[NUM_L2_L3];
-    sc_signal<uint32_t> l2_l3_rd_be[NUM_L2_L3];
-    sc_signal<data_t>   l2_l3_rd_wdata[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_rd_gnt[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_rd_rvalid[NUM_L2_L3];
-    sc_signal<data_t>   l2_l3_rd_rdata[NUM_L2_L3];
-
-    sc_signal<bool>     l2_l3_wr_req[NUM_L2_L3];
-    sc_signal<uint64_t> l2_l3_wr_addr[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_wr_we[NUM_L2_L3];
-    sc_signal<uint32_t> l2_l3_wr_be[NUM_L2_L3];
-    sc_signal<data_t>   l2_l3_wr_wdata[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_wr_gnt[NUM_L2_L3];
-    sc_signal<bool>     l2_l3_wr_rvalid[NUM_L2_L3];
-    sc_signal<data_t>   l2_l3_wr_rdata[NUM_L2_L3];
+    obi_signal_bundle<data_t> l2_l3_rd[NUM_L2_L3];
+    obi_signal_bundle<data_t> l2_l3_wr[NUM_L2_L3];
 
     // -----------------------------------------------------------------------
     // Inter-level wires: L3 -> physical banks
     //   Index [b*2+i]: L3 instance b, slave i (0=even, 1=odd)
     // -----------------------------------------------------------------------
-    sc_signal<bool>     l3_bank_req[NUM_PHYS_BANKS];
-    sc_signal<uint64_t> l3_bank_addr[NUM_PHYS_BANKS];
-    sc_signal<bool>     l3_bank_we[NUM_PHYS_BANKS];
-    sc_signal<uint32_t> l3_bank_be[NUM_PHYS_BANKS];
-    sc_signal<data_t>   l3_bank_wdata[NUM_PHYS_BANKS];
-    sc_signal<bool>     l3_bank_gnt[NUM_PHYS_BANKS];
-    sc_signal<bool>     l3_bank_rvalid[NUM_PHYS_BANKS];
-    sc_signal<data_t>   l3_bank_rdata[NUM_PHYS_BANKS];
+    obi_signal_bundle<data_t> l3_bank[NUM_PHYS_BANKS];
 
     // -----------------------------------------------------------------------
     // Submodules
@@ -205,7 +169,18 @@ SC_MODULE(top_crossbar) {
         const uint64_t hi  = (a >> 9) & 0x7;
         const uint64_t mid = (a >> 6) & 0x7;
         const uint64_t sum = (hi + mid) & 0x7;
-        return (a & ~(static_cast<uint64_t>(0x7) << 6)) | (sum << 6);
+        uint64_t       r   = (a & ~(static_cast<uint64_t>(0x7) << 6)) | (sum << 6);
+#ifdef XBAR_HASH_L1
+        // Experimental (doc/report Appendix A.8): also scramble the L1-select bits
+        // addr[5:4] with addr[11:10] — the same construction the L2 stage
+        // uses. Within-frame beat sets that agree in [5:4] (strided walks,
+        // the dominant L1 self-collision class) then spread across L1
+        // outputs whenever their higher bits differ. Bijective within the
+        // stripped routing field, so bank/row decode is unaffected.
+        const uint64_t l1 = ((a >> 4) + (a >> 10)) & 0x3;
+        r                 = (r & ~(static_cast<uint64_t>(0x3) << 4)) | (l1 << 4);
+#endif
+        return r;
     }
 
     static uint64_t local_addr(uint64_t a) {
@@ -226,7 +201,7 @@ SC_MODULE(top_crossbar) {
 
     void compute_bank_addr() {
         for (int i = 0; i < NUM_PHYS_BANKS; ++i)
-            bank_addr[i].write(local_addr(l3_bank_addr[i].read()));
+            bank_addr[i].write(local_addr(l3_bank[i].addr.read()));
     }
 
     void bind_l1_read() {
@@ -235,23 +210,16 @@ SC_MODULE(top_crossbar) {
             l1_rd_[j].rst_ni(rst_ni);
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int ext = j * NUM_REQ + m;
-                l1_rd_[j].m_req_i[m](rport_req_i[ext]);
-                l1_rd_[j].m_addr_i[m](rport_haddr[ext]);
-                l1_rd_[j].m_we_i[m](rport_we_i[ext]);
-                l1_rd_[j].m_be_i[m](rport_be_i[ext]);
-                l1_rd_[j].m_wdata_i[m](rport_wdata_i[ext]);
-                l1_rd_[j].m_gnt_o[m](rport_gnt_o[ext]);
-                l1_rd_[j].m_rvalid_o[m](rport_rvalid_o[ext]);
-                l1_rd_[j].m_rdata_o[m](rport_rdata_o[ext]);
+                l1_rd_[j].m_ports[m].req_i(rport_req_i[ext]);
+                l1_rd_[j].m_ports[m].addr_i(rport_haddr[ext]);
+                l1_rd_[j].m_ports[m].we_i(rport_we_i[ext]);
+                l1_rd_[j].m_ports[m].be_i(rport_be_i[ext]);
+                l1_rd_[j].m_ports[m].wdata_i(rport_wdata_i[ext]);
+                l1_rd_[j].m_ports[m].gnt_o(rport_gnt_o[ext]);
+                l1_rd_[j].m_ports[m].rvalid_o(rport_rvalid_o[ext]);
+                l1_rd_[j].m_ports[m].rdata_o(rport_rdata_o[ext]);
 
-                l1_rd_[j].b_req_o[m](l1_l2_rd_req[ext]);
-                l1_rd_[j].b_addr_o[m](l1_l2_rd_addr[ext]);
-                l1_rd_[j].b_we_o[m](l1_l2_rd_we[ext]);
-                l1_rd_[j].b_be_o[m](l1_l2_rd_be[ext]);
-                l1_rd_[j].b_wdata_o[m](l1_l2_rd_wdata[ext]);
-                l1_rd_[j].b_gnt_i[m](l1_l2_rd_gnt[ext]);
-                l1_rd_[j].b_rvalid_i[m](l1_l2_rd_rvalid[ext]);
-                l1_rd_[j].b_rdata_i[m](l1_l2_rd_rdata[ext]);
+                bind_obi(l1_rd_[j].b_ports[m], l1_l2_rd[ext]);
             }
         }
     }
@@ -262,23 +230,16 @@ SC_MODULE(top_crossbar) {
             l1_wr_[j].rst_ni(rst_ni);
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int ext = j * NUM_REQ + m;
-                l1_wr_[j].m_req_i[m](wport_req_i[ext]);
-                l1_wr_[j].m_addr_i[m](wport_haddr[ext]);
-                l1_wr_[j].m_we_i[m](wport_we_i[ext]);
-                l1_wr_[j].m_be_i[m](wport_be_i[ext]);
-                l1_wr_[j].m_wdata_i[m](wport_wdata_i[ext]);
-                l1_wr_[j].m_gnt_o[m](wport_gnt_o[ext]);
-                l1_wr_[j].m_rvalid_o[m](wport_rvalid_o[ext]);
-                l1_wr_[j].m_rdata_o[m](wport_rdata_o[ext]);
+                l1_wr_[j].m_ports[m].req_i(wport_req_i[ext]);
+                l1_wr_[j].m_ports[m].addr_i(wport_haddr[ext]);
+                l1_wr_[j].m_ports[m].we_i(wport_we_i[ext]);
+                l1_wr_[j].m_ports[m].be_i(wport_be_i[ext]);
+                l1_wr_[j].m_ports[m].wdata_i(wport_wdata_i[ext]);
+                l1_wr_[j].m_ports[m].gnt_o(wport_gnt_o[ext]);
+                l1_wr_[j].m_ports[m].rvalid_o(wport_rvalid_o[ext]);
+                l1_wr_[j].m_ports[m].rdata_o(wport_rdata_o[ext]);
 
-                l1_wr_[j].b_req_o[m](l1_l2_wr_req[ext]);
-                l1_wr_[j].b_addr_o[m](l1_l2_wr_addr[ext]);
-                l1_wr_[j].b_we_o[m](l1_l2_wr_we[ext]);
-                l1_wr_[j].b_be_o[m](l1_l2_wr_be[ext]);
-                l1_wr_[j].b_wdata_o[m](l1_l2_wr_wdata[ext]);
-                l1_wr_[j].b_gnt_i[m](l1_l2_wr_gnt[ext]);
-                l1_wr_[j].b_rvalid_i[m](l1_l2_wr_rvalid[ext]);
-                l1_wr_[j].b_rdata_i[m](l1_l2_wr_rdata[ext]);
+                bind_obi(l1_wr_[j].b_ports[m], l1_l2_wr[ext]);
             }
         }
     }
@@ -289,25 +250,11 @@ SC_MODULE(top_crossbar) {
             l2_rd_[k].rst_ni(rst_ni);
             for (int j = 0; j < NUM_RPORT; ++j) {
                 const int sig = j * NUM_REQ + k;
-                l2_rd_[k].m_req_i[j](l1_l2_rd_req[sig]);
-                l2_rd_[k].m_addr_i[j](l1_l2_rd_addr[sig]);
-                l2_rd_[k].m_we_i[j](l1_l2_rd_we[sig]);
-                l2_rd_[k].m_be_i[j](l1_l2_rd_be[sig]);
-                l2_rd_[k].m_wdata_i[j](l1_l2_rd_wdata[sig]);
-                l2_rd_[k].m_gnt_o[j](l1_l2_rd_gnt[sig]);
-                l2_rd_[k].m_rvalid_o[j](l1_l2_rd_rvalid[sig]);
-                l2_rd_[k].m_rdata_o[j](l1_l2_rd_rdata[sig]);
+                bind_obi(l2_rd_[k].m_ports[j], l1_l2_rd[sig]);
             }
             for (int g = 0; g < NUM_BANK_GRP; ++g) {
                 const int b = k * NUM_BANK_GRP + g;
-                l2_rd_[k].b_req_o[g](l2_l3_rd_req[b]);
-                l2_rd_[k].b_addr_o[g](l2_l3_rd_addr[b]);
-                l2_rd_[k].b_we_o[g](l2_l3_rd_we[b]);
-                l2_rd_[k].b_be_o[g](l2_l3_rd_be[b]);
-                l2_rd_[k].b_wdata_o[g](l2_l3_rd_wdata[b]);
-                l2_rd_[k].b_gnt_i[g](l2_l3_rd_gnt[b]);
-                l2_rd_[k].b_rvalid_i[g](l2_l3_rd_rvalid[b]);
-                l2_rd_[k].b_rdata_i[g](l2_l3_rd_rdata[b]);
+                bind_obi(l2_rd_[k].b_ports[g], l2_l3_rd[b]);
             }
         }
     }
@@ -318,25 +265,11 @@ SC_MODULE(top_crossbar) {
             l2_wr_[k].rst_ni(rst_ni);
             for (int j = 0; j < NUM_WPORT; ++j) {
                 const int sig = j * NUM_REQ + k;
-                l2_wr_[k].m_req_i[j](l1_l2_wr_req[sig]);
-                l2_wr_[k].m_addr_i[j](l1_l2_wr_addr[sig]);
-                l2_wr_[k].m_we_i[j](l1_l2_wr_we[sig]);
-                l2_wr_[k].m_be_i[j](l1_l2_wr_be[sig]);
-                l2_wr_[k].m_wdata_i[j](l1_l2_wr_wdata[sig]);
-                l2_wr_[k].m_gnt_o[j](l1_l2_wr_gnt[sig]);
-                l2_wr_[k].m_rvalid_o[j](l1_l2_wr_rvalid[sig]);
-                l2_wr_[k].m_rdata_o[j](l1_l2_wr_rdata[sig]);
+                bind_obi(l2_wr_[k].m_ports[j], l1_l2_wr[sig]);
             }
             for (int g = 0; g < NUM_BANK_GRP; ++g) {
                 const int b = k * NUM_BANK_GRP + g;
-                l2_wr_[k].b_req_o[g](l2_l3_wr_req[b]);
-                l2_wr_[k].b_addr_o[g](l2_l3_wr_addr[b]);
-                l2_wr_[k].b_we_o[g](l2_l3_wr_we[b]);
-                l2_wr_[k].b_be_o[g](l2_l3_wr_be[b]);
-                l2_wr_[k].b_wdata_o[g](l2_l3_wr_wdata[b]);
-                l2_wr_[k].b_gnt_i[g](l2_l3_wr_gnt[b]);
-                l2_wr_[k].b_rvalid_i[g](l2_l3_wr_rvalid[b]);
-                l2_wr_[k].b_rdata_i[g](l2_l3_wr_rdata[b]);
+                bind_obi(l2_wr_[k].b_ports[g], l2_l3_wr[b]);
             }
         }
     }
@@ -346,48 +279,28 @@ SC_MODULE(top_crossbar) {
             l3_[b].clk_i(clk_i);
             l3_[b].rst_ni(rst_ni);
 
-            l3_[b].m_req_i[0](l2_l3_rd_req[b]);
-            l3_[b].m_addr_i[0](l2_l3_rd_addr[b]);
-            l3_[b].m_we_i[0](l2_l3_rd_we[b]);
-            l3_[b].m_be_i[0](l2_l3_rd_be[b]);
-            l3_[b].m_wdata_i[0](l2_l3_rd_wdata[b]);
-            l3_[b].m_gnt_o[0](l2_l3_rd_gnt[b]);
-            l3_[b].m_rvalid_o[0](l2_l3_rd_rvalid[b]);
-            l3_[b].m_rdata_o[0](l2_l3_rd_rdata[b]);
-
-            l3_[b].m_req_i[1](l2_l3_wr_req[b]);
-            l3_[b].m_addr_i[1](l2_l3_wr_addr[b]);
-            l3_[b].m_we_i[1](l2_l3_wr_we[b]);
-            l3_[b].m_be_i[1](l2_l3_wr_be[b]);
-            l3_[b].m_wdata_i[1](l2_l3_wr_wdata[b]);
-            l3_[b].m_gnt_o[1](l2_l3_wr_gnt[b]);
-            l3_[b].m_rvalid_o[1](l2_l3_wr_rvalid[b]);
-            l3_[b].m_rdata_o[1](l2_l3_wr_rdata[b]);
+            bind_obi(l3_[b].m_ports[0], l2_l3_rd[b]);
+            bind_obi(l3_[b].m_ports[1], l2_l3_wr[b]);
 
             for (int i = 0; i < 2; ++i) {
                 const int ph = b * 2 + i;
-                l3_[b].b_req_o[i](l3_bank_req[ph]);
-                l3_[b].b_addr_o[i](l3_bank_addr[ph]);
-                l3_[b].b_we_o[i](l3_bank_we[ph]);
-                l3_[b].b_be_o[i](l3_bank_be[ph]);
-                l3_[b].b_wdata_o[i](l3_bank_wdata[ph]);
-                l3_[b].b_gnt_i[i](l3_bank_gnt[ph]);
-                l3_[b].b_rvalid_i[i](l3_bank_rvalid[ph]);
-                l3_[b].b_rdata_i[i](l3_bank_rdata[ph]);
+                bind_obi(l3_[b].b_ports[i], l3_bank[ph]);
             }
         }
 
         for (int i = 0; i < NUM_PHYS_BANKS; ++i) {
             banks_[i].clk_i(clk_i);
             banks_[i].rst_ni(rst_ni);
-            banks_[i].req_i(l3_bank_req[i]);
-            banks_[i].addr_i(bank_addr[i]);
-            banks_[i].we_i(l3_bank_we[i]);
-            banks_[i].be_i(l3_bank_be[i]);
-            banks_[i].wdata_i(l3_bank_wdata[i]);
-            banks_[i].gnt_o(l3_bank_gnt[i]);
-            banks_[i].rvalid_o(l3_bank_rvalid[i]);
-            banks_[i].rdata_o(l3_bank_rdata[i]);
+            // Not bind_obi(banks_[i].obi, l3_bank[i]): addr_i must take the
+            // routing-stripped bank_addr, not l3_bank[i].addr itself.
+            banks_[i].obi.req_i(l3_bank[i].req);
+            banks_[i].obi.addr_i(bank_addr[i]);
+            banks_[i].obi.we_i(l3_bank[i].we);
+            banks_[i].obi.be_i(l3_bank[i].be);
+            banks_[i].obi.wdata_i(l3_bank[i].wdata);
+            banks_[i].obi.gnt_o(l3_bank[i].gnt);
+            banks_[i].obi.rvalid_o(l3_bank[i].rvalid);
+            banks_[i].obi.rdata_o(l3_bank[i].rdata);
         }
     }
 
@@ -411,7 +324,7 @@ SC_MODULE(top_crossbar) {
 
         SC_METHOD(compute_bank_addr);
         for (int i = 0; i < NUM_PHYS_BANKS; ++i)
-            sensitive << l3_bank_addr[i];
+            sensitive << l3_bank[i].addr;
 
         bind_l1_read();
         bind_l1_write();

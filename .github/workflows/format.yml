@@ -15,9 +15,9 @@ jobs:
 
       - name: Check formatting
         run: |
-          nix develop --command make format
+          nix develop --command edaf fmt
           if ! git diff --quiet; then
-            echo "Formatting differences found. Run 'make format' locally and commit the result."
+            echo "Formatting differences found. Run 'make fmt' locally and commit the result."
             git diff
             exit 1
           fi

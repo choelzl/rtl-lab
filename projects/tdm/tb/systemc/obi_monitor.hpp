@@ -31,21 +31,14 @@
 #include <string>
 
 #include "obi_data.hpp"
+#include "obi_ports.hpp"
 
-template <int N, int BYTES>
-SC_MODULE(obi_monitor) {
+template <int N, int BYTES> SC_MODULE(obi_monitor) {
     using data_t = obi_data<BYTES>;
 
-    sc_in<bool>     clk_i;
-    sc_in<bool>     rst_ni;
-    sc_in<bool>     req_i[N];
-    sc_in<uint64_t> addr_i[N];
-    sc_in<bool>     we_i[N];
-    sc_in<uint32_t> be_i[N];
-    sc_in<data_t>   wdata_i[N];
-    sc_in<bool>     gnt_i[N];
-    sc_in<bool>     rvalid_i[N];
-    sc_in<data_t>   rdata_i[N];
+    sc_in<bool>                clk_i;
+    sc_in<bool>                rst_ni;
+    obi_observer_ports<data_t> obi[N];
 
   private:
     struct inflight_t {
@@ -74,8 +67,8 @@ SC_MODULE(obi_monitor) {
     }
 
     static std::string fmt_data(const data_t &d) {
-        constexpr int W      = BYTES * 8;
-        constexpr int chunks = (W + 31) / 32;
+        constexpr int      W      = BYTES * 8;
+        constexpr int      chunks = (W + 31) / 32;
         std::ostringstream os;
         os << "0x";
         for (int i = chunks - 1; i >= 0; --i) {
@@ -111,24 +104,24 @@ SC_MODULE(obi_monitor) {
             return;
 
         for (int p = 0; p < N; ++p) {
-            const bool req    = req_i[p].read();
-            const bool gnt    = gnt_i[p].read();
-            const bool rvalid = rvalid_i[p].read();
+            const bool req    = obi[p].req_i.read();
+            const bool gnt    = obi[p].gnt_i.read();
+            const bool rvalid = obi[p].rvalid_i.read();
 
             const bool req_rise  = req && !prev_req_[p];
-            const bool back2back = req && prev_gnt_[p];  // new addr phase after back-to-back gnt
+            const bool back2back = req && prev_gnt_[p]; // new addr phase after back-to-back gnt
             const bool gnt_fire  = gnt && req;
 
             if (req_rise || back2back) {
-                emit(p, "REQ", addr_i[p].read(), we_i[p].read(), be_i[p].read(),
-                     wdata_i[p].read(), data_t(0), false);
+                emit(p, "REQ", obi[p].addr_i.read(), obi[p].we_i.read(), obi[p].be_i.read(),
+                     obi[p].wdata_i.read(), data_t(0), false);
             }
 
             if (gnt_fire) {
                 inflight_[p].push_back(
-                    {addr_i[p].read(), we_i[p].read(), wdata_i[p].read()});
-                emit(p, "GNT", addr_i[p].read(), we_i[p].read(), be_i[p].read(),
-                     wdata_i[p].read(), data_t(0), false);
+                    {obi[p].addr_i.read(), obi[p].we_i.read(), obi[p].wdata_i.read()});
+                emit(p, "GNT", obi[p].addr_i.read(), obi[p].we_i.read(), obi[p].be_i.read(),
+                     obi[p].wdata_i.read(), data_t(0), false);
             }
 
             // Level-triggered RSP: emit for every cycle rvalid is asserted while
@@ -138,10 +131,10 @@ SC_MODULE(obi_monitor) {
             if (rvalid) {
                 if (!inflight_[p].empty()) {
                     const inflight_t &inf = inflight_[p].front();
-                    emit(p, "RSP", inf.addr, inf.we, 0, inf.wdata, rdata_i[p].read(), true);
+                    emit(p, "RSP", inf.addr, inf.we, 0, inf.wdata, obi[p].rdata_i.read(), true);
                     inflight_[p].pop_front();
                 } else {
-                    emit(p, "RSP!", 0, false, 0, data_t(0), rdata_i[p].read(), true);
+                    emit(p, "RSP!", 0, false, 0, data_t(0), obi[p].rdata_i.read(), true);
                 }
             }
 

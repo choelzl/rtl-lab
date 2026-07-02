@@ -2,7 +2,7 @@
 
 A reduced **single-channel** subset of the Open Bus Interface (OBI) v1.6.0 — see [OBI-v1.6.0.pdf](../protocols/OBI-v1.6.0.pdf) — shared by all designs in this project (the [crossbar](crossbar.md) and the [TDM](tdm.md) interconnects).
 
-> **Multi-word variant.** The TDM design's internal datapath carries a **group of `N` words** per channel; that extension (per-word handshake, scalar base address) is documented separately in [x_obi.md](x_obi.md).
+> **Grouped use in the TDM datapath.** The TDM backend carries **`N` of these links in parallel** as one request group (one lane per TDM slot): `req`/`addr`/`wdata`/`gnt`/`rvalid`/`rdata` are per-lane, while `we`/`be` are broadcast to the whole group, and `addr == 0` marks an unused NOP lane that is granted without ever reaching a bank. There is no separate protocol — see [tdm.md](tdm.md) and the header of [tdm.hpp](../../rtl/systemc/tdm.hpp).
 
 OBI is a point-to-point, request/grant **manager↔subordinate** protocol. We collapse it to a **single channel** carrying both request and response, using only these signals (plus the global `clk` / `reset_n`):
 

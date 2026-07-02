@@ -19,9 +19,15 @@
 //   T10  Back-to-back reads: two consecutive read cycles return correct data
 //   T11  Overwrite: second write to same row takes effect
 //   T12  Reset mid-operation: rvalid deasserts immediately
+//   T13  Row index wraps modulo NUM_ROW instead of faulting out-of-range
+//   T14  Walking single-byte enable: each byte lane lands in its own slot
+//   T15  we=1/be=0 is a silent no-op that is still granted and acked
+//   T16  Interleaved be patterns (0x5/0xA) compose without cross-lane bleed
+//   T17  Full/partial/full overwrite sequence composes exactly
 // -----------------------------------------------------------------------------
 
 #include "bank.hpp"
+#include "unit_test_common.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <systemc.h>
@@ -30,22 +36,6 @@ static constexpr int kNumRows  = 8;
 static constexpr int kBytesRow = 4;
 using DUT                      = bank<kNumRows, kBytesRow>;
 using data_t                   = DUT::data_t;
-
-// ---------------------------------------------------------------------------
-// Test accounting
-// ---------------------------------------------------------------------------
-static int g_pass = 0;
-static int g_fail = 0;
-
-static void CHECK(bool cond, const char *label) {
-    if (cond) {
-        ++g_pass;
-        std::printf("  PASS  %s\n", label);
-    } else {
-        ++g_fail;
-        std::printf("  FAIL  %s\n", label);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Testbench module
@@ -71,14 +61,14 @@ SC_MODULE(tb) {
         dut = new DUT("dut");
         dut->clk_i(clk);
         dut->rst_ni(rst_n);
-        dut->req_i(req_i);
-        dut->addr_i(addr_i);
-        dut->we_i(we_i);
-        dut->be_i(be_i);
-        dut->wdata_i(wdata_i);
-        dut->gnt_o(gnt_o);
-        dut->rvalid_o(rvalid_o);
-        dut->rdata_o(rdata_o);
+        dut->obi.req_i(req_i);
+        dut->obi.addr_i(addr_i);
+        dut->obi.we_i(we_i);
+        dut->obi.be_i(be_i);
+        dut->obi.wdata_i(wdata_i);
+        dut->obi.gnt_o(gnt_o);
+        dut->obi.rvalid_o(rvalid_o);
+        dut->obi.rdata_o(rdata_o);
 
         SC_THREAD(run);
     }
@@ -91,11 +81,6 @@ SC_MODULE(tb) {
     // Helpers
     // -----------------------------------------------------------------------
 
-    void tick() {
-        wait(clk.posedge_event());
-        wait(1, SC_NS);
-    }
-
     void idle_inputs() {
         req_i.write(false);
         addr_i.write(0);
@@ -107,10 +92,10 @@ SC_MODULE(tb) {
     void do_reset() {
         idle_inputs();
         rst_n.write(false);
-        tick();
-        tick();
+        tick(clk);
+        tick(clk);
         rst_n.write(true);
-        tick();
+        tick(clk);
     }
 
     // Issue a write; returns after one tick with rvalid=1, rdata=0.
@@ -120,7 +105,7 @@ SC_MODULE(tb) {
         addr_i.write(addr);
         wdata_i.write(data_t(static_cast<unsigned long long>(data)));
         be_i.write(be);
-        tick();
+        tick(clk);
         idle_inputs();
     }
 
@@ -130,7 +115,7 @@ SC_MODULE(tb) {
         we_i.write(false);
         addr_i.write(addr);
         be_i.write(0xF);
-        tick();
+        tick(clk);
         uint64_t result = rdata_o.read().to_uint64();
         idle_inputs();
         return result;
@@ -148,11 +133,11 @@ SC_MODULE(tb) {
         std::printf("\n=== T01: Reset outputs ===\n");
         idle_inputs();
         rst_n.write(false);
-        tick();
+        tick(clk);
         CHECK(!rvalid_o.read(), "T01 rvalid_o=0 during reset");
         CHECK(rdata_o.read().to_uint64() == 0ULL, "T01 rdata_o=0 during reset");
         rst_n.write(true);
-        tick();
+        tick(clk);
 
         // -------------------------------------------------------------------
         // T02 — gnt_o is combinatorial: high immediately when req_i asserted
@@ -162,7 +147,7 @@ SC_MODULE(tb) {
         wait(1, SC_NS);
         CHECK(gnt_o.read(), "T02 gnt_o=1 without clock edge");
         idle_inputs();
-        tick();
+        tick(clk);
 
         // -------------------------------------------------------------------
         // T03 — gnt_o=0 immediately when req_i deasserted
@@ -173,7 +158,7 @@ SC_MODULE(tb) {
         req_i.write(false);
         wait(1, SC_NS);
         CHECK(!gnt_o.read(), "T03 gnt_o=0 after req_i deasserted");
-        tick();
+        tick(clk);
 
         // -------------------------------------------------------------------
         // T04 — Read zero-initialised memory returns 0
@@ -184,7 +169,7 @@ SC_MODULE(tb) {
         addr_i.write(0);
         we_i.write(false);
         be_i.write(0xF);
-        tick();
+        tick(clk);
         CHECK(rvalid_o.read(), "T04 rvalid_o=1 on read response");
         CHECK(rdata_o.read().to_uint64() == 0ULL, "T04 rdata_o=0 from zero-init");
         idle_inputs();
@@ -194,7 +179,7 @@ SC_MODULE(tb) {
         // -------------------------------------------------------------------
         std::printf("\n=== T05: No rvalid when no prior request ===\n");
         idle_inputs();
-        tick();
+        tick(clk);
         CHECK(!rvalid_o.read(), "T05 rvalid_o=0 with no req previous cycle");
 
         // -------------------------------------------------------------------
@@ -207,7 +192,7 @@ SC_MODULE(tb) {
         addr_i.write(0);
         wdata_i.write(data_t(0xDEADBEEFULL));
         be_i.write(0xF);
-        tick();
+        tick(clk);
         CHECK(rvalid_o.read(), "T06 rvalid_o=1 on write response");
         CHECK(rdata_o.read().to_uint64() == 0ULL, "T06 rdata_o=0 on write (no read data)");
         idle_inputs();
@@ -218,13 +203,13 @@ SC_MODULE(tb) {
         std::printf("\n=== T07: Write then read round-trip ===\n");
         do_reset();
         do_write(0, 0xCAFEBABEULL);
-        tick(); // idle cycle: rvalid=0
+        tick(clk); // idle cycle: rvalid=0
         CHECK(!rvalid_o.read(), "T07 rvalid_o=0 on idle cycle after write");
         req_i.write(true);
         we_i.write(false);
         addr_i.write(0);
         be_i.write(0xF);
-        tick();
+        tick(clk);
         CHECK(rvalid_o.read(), "T07 rvalid_o=1 on read response");
         CHECK(rdata_o.read().to_uint64() == 0xCAFEBABEULL, "T07 rdata_o matches written value");
         idle_inputs();
@@ -272,12 +257,12 @@ SC_MODULE(tb) {
         we_i.write(false);
         be_i.write(0xF);
         addr_i.write(0);
-        tick();
+        tick(clk);
         bool     rv0 = rvalid_o.read();
         uint64_t rd0 = rdata_o.read().to_uint64();
 
         addr_i.write(4); // keep req_i high, change address
-        tick();
+        tick(clk);
         bool     rv1 = rvalid_o.read();
         uint64_t rd1 = rdata_o.read().to_uint64();
         idle_inputs();
@@ -306,27 +291,106 @@ SC_MODULE(tb) {
         we_i.write(false);
         addr_i.write(0);
         be_i.write(0xF);
-        tick();
+        tick(clk);
         CHECK(rvalid_o.read(), "T12 rvalid=1 before reset");
         idle_inputs();
         // Assert reset — step() runs at next posedge and clears rvalid
         rst_n.write(false);
-        tick();
+        tick(clk);
         CHECK(!rvalid_o.read(), "T12 rvalid=0 immediately after reset");
         rst_n.write(true);
-        tick();
+        tick(clk);
 
         // -------------------------------------------------------------------
-        // Summary
+        // T13 — Row index wraps modulo NUM_ROW instead of faulting
         // -------------------------------------------------------------------
-        std::printf("\n=== Summary ===\n");
-        std::printf("  passed: %d\n", g_pass);
-        std::printf("  failed: %d\n", g_fail);
+        std::printf("\n=== T13: Row wraps modulo NUM_ROW ===\n");
+        do_reset();
+        do_write(0, 0x11111111ULL); // row 0
+        // Address one full bank past row 0: row = (kNumRows*kBytesRow)/kBytesRow = kNumRows,
+        // which wraps to row 0 (kNumRows % kNumRows == 0).
+        const uint64_t wrap_addr = static_cast<uint64_t>(kNumRows) * kBytesRow;
+        CHECK(do_read(wrap_addr) == 0x11111111ULL,
+              "T13a out-of-range addr aliases back to row 0 (read)");
+        do_write(wrap_addr, 0x22222222ULL);
+        CHECK(do_read(0) == 0x22222222ULL, "T13b write through wrapped addr updates row 0");
+        // Two banks past row 0 should alias the same way.
+        const uint64_t wrap_addr2 = static_cast<uint64_t>(2 * kNumRows) * kBytesRow;
+        CHECK(do_read(wrap_addr2) == 0x22222222ULL, "T13c wraps consistently at 2x capacity");
 
-        if (g_fail == 0)
-            std::printf("\nAll tests passed.\n");
-        else
-            std::printf("\n%d test(s) FAILED.\n", g_fail);
+        // -------------------------------------------------------------------
+        // T14 — Walking single-byte enable: each byte lane lands in its own
+        // slot (T08's adjacent-pair masks can't distinguish a lane-index
+        // error in apply_be's l*8 shift; a per-lane walk can)
+        // -------------------------------------------------------------------
+        std::printf("\n=== T14: Walking single-byte enable ===\n");
+        do_reset();
+        do_write(3 * kBytesRow, 0, 0xF); // clear row 3
+        do_write(3 * kBytesRow, 0x000000AAULL, 0x1);
+        do_write(3 * kBytesRow, 0x0000BB00ULL, 0x2);
+        do_write(3 * kBytesRow, 0x00CC0000ULL, 0x4);
+        do_write(3 * kBytesRow, 0xDD000000ULL, 0x8);
+        CHECK(do_read(3 * kBytesRow) == 0xDDCCBBAAULL,
+              "T14 four single-byte writes assemble 0xDDCCBBAA");
+
+        // -------------------------------------------------------------------
+        // T15 — we=1 with be=0 is a silent no-op that still ACKS: the request
+        // is accepted (gnt), produces rvalid, and modifies nothing
+        // -------------------------------------------------------------------
+        std::printf("\n=== T15: be=0 write is an acknowledged no-op ===\n");
+        do_write(4 * kBytesRow, 0xCAFECAFEULL, 0xF);
+        req_i.write(true);
+        we_i.write(true);
+        addr_i.write(4 * kBytesRow);
+        wdata_i.write(data_t(0xDEADBEEFull));
+        be_i.write(0x0);
+        wait(1, SC_NS);
+        CHECK(gnt_o.read(), "T15a be=0 write is still granted");
+        tick(clk);
+        idle_inputs();
+        CHECK(rvalid_o.read(), "T15b be=0 write is still acknowledged (rvalid)");
+        CHECK(do_read(4 * kBytesRow) == 0xCAFECAFEULL, "T15c row content untouched");
+
+        // -------------------------------------------------------------------
+        // T16 — Interleaved (non-contiguous) byte-enable patterns: 0x5 and
+        // 0xA select alternating lanes; together they must compose the full
+        // word with no cross-lane bleed
+        // -------------------------------------------------------------------
+        std::printf("\n=== T16: interleaved byte-enable patterns ===\n");
+        do_write(5 * kBytesRow, 0, 0xF);
+        do_write(5 * kBytesRow, 0x00CC00AAULL, 0x5); // lanes 0 and 2
+        CHECK(do_read(5 * kBytesRow) == 0x00CC00AAULL, "T16a be=0x5 writes lanes 0/2 only");
+        do_write(5 * kBytesRow, 0xDD00BB00ULL, 0xA); // lanes 1 and 3
+        CHECK(do_read(5 * kBytesRow) == 0xDDCCBBAAULL,
+              "T16b be=0xA fills lanes 1/3 without disturbing 0/2");
+
+        // -------------------------------------------------------------------
+        // T17 — Overwrite sequence: full write, partial overwrite, full
+        // overwrite — each step observes exactly the expected composition
+        // -------------------------------------------------------------------
+        std::printf("\n=== T17: overwrite sequence ===\n");
+        do_write(6 * kBytesRow, 0x11111111ULL, 0xF);
+        do_write(6 * kBytesRow, 0x00002222ULL, 0x3); // low half only
+        CHECK(do_read(6 * kBytesRow) == 0x11112222ULL, "T17a partial overwrite low half");
+        do_write(6 * kBytesRow, 0x33333333ULL, 0xF);
+        CHECK(do_read(6 * kBytesRow) == 0x33333333ULL, "T17b full overwrite wins completely");
+        do_write(6 * kBytesRow, 0x00440000ULL, 0x4); // one middle lane
+        CHECK(do_read(6 * kBytesRow) == 0x33443333ULL, "T17c middle-lane overwrite composes");
+
+        // -------------------------------------------------------------------
+        // T18 — rvalid is a one-shot pulse: exactly one response per accepted
+        // request, no repetition on the following idle cycles
+        // -------------------------------------------------------------------
+        std::printf("\n=== T18: rvalid one-shot ===\n");
+        req_i.write(true);
+        we_i.write(false);
+        addr_i.write(6 * kBytesRow);
+        be_i.write(0xF);
+        tick(clk);
+        idle_inputs();
+        CHECK(rvalid_o.read(), "T18a response pulse on the cycle after acceptance");
+        tick(clk);
+        CHECK(!rvalid_o.read(), "T18b pulse is gone the next cycle with no new request");
 
         sc_stop();
     }
@@ -335,5 +399,5 @@ SC_MODULE(tb) {
 int sc_main(int, char *[]) {
     tb tb_inst("tb");
     sc_start();
-    return (g_fail > 0) ? 1 : 0;
+    return report_and_exit();
 }
