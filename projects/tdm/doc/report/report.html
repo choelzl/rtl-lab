@@ -605,6 +605,108 @@ with the TDM bus three-quarters idle, and even without a schedule the single bus
 at most single-digit percentages on the lightest sets.</p>
 <figure class="tbl"><figcaption><span class="cap-label">Table E7:</span> Unfenced sweep — identical stimuli with all but the initial fences removed, so total cycles measure fabric throughput. TDM/xbar = adaptive / crossbar cycles. The TDM·adaptive bus runs 95&ndash;100% occupied in this mode (vs 16&ndash;27% fenced).</figcaption><div class="scroll"><table><thead><tr><th class="ar">set</th><th class="ar">Crossbar</th><th class="ar">TDM·adaptive</th><th class="ar">TDM·RR (8-slot)</th><th class="ar">TDM/xbar</th></tr></thead><tbody><tr><td class="ar">0</td><td class="ar">14039</td><td class="ar">14044</td><td class="ar">22652</td><td class="ar">1.0&times;</td></tr><tr><td class="ar">1</td><td class="ar">11818</td><td class="ar">12319</td><td class="ar">18593</td><td class="ar">1.04&times;</td></tr><tr><td class="ar">2</td><td class="ar">12211</td><td class="ar">12663</td><td class="ar">18593</td><td class="ar">1.04&times;</td></tr><tr><td class="ar">3</td><td class="ar">12345</td><td class="ar">13046</td><td class="ar">18593</td><td class="ar">1.06&times;</td></tr><tr><td class="ar">4</td><td class="ar">11795</td><td class="ar">12498</td><td class="ar">18593</td><td class="ar">1.06&times;</td></tr><tr><td class="ar">5</td><td class="ar">12636</td><td class="ar">13091</td><td class="ar">18593</td><td class="ar">1.04&times;</td></tr><tr><td class="ar">6</td><td class="ar">26652</td><td class="ar">21131</td><td class="ar">40940</td><td class="ar">0.79&times;</td></tr><tr><td class="ar">7</td><td class="ar">11838</td><td class="ar">12459</td><td class="ar">18593</td><td class="ar">1.05&times;</td></tr><tr><td class="ar">8</td><td class="ar">12333</td><td class="ar">12977</td><td class="ar">18593</td><td class="ar">1.05&times;</td></tr><tr><td class="ar">9</td><td class="ar">18881</td><td class="ar">15403</td><td class="ar">20313</td><td class="ar">0.82&times;</td></tr><tr><td class="ar">10</td><td class="ar">15837</td><td class="ar">14631</td><td class="ar">22380</td><td class="ar">0.92&times;</td></tr><tr><td class="ar">11</td><td class="ar">11478</td><td class="ar">12203</td><td class="ar">18593</td><td class="ar">1.06&times;</td></tr><tr><td class="ar">12</td><td class="ar">14665</td><td class="ar">13894</td><td class="ar">21054</td><td class="ar">0.95&times;</td></tr><tr><td class="ar">13</td><td class="ar">12243</td><td class="ar">13154</td><td class="ar">18593</td><td class="ar">1.07&times;</td></tr><tr><td class="ar">14</td><td class="ar">16813</td><td class="ar">13472</td><td class="ar">18593</td><td class="ar">0.8&times;</td></tr><tr><td class="ar">15</td><td class="ar">11658</td><td class="ar">12531</td><td class="ar">18593</td><td class="ar">1.07&times;</td></tr><tr><td class="ar">16</td><td class="ar">12060</td><td class="ar">13075</td><td class="ar">18593</td><td class="ar">1.08&times;</td></tr><tr><td class="ar">17</td><td class="ar">11349</td><td class="ar">11985</td><td class="ar">18593</td><td class="ar">1.06&times;</td></tr><tr><td class="ar">18</td><td class="ar">11347</td><td class="ar">11893</td><td class="ar">18593</td><td class="ar">1.05&times;</td></tr><tr><td class="ar">19</td><td class="ar">11298</td><td class="ar">11714</td><td class="ar">18593</td><td class="ar">1.04&times;</td></tr></tbody></table></div></figure>
 
+<h3>5.4&emsp;Addendum: crossbar-only hash comparison (experimental, revised)</h3>
+<p><em>Revision note.</em> The <code>final/0&ndash;19</code> stimulus export was corrected
+after this addendum's first pass (which ran against the pre-fix traces and reported the
+production crossbar's own <code>XBAR_HASH_L1</code> repair as the baseline). This revision
+reruns everything against the corrected stimuli and, per the sponsor's direction, drops
+<code>XBAR_HASH_L1</code> from the baseline build — the working hypothesis being that the
+repair may have been compensating for the stimulus bug rather than a genuine routing
+problem, so it should be re-justified against clean data rather than assumed. It measures
+this baseline against <code>XBAR_HASH_DYNAMIC</code> only; a third candidate,
+<code>map_func::stride_xor_bank</code> (ported from <code>pythonXOR_mapfun.py</code>), was
+scoped out of this pass — it only produces a 3-bit hash (8 banks) against the crossbar's
+5-bit (32-bank) logical field, and fitting it in (partial-field application, a native
+8-bank instance, or an offline collision replay) needs its own decision, deferred for now.
+The main text's §5.1&ndash;5.3 TDM comparisons are untouched by this revision and still
+reflect the pre-fix stimuli pending a full TDM rerun.</p>
+<p>Table E8 reruns the 20-set fenced sweep (§5.1's config, <code>SEL_LA_LEAD=16</code>) with
+two crossbar builds — plain <code>addr_hash</code> (§2.1, no <code>XBAR_HASH_L1</code>) as
+the new baseline, and the same build with <code>XBAR_HASH_DYNAMIC</code> (§5.4's original
+description below still applies: it substitutes TDM's XOR-skew placement,
+<code>map_func.hpp</code>, for the L1+L2 logical-bank field, leaving L3's even/odd split
+untouched).</p>
+<p>The baseline's own per-beat conflict rate on the corrected stimuli is
+2.7&ndash;29.9% (47&ndash;92% of it at
+L1) — close to the 2.5&ndash;25.6% the <code>XBAR_HASH_L1</code>-repaired build measured on
+the <em>pre-fix</em> stimuli in this addendum's first pass. That similarity is
+consistent with the sponsor's hypothesis: whatever <code>XBAR_HASH_L1</code> was fixing,
+the corrected baseline is already close to it without the repair, on this fleet. It is not
+proof (a proper re-justification would need the repaired build rerun on the same corrected
+stimuli, which this pass does not do), but it does not contradict dropping the repair from
+the baseline either.</p>
+<p>Total cycles barely move — within 0.05% of the new baseline on every one
+of the 20 sets, same bank utilization — because the production schedule's own fence gaps
+absorb the extra contention, the same slack §5.1&ndash;5.2 show hiding the crossbar's own
+residual conflicts generally. Underneath that, though, <code>XBAR_HASH_DYNAMIC</code>'s
+per-beat conflict rate is 5.6&times; higher than the new baseline on
+average (46&ndash;53.6% of beats delayed, vs
+2.7&ndash;29.9% for the baseline), and
+85&ndash;98% of it lands at L1 — nearly all of it. The cause is unchanged
+from the first pass and is not a stimulus artifact: this fleet's dominant task geometry
+(R&thinsp;=&thinsp;C&thinsp;=&thinsp;4, bank_width&thinsp;=&thinsp;16&thinsp;B) collapses
+<code>get_k</code>'s two field boundaries onto the same bit, so the con/str terms of the
+bank-id XOR matrix vanish and <code>bank_id</code> degenerates to close to a raw permutation
+of the address's own L1-field bits. <code>TDM_GETK_GUARD</code> still does not help here
+(confirmed by rerunning with it enabled — identical numbers): the collapse comes from the
+field-boundary sum landing exactly on <code>bank_width</code>'s bit, not from a
+zero-trailing-zero leading dimension, so the guard's condition never fires.
+<strong>Verdict unchanged: TDM's mapping function is not a drop-in improvement for the
+crossbar as-is</strong> — it trades a hash tuned against this project's own production
+traffic for one tuned against TDM's window/task shape, and on this fleet the swap costs
+roughly 5.6&times; the raw contention — it happens not to pay for it only
+because the schedule has slack to spare.</p>
+<figure class="tbl"><figcaption><span class="cap-label">Table E8:</span> Revised XBAR_HASH_DYNAMIC addendum — 20-set fenced sweep, corrected final/0&ndash;19 stimuli. Baseline = plain addr_hash, no XBAR_HASH_L1. conf% = beats delayed &divide; real beats. Total-cycle ratio stays ~1.000&times; everywhere (schedule-absorbed); the conflict-rate columns are where the difference actually shows.</figcaption><div class="scroll"><table><thead><tr><th class="ar">set</th><th class="ar">Crossbar (baseline)</th><th class="ar">Crossbar (TDM hash)</th><th class="ar">ratio</th><th class="ar">conf% baseline</th><th class="ar">conf% dynamic</th></tr></thead><tbody><tr><td class="ar">0</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">28.6%</td><td class="ar">53.6%</td></tr><tr><td class="ar">1</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">14.4%</td><td class="ar">47.1%</td></tr><tr><td class="ar">2</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">17.2%</td><td class="ar">50.8%</td></tr><tr><td class="ar">3</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">14.8%</td><td class="ar">46.0%</td></tr><tr><td class="ar">4</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">6.4%</td><td class="ar">46.9%</td></tr><tr><td class="ar">5</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">20.1%</td><td class="ar">46.3%</td></tr><tr><td class="ar">6</td><td class="ar">134822</td><td class="ar">134886</td><td class="ar">1.0&times;</td><td class="ar">28.2%</td><td class="ar">53.4%</td></tr><tr><td class="ar">7</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">11.3%</td><td class="ar">49.6%</td></tr><tr><td class="ar">8</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">9.7%</td><td class="ar">50.5%</td></tr><tr><td class="ar">9</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">19.1%</td><td class="ar">50.3%</td></tr><tr><td class="ar">10</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">29.9%</td><td class="ar">51.3%</td></tr><tr><td class="ar">11</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">3.5%</td><td class="ar">46.5%</td></tr><tr><td class="ar">12</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">25.3%</td><td class="ar">49.5%</td></tr><tr><td class="ar">13</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">11.5%</td><td class="ar">51.0%</td></tr><tr><td class="ar">14</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">16.6%</td><td class="ar">50.1%</td></tr><tr><td class="ar">15</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">7.9%</td><td class="ar">47.6%</td></tr><tr><td class="ar">16</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">11.8%</td><td class="ar">50.6%</td></tr><tr><td class="ar">17</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">4.2%</td><td class="ar">48.5%</td></tr><tr><td class="ar">18</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">3.7%</td><td class="ar">47.1%</td></tr><tr><td class="ar">19</td><td class="ar">116275</td><td class="ar">116275</td><td class="ar">1.0&times;</td><td class="ar">2.7%</td><td class="ar">47.3%</td></tr></tbody></table></div></figure>
+
+<h3>5.5&emsp;Addendum: isolating the Matrix Unit and single-operand conflicts, per level</h3>
+<p>Revised from the first pass: scoped to <code>final/0</code> alone (one set, not the
+20-set sweep) and the baseline crossbar only (no <code>XBAR_HASH_L1</code>, no
+<code>XBAR_HASH_DYNAMIC</code>), in exchange for a per-level breakdown at each of the same
+six scenarios — full picture, <em>MU</em> (the agu.hpp-driven ports carrying real
+R/C/L/store_mode geometry: <code>ragu_a</code>, <code>ragu_b</code>, <code>ragu_c</code>,
+<code>wagu_a</code>, as opposed to the DMA-style <code>ragu_d</code>/<code>ragu_e</code>/
+<code>wagu_d</code>/<code>wagu_e</code>), and each MU operand run alone (every other port,
+DMA and the other three operands alike, idle).</p>
+<p>The two conflict-counting conventions read differently and both are reported per level
+(L1/L2/L3) and as a total. <strong>Method 1</strong> (beats-blocked) asks, per real beat,
+"was it EVER delayed at level X" — a new per-beat counter
+(<code>tb_top.cpp</code>'s <code>delayed_l1</code>/<code>l2</code>/<code>l3</code>, derived
+from the crossbar's own per-cycle arbitration winners, <code>crossbar.hpp</code>'s
+<code>win_[]</code>) — so L1+L2+L3 can exceed the total whenever a beat's wait touches more
+than one level; the total itself is the union (plain conf%, unchanged definition from
+Tables E1&ndash;E8). <strong>Method 2</strong> (cycle-inflation / wait-cost) asks how many
+extra cycles are spent at level X per 100 real beats — the existing <code>lvl_rd</code>/
+<code>lvl_wr</code> wait-cycle sums (same normalization as Table E3's per-request rates),
+strictly additive, so its total is exactly L1+L2+L3.</p>
+<p>Isolating a single operand (<code>ragu_a</code>/<code>ragu_b</code>/<code>wagu_a</code>
+rows) makes L2 and L3 collapse to exactly 0% under <em>both</em> methods — with only one
+4-lane port group's traffic in the whole fabric, there is no second port group to contend
+with at L2 and no write traffic to contend with at L3, so every conflict is L1 self-collision
+by construction. That is a useful sanity check on the per-lane attribution as much as a
+result. <code>ragu_c</code> carries no traffic in <code>final/0</code> specifically (0 real
+beats), so its row is all zeros — not a claim that operand is conflict-free, just unpopulated
+for this one set.</p>
+<p>Once more than one group is live, the two methods diverge sharply — but only at L1. Full
+picture: Method 1 total 28.6% vs Method 2 total
+59.9% — Method 2 reads roughly
+2.1&times;
+higher, and nearly all of that gap is L1
+(23.7% vs 50.8%) — L2 and L3 barely move
+between methods (5.1%/3.7% vs
+5.4%/3.7%). MU shows the identical
+shape, more sharply (L1: 34.3% vs 73.5%;
+L2/L3 essentially unchanged between methods:
+5.8%/6.7% vs
+5.8%/6.7%) — consistent with §5.5's
+original (20-set) finding that MU concentrates the crossbar's conflicts, now visible per
+level too. The read is: an L2 or L3 collision, when it happens, is almost always resolved in
+about one extra cycle (Method 1's beat-count and Method 2's cycle-count agree because there's
+nothing to distinguish — one touched beat costs about one wait-cycle). L1 collisions are the
+opposite: the gap between the methods means the SAME set of L1-blocked beats accumulates
+substantially more than one wait-cycle each on average — L1 is where the crossbar's
+higher-fold pileups (more than 2 contenders on one output, Table E3/§5.2) actually live.</p>
+<figure class="tbl"><figcaption><span class="cap-label">Table E9:</span> Per-level conflict, final/0 only, baseline crossbar (no XBAR_HASH_L1/XBAR_HASH_DYNAMIC). M1 = Method 1 (beats-blocked: % of real beats ever delayed at that level; total = union, not a sum). M2 = Method 2 (cycle-inflation: extra cycles at that level per 100 real beats; total = exact sum). ragu_c carries no traffic in final/0.</figcaption><div class="scroll"><table><thead><tr><th class="al">scenario</th><th class="ar">M1 L1%</th><th class="ar">M1 L2%</th><th class="ar">M1 L3%</th><th class="ar">M1 total%</th><th class="ar">M2 L1%</th><th class="ar">M2 L2%</th><th class="ar">M2 L3%</th><th class="ar">M2 total%</th></tr></thead><tbody><tr><td class="al">Full picture (all 9 groups)</td><td class="ar">23.7%</td><td class="ar">5.1%</td><td class="ar">3.7%</td><td class="ar">28.6%</td><td class="ar">50.8%</td><td class="ar">5.4%</td><td class="ar">3.7%</td><td class="ar">59.9%</td></tr><tr><td class="al">MU (ragu_a/b/c + wagu_a)</td><td class="ar">34.3%</td><td class="ar">5.8%</td><td class="ar">6.7%</td><td class="ar">42.2%</td><td class="ar">73.5%</td><td class="ar">5.8%</td><td class="ar">6.7%</td><td class="ar">86.0%</td></tr><tr><td class="al">ragu_a alone</td><td class="ar">38.7%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">38.7%</td><td class="ar">76.8%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">76.8%</td></tr><tr><td class="al">ragu_b alone</td><td class="ar">28.1%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">28.1%</td><td class="ar">55.5%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">55.5%</td></tr><tr><td class="al">ragu_c alone</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">0.0%</td></tr><tr><td class="al">wagu_a alone</td><td class="ar">29.1%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">29.1%</td><td class="ar">54.9%</td><td class="ar">0.0%</td><td class="ar">0.0%</td><td class="ar">54.9%</td></tr></tbody></table></div></figure>
+
 <h2>6&emsp;Conclusions</h2>
 <p>Under its intended, schedule-driven workload the windowed TDM interconnect is a full
 substitute for the three-level crossbar, and on the corrected production stimuli it is

@@ -641,6 +641,83 @@ eval_unf_rows = [
      f'{n["ratio_ad_cb"]}&times;')
     for n in eval_unf]
 
+# --- §5.4 addendum: XBAR_HASH_DYNAMIC (map_func.hpp's XOR-skew hash borrowed
+# from tdm.hpp, applied to the crossbar's L1+L2 field) vs the production
+# static+XBAR_HASH_L1 baseline above, same 20-set fenced sweep. -------------
+eval_dyn = []
+_dyn_path = DATA / "eval_xbar_dynamic.csv"
+if _dyn_path.exists():
+    _lines = _dyn_path.read_text().splitlines()
+    _keys = _lines[0].split(",")
+    for line in _lines[1:]:
+        if not line.strip():
+            continue
+        eval_dyn.append(dict(zip(_keys, line.split(","))))
+eval_dyn_rows = [
+    (d["dataset"], d["cb_cycles"], d["cbdyn_cycles"], f'{d["ratio_cbdyn_cb"]}&times;',
+     f'{d["cb_conf_pct"]}%', f'{d["cbdyn_conf_pct"]}%')
+    for d in eval_dyn]
+
+def _rng_dyn(key, cast=float):
+    vals = [cast(d[key]) for d in eval_dyn]
+    return (min(vals), max(vals)) if vals else (0, 0)
+
+dyn_cyc_dev_max = (
+    max(100 * abs(int(d["cbdyn_cycles"]) - int(d["cb_cycles"])) / int(d["cb_cycles"])
+        for d in eval_dyn)
+    if eval_dyn else 0
+)
+dyn_conf_lo, dyn_conf_hi = _rng_dyn("cbdyn_conf_pct")
+dyn_cb_conf_lo, dyn_cb_conf_hi = _rng_dyn("cb_conf_pct")
+dyn_l1_lo, dyn_l1_hi = _rng_dyn("cbdyn_lvl_l1_pct", int)
+dyn_cb_l1_lo, dyn_cb_l1_hi = _rng_dyn("cb_lvl_l1_pct", int)
+dyn_avg_conf_ratio = (
+    round(sum(float(d["cbdyn_conf_pct"]) / float(d["cb_conf_pct"]) for d in eval_dyn) / len(eval_dyn), 1)
+    if eval_dyn else 0
+)
+
+# --- §5.5 addendum: isolation sweep on final/0 only, baseline crossbar only
+# (no XBAR_HASH_L1, no XBAR_HASH_DYNAMIC) -- full picture, MU-only ("Matrix
+# Unit": ragu_a/b/c + wagu_a, the agu.hpp-driven ports with R/C/L/store_mode
+# geometry, as opposed to the DMA-style ragu_d/e + wagu_d/e), and each MU
+# operand run alone (no other group's traffic present at all). Per level
+# (L1/L2/L3) and total, in both conflict-counting conventions:
+#   Method 1 (beats-blocked): % of real beats that were EVER delayed at that
+#     level -- tb_top.cpp's new delayed_l1/l2/l3 counters, per-beat, so a
+#     beat that touched >1 level counts in each (L1+L2+L3 can exceed Total,
+#     which is the union: % of beats delayed at ANY level, i.e. plain conf%).
+#   Method 2 (cycle-inflation / wait-cost): extra cycles at that level per
+#     100 real beats -- the existing lvl_rd/lvl_wr wait-cycle sums (same
+#     normalization as Table E3's per-request rates), strictly additive
+#     across levels, so Total = L1+L2+L3 exactly.
+eval_lvl = []
+_lvl_path = DATA / "eval_xbar_levels_set0.csv"
+if _lvl_path.exists():
+    _lines = _lvl_path.read_text().splitlines()
+    _keys = _lines[0].split(",")
+    for line in _lines[1:]:
+        if not line.strip():
+            continue
+        eval_lvl.append(dict(zip(_keys, line.split(","))))
+ISO_LABELS = {"full": "Full picture (all 9 groups)", "mu": "MU (ragu_a/b/c + wagu_a)",
+              "ragu_a": "ragu_a alone", "ragu_b": "ragu_b alone",
+              "ragu_c": "ragu_c alone", "wagu_a": "wagu_a alone"}
+ISO_ORDER = ["full", "mu", "ragu_a", "ragu_b", "ragu_c", "wagu_a"]
+_lvl_by_scn = {d["scenario"]: d for d in eval_lvl}
+eval_lvl_rows = []
+for scn in ISO_ORDER:
+    d = _lvl_by_scn.get(scn)
+    if not d:
+        continue
+    eval_lvl_rows.append((
+        ISO_LABELS[scn],
+        f'{d["m1_l1_pct"]}%', f'{d["m1_l2_pct"]}%', f'{d["m1_l3_pct"]}%', f'{d["m1_total_pct"]}%',
+        f'{d["m2_l1_pct"]}%', f'{d["m2_l2_pct"]}%', f'{d["m2_l3_pct"]}%', f'{d["m2_total_pct"]}%',
+    ))
+lvl_full = _lvl_by_scn.get("full", {})
+lvl_mu = _lvl_by_scn.get("mu", {})
+lvl_ragu_a = _lvl_by_scn.get("ragu_a", {})
+
 def _rng(key, cast=float):
     vals = [cast(u[key]) for u in eval_util]
     return (min(vals), max(vals)) if vals else (0, 0)
@@ -1447,6 +1524,114 @@ at most single-digit percentages on the lightest sets.</p>
           eval_unf_rows,
           "Unfenced sweep — identical stimuli with all but the initial fences removed, so total cycles measure fabric throughput. TDM/xbar = adaptive / crossbar cycles. The TDM·adaptive bus runs 95&ndash;100% occupied in this mode (vs 16&ndash;27% fenced).", "E7",
           aligns=["r"] * 5)}
+
+<h3>5.4&emsp;Addendum: crossbar-only hash comparison (experimental, revised)</h3>
+<p><em>Revision note.</em> The <code>final/0&ndash;19</code> stimulus export was corrected
+after this addendum's first pass (which ran against the pre-fix traces and reported the
+production crossbar's own <code>XBAR_HASH_L1</code> repair as the baseline). This revision
+reruns everything against the corrected stimuli and, per the sponsor's direction, drops
+<code>XBAR_HASH_L1</code> from the baseline build — the working hypothesis being that the
+repair may have been compensating for the stimulus bug rather than a genuine routing
+problem, so it should be re-justified against clean data rather than assumed. It measures
+this baseline against <code>XBAR_HASH_DYNAMIC</code> only; a third candidate,
+<code>map_func::stride_xor_bank</code> (ported from <code>pythonXOR_mapfun.py</code>), was
+scoped out of this pass — it only produces a 3-bit hash (8 banks) against the crossbar's
+5-bit (32-bank) logical field, and fitting it in (partial-field application, a native
+8-bank instance, or an offline collision replay) needs its own decision, deferred for now.
+The main text's §5.1&ndash;5.3 TDM comparisons are untouched by this revision and still
+reflect the pre-fix stimuli pending a full TDM rerun.</p>
+<p>Table E8 reruns the 20-set fenced sweep (§5.1's config, <code>SEL_LA_LEAD=16</code>) with
+two crossbar builds — plain <code>addr_hash</code> (§2.1, no <code>XBAR_HASH_L1</code>) as
+the new baseline, and the same build with <code>XBAR_HASH_DYNAMIC</code> (§5.4's original
+description below still applies: it substitutes TDM's XOR-skew placement,
+<code>map_func.hpp</code>, for the L1+L2 logical-bank field, leaving L3's even/odd split
+untouched).</p>
+<p>The baseline's own per-beat conflict rate on the corrected stimuli is
+{dyn_cb_conf_lo:g}&ndash;{dyn_cb_conf_hi:g}% ({dyn_cb_l1_lo}&ndash;{dyn_cb_l1_hi}% of it at
+L1) — close to the 2.5&ndash;25.6% the <code>XBAR_HASH_L1</code>-repaired build measured on
+the <em>pre-fix</em> stimuli in this addendum's first pass. That similarity is
+consistent with the sponsor's hypothesis: whatever <code>XBAR_HASH_L1</code> was fixing,
+the corrected baseline is already close to it without the repair, on this fleet. It is not
+proof (a proper re-justification would need the repaired build rerun on the same corrected
+stimuli, which this pass does not do), but it does not contradict dropping the repair from
+the baseline either.</p>
+<p>Total cycles barely move — within {dyn_cyc_dev_max:.2f}% of the new baseline on every one
+of the 20 sets, same bank utilization — because the production schedule's own fence gaps
+absorb the extra contention, the same slack §5.1&ndash;5.2 show hiding the crossbar's own
+residual conflicts generally. Underneath that, though, <code>XBAR_HASH_DYNAMIC</code>'s
+per-beat conflict rate is {dyn_avg_conf_ratio:g}&times; higher than the new baseline on
+average ({dyn_conf_lo:g}&ndash;{dyn_conf_hi:g}% of beats delayed, vs
+{dyn_cb_conf_lo:g}&ndash;{dyn_cb_conf_hi:g}% for the baseline), and
+{dyn_l1_lo}&ndash;{dyn_l1_hi}% of it lands at L1 — nearly all of it. The cause is unchanged
+from the first pass and is not a stimulus artifact: this fleet's dominant task geometry
+(R&thinsp;=&thinsp;C&thinsp;=&thinsp;4, bank_width&thinsp;=&thinsp;16&thinsp;B) collapses
+<code>get_k</code>'s two field boundaries onto the same bit, so the con/str terms of the
+bank-id XOR matrix vanish and <code>bank_id</code> degenerates to close to a raw permutation
+of the address's own L1-field bits. <code>TDM_GETK_GUARD</code> still does not help here
+(confirmed by rerunning with it enabled — identical numbers): the collapse comes from the
+field-boundary sum landing exactly on <code>bank_width</code>'s bit, not from a
+zero-trailing-zero leading dimension, so the guard's condition never fires.
+<strong>Verdict unchanged: TDM's mapping function is not a drop-in improvement for the
+crossbar as-is</strong> — it trades a hash tuned against this project's own production
+traffic for one tuned against TDM's window/task shape, and on this fleet the swap costs
+roughly {dyn_avg_conf_ratio:g}&times; the raw contention — it happens not to pay for it only
+because the schedule has slack to spare.</p>
+{booktabs(["set", "Crossbar (baseline)", "Crossbar (TDM hash)", "ratio", "conf% baseline", "conf% dynamic"],
+          eval_dyn_rows,
+          "Revised XBAR_HASH_DYNAMIC addendum — 20-set fenced sweep, corrected final/0&ndash;19 stimuli. Baseline = plain addr_hash, no XBAR_HASH_L1. conf% = beats delayed &divide; real beats. Total-cycle ratio stays ~1.000&times; everywhere (schedule-absorbed); the conflict-rate columns are where the difference actually shows.", "E8",
+          aligns=["r"] * 6)}
+
+<h3>5.5&emsp;Addendum: isolating the Matrix Unit and single-operand conflicts, per level</h3>
+<p>Revised from the first pass: scoped to <code>final/0</code> alone (one set, not the
+20-set sweep) and the baseline crossbar only (no <code>XBAR_HASH_L1</code>, no
+<code>XBAR_HASH_DYNAMIC</code>), in exchange for a per-level breakdown at each of the same
+six scenarios — full picture, <em>MU</em> (the agu.hpp-driven ports carrying real
+R/C/L/store_mode geometry: <code>ragu_a</code>, <code>ragu_b</code>, <code>ragu_c</code>,
+<code>wagu_a</code>, as opposed to the DMA-style <code>ragu_d</code>/<code>ragu_e</code>/
+<code>wagu_d</code>/<code>wagu_e</code>), and each MU operand run alone (every other port,
+DMA and the other three operands alike, idle).</p>
+<p>The two conflict-counting conventions read differently and both are reported per level
+(L1/L2/L3) and as a total. <strong>Method 1</strong> (beats-blocked) asks, per real beat,
+"was it EVER delayed at level X" — a new per-beat counter
+(<code>tb_top.cpp</code>'s <code>delayed_l1</code>/<code>l2</code>/<code>l3</code>, derived
+from the crossbar's own per-cycle arbitration winners, <code>crossbar.hpp</code>'s
+<code>win_[]</code>) — so L1+L2+L3 can exceed the total whenever a beat's wait touches more
+than one level; the total itself is the union (plain conf%, unchanged definition from
+Tables E1&ndash;E8). <strong>Method 2</strong> (cycle-inflation / wait-cost) asks how many
+extra cycles are spent at level X per 100 real beats — the existing <code>lvl_rd</code>/
+<code>lvl_wr</code> wait-cycle sums (same normalization as Table E3's per-request rates),
+strictly additive, so its total is exactly L1+L2+L3.</p>
+<p>Isolating a single operand (<code>ragu_a</code>/<code>ragu_b</code>/<code>wagu_a</code>
+rows) makes L2 and L3 collapse to exactly 0% under <em>both</em> methods — with only one
+4-lane port group's traffic in the whole fabric, there is no second port group to contend
+with at L2 and no write traffic to contend with at L3, so every conflict is L1 self-collision
+by construction. That is a useful sanity check on the per-lane attribution as much as a
+result. <code>ragu_c</code> carries no traffic in <code>final/0</code> specifically (0 real
+beats), so its row is all zeros — not a claim that operand is conflict-free, just unpopulated
+for this one set.</p>
+<p>Once more than one group is live, the two methods diverge sharply — but only at L1. Full
+picture: Method 1 total {lvl_full.get("m1_total_pct","?")}% vs Method 2 total
+{lvl_full.get("m2_total_pct","?")}% — Method 2 reads roughly
+{round(float(lvl_full.get("m2_total_pct",0))/max(0.1,float(lvl_full.get("m1_total_pct",1))),1)}&times;
+higher, and nearly all of that gap is L1
+({lvl_full.get("m1_l1_pct","?")}% vs {lvl_full.get("m2_l1_pct","?")}%) — L2 and L3 barely move
+between methods ({lvl_full.get("m1_l2_pct","?")}%/{lvl_full.get("m1_l3_pct","?")}% vs
+{lvl_full.get("m2_l2_pct","?")}%/{lvl_full.get("m2_l3_pct","?")}%). MU shows the identical
+shape, more sharply (L1: {lvl_mu.get("m1_l1_pct","?")}% vs {lvl_mu.get("m2_l1_pct","?")}%;
+L2/L3 essentially unchanged between methods:
+{lvl_mu.get("m1_l2_pct","?")}%/{lvl_mu.get("m1_l3_pct","?")}% vs
+{lvl_mu.get("m2_l2_pct","?")}%/{lvl_mu.get("m2_l3_pct","?")}%) — consistent with §5.5's
+original (20-set) finding that MU concentrates the crossbar's conflicts, now visible per
+level too. The read is: an L2 or L3 collision, when it happens, is almost always resolved in
+about one extra cycle (Method 1's beat-count and Method 2's cycle-count agree because there's
+nothing to distinguish — one touched beat costs about one wait-cycle). L1 collisions are the
+opposite: the gap between the methods means the SAME set of L1-blocked beats accumulates
+substantially more than one wait-cycle each on average — L1 is where the crossbar's
+higher-fold pileups (more than 2 contenders on one output, Table E3/§5.2) actually live.</p>
+{booktabs(["scenario", "M1 L1%", "M1 L2%", "M1 L3%", "M1 total%", "M2 L1%", "M2 L2%", "M2 L3%", "M2 total%"],
+          eval_lvl_rows,
+          "Per-level conflict, final/0 only, baseline crossbar (no XBAR_HASH_L1/XBAR_HASH_DYNAMIC). M1 = Method 1 (beats-blocked: % of real beats ever delayed at that level; total = union, not a sum). M2 = Method 2 (cycle-inflation: extra cycles at that level per 100 real beats; total = exact sum). ragu_c carries no traffic in final/0.", "E9",
+          aligns=["l"] + ["r"] * 8)}
 
 <h2>6&emsp;Conclusions</h2>
 <p>Under its intended, schedule-driven workload the windowed TDM interconnect is a full

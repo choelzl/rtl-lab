@@ -377,8 +377,9 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
         return t;
     }
 
-    void load_trace(const std::string &path) {
-        std::ifstream f(path.c_str());
+    void load_trace(const std::string &path_in) {
+        const std::string path = resolve_stim_path(path_in);
+        std::ifstream     f(path.c_str());
         if (!f) {
             SC_REPORT_INFO(name(), ("no stimuli (" + path + "), will be idle").c_str());
             return;

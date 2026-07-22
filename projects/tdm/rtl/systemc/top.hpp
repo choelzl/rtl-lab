@@ -140,6 +140,20 @@ SC_MODULE(top) {
 #else
     top_crossbar<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
         impl;
+#if defined(XBAR_HASH_DYNAMIC)
+    // Per-port-group mapping geometry for top_crossbar.hpp's dynamic-hash
+    // experiment — one scalar set per read/write driver group (see
+    // top_crossbar.hpp's rport_map_r_i/etc). Written by the testbench from
+    // each AGU's current p_R_/p_C_/p_L_/p_store_mode_.
+    sc_signal<uint64_t> impl_rport_map_r[NUM_RPORT];
+    sc_signal<uint64_t> impl_rport_map_c[NUM_RPORT];
+    sc_signal<uint64_t> impl_rport_map_l[NUM_RPORT];
+    sc_signal<uint64_t> impl_rport_map_store_mode[NUM_RPORT];
+    sc_signal<uint64_t> impl_wport_map_r[NUM_WPORT];
+    sc_signal<uint64_t> impl_wport_map_c[NUM_WPORT];
+    sc_signal<uint64_t> impl_wport_map_l[NUM_WPORT];
+    sc_signal<uint64_t> impl_wport_map_store_mode[NUM_WPORT];
+#endif
 #endif
 #elif defined(IMPL_TDM)
 #if defined(IMPL_SV)
@@ -245,6 +259,21 @@ SC_MODULE(top) {
         bind_obi_group(impl.wport_req_i, impl.wport_addr_i, impl.wport_we_i, impl.wport_be_i,
                        impl.wport_wdata_i, impl.wport_gnt_o, impl.wport_rvalid_o,
                        impl.wport_rdata_o, impl_wport);
+
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_DYNAMIC)
+        for (int i = 0; i < NUM_RPORT; ++i) {
+            impl.rport_map_r_i[i](impl_rport_map_r[i]);
+            impl.rport_map_c_i[i](impl_rport_map_c[i]);
+            impl.rport_map_l_i[i](impl_rport_map_l[i]);
+            impl.rport_map_store_mode_i[i](impl_rport_map_store_mode[i]);
+        }
+        for (int i = 0; i < NUM_WPORT; ++i) {
+            impl.wport_map_r_i[i](impl_wport_map_r[i]);
+            impl.wport_map_c_i[i](impl_wport_map_c[i]);
+            impl.wport_map_l_i[i](impl_wport_map_l[i]);
+            impl.wport_map_store_mode_i[i](impl_wport_map_store_mode[i]);
+        }
+#endif
 
 #if defined(IMPL_TDM) && !defined(IMPL_SV)
         for (int i = 0; i < NUM_TDM_BUF; ++i)

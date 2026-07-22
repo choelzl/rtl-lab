@@ -1,10 +1,15 @@
 # Stimuli file format
 
-Stimuli live under `tb/stimuli/<case>/`, one `ragu_*.log`/`wagu_*.log` file per
-driver group (e.g. `ragu_a.log`, `wagu_d.log`, `ragu_e.log`). There are two
-distinct file formats in use, driven by two different AGU classes — they
-share the same descriptor-then-address-lines shape, but differ in field
-count and meaning:
+Stimuli live under `tb/stimuli/<case>/`, one `ragu_*`/`wagu_*` file per driver
+group (e.g. `ragu_a`, `wagu_d`, `ragu_e`), named with either a `.log` or a
+`.csv` extension — `agu.hpp`/`lane_agu.hpp` try whichever one exists
+(`csv_parse_util.hpp`'s `resolve_stim_path()`), so both spellings of a set can
+coexist and callers never need to know which one is on disk. `agu.hpp`'s
+per-line parser also ignores any fields past `addr`/`addr,data` (e.g. a
+trailing `,# N` comment some trace exports carry), so lines with extra
+annotation columns still parse correctly. There are two distinct file
+formats in use, driven by two different AGU classes — they share the same
+descriptor-then-address-lines shape, but differ in field count and meaning:
 
 | Groups | Driver | Format |
 | ------ | ------ | ------ |

@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,29 @@ inline std::vector<std::string> split_csv(const std::string &line) {
         pos = c + 1;
     }
     return out;
+}
+
+// Stimuli files are named ragu_*/wagu_* with either extension (see
+// doc/specs/stimuli.md) — callers pass whichever they were given, and this
+// tries the other one if that path doesn't open. If NEITHER opens, returns
+// `path` unchanged so the caller's own "no stimuli, will be idle" handling
+// (agu.hpp/lane_agu.hpp's load_trace) still reports the originally-requested
+// name.
+inline std::string resolve_stim_path(const std::string &path) {
+    if (std::ifstream(path.c_str()).good())
+        return path;
+    auto ends_with = [&](const std::string &ext) {
+        return path.size() >= ext.size() &&
+               path.compare(path.size() - ext.size(), ext.size(), ext) == 0;
+    };
+    std::string alt;
+    if (ends_with(".log"))
+        alt = path.substr(0, path.size() - 4) + ".csv";
+    else if (ends_with(".csv"))
+        alt = path.substr(0, path.size() - 4) + ".log";
+    if (!alt.empty() && std::ifstream(alt.c_str()).good())
+        return alt;
+    return path;
 }
 
 inline uint64_t parse_hex_u64(const std::string &s) {

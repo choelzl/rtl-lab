@@ -13,8 +13,11 @@
 //   ordinary full-beat OBI, routed by the reused crossbar as bank = beat %
 //   NUM_BANK).
 //
-//   The placement scheme (parameter meaning, the get_k boundaries, the address
-//   split into con/str/l, and the 5-bit bank-id XOR matrix) is specified in
+//   The placement scheme itself (get_k, map_one, the con/str/l split, and the
+//   5-bit bank-id XOR matrix) lives in map_func.hpp, shared with other
+//   backends that want the same placement (e.g. top_crossbar.hpp's
+//   XBAR_HASH_DYNAMIC experiment). Parameter meaning, the get_k boundaries,
+//   the address split into con/str/l, and the XOR matrix are specified in
 //   doc/specs/map_func.md. The emitted OBI byte address re-encodes the placement
 //   as (row_id * NUM_BANK + bank_id) * BYTES_PER_ROW, so a downstream decode of
 //   bank = beat % NUM_BANK and row = beat / NUM_BANK recovers exactly that
@@ -38,30 +41,12 @@
 
 #include <systemc.h>
 
+#include "map_func.hpp"
 #include "obi_data.hpp"
 #include "obi_ports.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <utility>
-
-enum class tdm_stor_mode {
-    Loop_Row_Col   = 0,
-    Loop_Col_Row   = 1,
-    Row_Col_Loop   = 2,
-    Col_Row_Loop   = 3,
-    Row_Loop_Col   = 4,
-    Col_Loop_Row   = 5,
-    Loop_2x2_H     = 6,
-    Loop_2x2_V     = 7,
-    Loop_4x4_H     = 8,
-    Loop_4x4_V     = 9,
-    Loop_Row       = 10,
-    Row_Loop       = 11,
-    Loop_Row_Space = 12,
-    Loop_2i        = 13,
-    Loop_3i        = 14,
-    Loop_4i        = 15
-};
 
 template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MODULE(tdm) {
     static_assert(NUM_WORD >= 1, "NUM_WORD must be >= 1");
@@ -79,113 +64,13 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
     sc_in<uint64_t> l_i;
     sc_in<uint64_t> store_mode_i;
 
-    static uint32_t ilog2(uint64_t v) {
-        uint32_t r = 0;
-        while (v > 1) {
-            v >>= 1;
-            ++r;
-        }
-        return r;
-    }
-
-    static uint32_t tzeros(uint64_t v) {
-        if (v == 0)
-            return 0;
-        uint32_t r = 0;
-        while (((v >> r) & 1ull) == 0)
-            ++r;
-        return r;
-    }
-
-    static std::pair<uint32_t, uint32_t> get_k(tdm_stor_mode mode, uint32_t e, uint32_t tzR,
-                                               uint32_t tzC, uint32_t tzL) {
-        const std::pair<uint32_t, uint32_t> k = get_k_raw(mode, e, tzR, tzC, tzL);
-#ifdef TDM_GETK_GUARD
-        // Degenerate-split guard (experimental; doc/report Appendix A.8): when the
-        // mode's LEADING dimension has no trailing zeros (e.g. C = 1 under
-        // Loop_Row), k1 collapses onto e, the con field is zero-width, every
-        // con term of the bank-id XOR matrix drops out, and some window
-        // layouts fold pairwise onto half the banks. Borrow up to two bits
-        // from the bottom of str so con is never empty — bank_id stays a
-        // bijection per routing field, row_id untouched. NOTE: the guard is
-        // necessarily pattern-blind (get_k sees only the geometry, not the
-        // window layout); measured statically it repairs the napa=4
-        // offender but can introduce collisions on other layouts sharing
-        // the same split — hence opt-in, see the report for the evaluation.
-        using M = tdm_stor_mode;
-        const uint32_t lead =
-            (mode == M::Loop_Row_Col || mode == M::Loop_Row || mode == M::Row_Loop_Col ||
-             mode == M::Loop_2x2_H || mode == M::Loop_4x4_H)
-                ? tzC
-            : (mode == M::Row_Col_Loop || mode == M::Row_Loop || mode == M::Col_Row_Loop) ? tzL
-                                                                                          : tzR;
-        if (lead == 0 && k.second > e)
-            return {std::min(e + 2, k.second), k.second};
-#endif
-        return k;
-    }
-
-    static std::pair<uint32_t, uint32_t> get_k_raw(tdm_stor_mode mode, uint32_t e, uint32_t tzR,
-                                                   uint32_t tzC, uint32_t tzL) {
-        using M = tdm_stor_mode;
-        switch (mode) {
-        case M::Loop_Row_Col:
-        case M::Loop_Row:
-            return {std::max(tzC, e), std::max(tzR + tzC, e)};
-        case M::Loop_Col_Row:
-        case M::Loop_Row_Space:
-            return {std::max(tzR, e), std::max(tzC + tzR, e)};
-        case M::Row_Col_Loop:
-        case M::Row_Loop:
-            return {std::max(tzL, e), std::max(tzL + tzC, e)};
-        case M::Col_Row_Loop:
-            return {std::max(tzL, e), std::max(tzR + tzL, e)};
-        case M::Row_Loop_Col:
-            return {std::max(tzC, e), std::max(tzL + tzC, e)};
-        case M::Col_Loop_Row:
-            return {std::max(tzR, e), std::max(tzL + tzR, e)};
-        case M::Loop_2x2_H:
-            return {std::max(tzC + 1, e), std::max(tzR + tzC, e)};
-        case M::Loop_2x2_V:
-        case M::Loop_2i:
-            return {std::max(tzR + 1, e), std::max(tzC + tzR, e)};
-        case M::Loop_4x4_H:
-            return {std::max(tzC + 2, e), std::max(tzR + tzC, e)};
-        case M::Loop_4x4_V:
-        case M::Loop_4i:
-            return {std::max(tzR + 2, e), std::max(tzC + tzR, e)};
-        default:
-            SC_REPORT_ERROR("tdm", "unsupported store_mode");
-            return {e, e};
-        }
-    }
-
-    // Pure function of its arguments (all mapping parameters are passed in,
-    // no module state) — static so callers that need the placement without a
-    // live tdm instance (e.g. the crossbar-build testbench computing what the
-    // TDM map WOULD do with an address) can use it directly.
+    // Thin wrapper over map_func::map_one (rtl/systemc/map_func.hpp) — kept
+    // static so callers that need the placement without a live tdm instance
+    // (e.g. the crossbar-build testbench computing what the TDM map WOULD do
+    // with an address) can use it directly.
     static void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_t C, uint64_t L,
                         tdm_stor_mode mode, uint64_t &bank_id, uint64_t &row_id) {
-        const uint32_t                      b  = ilog2(nb);
-        const uint32_t                      e  = ilog2(bw);
-        const std::pair<uint32_t, uint32_t> k  = get_k(mode, e, tzeros(R), tzeros(C), tzeros(L));
-        const uint32_t                      k1 = k.first;
-        const uint32_t                      k2 = k.second;
-
-        const uint64_t bmask = (b >= 64) ? ~0ull : ((1ull << b) - 1);
-        const uint64_t con   = (addr >> e) & ((1ull << (k1 - e)) - 1) & bmask;
-        const uint64_t str   = (addr >> k1) & ((1ull << (k2 - k1)) - 1) & bmask;
-        const uint64_t l     = (addr >> k2) & bmask;
-
-        auto bit = [](uint64_t v, uint32_t i) -> uint64_t { return (v >> i) & 1ull; };
-
-        bank_id = ((bit(str, 1) ^ bit(con, 2) ^ bit(l, 1) ^ bit(l, 2)) << 0) |
-                  ((bit(str, 2) ^ bit(con, 1) ^ bit(l, 1)) << 1) |
-                  ((bit(str, 0) ^ bit(str, 4) ^ bit(con, 0) ^ bit(con, 1) ^ bit(l, 4)) << 2) |
-                  ((bit(str, 0) ^ bit(con, 4) ^ bit(l, 0)) << 3) |
-                  ((bit(str, 1) ^ bit(str, 3) ^ bit(con, 0) ^ bit(con, 3) ^ bit(l, 3)) << 4);
-
-        row_id = addr >> (e + b);
+        map_func::map_one(addr, nb, bw, R, C, L, mode, bank_id, row_id);
     }
 
     void comb() {

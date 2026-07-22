@@ -380,30 +380,29 @@ SC_MODULE(agu) {
         return t;
     }
 
+    // "addr" (RAGU) or "addr,data" (WAGU), optionally followed by more
+    // comma-separated fields this driver doesn't use (e.g. a trailing
+    // ",# N" comment some trace exports carry) — only the first two fields
+    // are ever meaningful, so split_csv() + index access ignores the rest
+    // rather than the field-2-is-write test misreading a comment as data.
     trace_entry_t parse_addr_line(const std::string &line) const {
-        const std::size_t c1 = line.find(',');
-        const std::string a  = trim(c1 == std::string::npos ? line : line.substr(0, c1));
-        trace_entry_t     e;
-        e.addr = std::strtoull(a.c_str(), nullptr, 0);
-        if (c1 == std::string::npos) {
+        const std::vector<std::string> f = split_csv(line);
+        trace_entry_t                  e;
+        e.addr = std::strtoull(f[0].c_str(), nullptr, 0);
+        if (f.size() < 2 || f[1].empty()) {
             e.we   = false;
             e.data = data_t(0);
         } else {
-            const std::string d = trim(line.substr(c1 + 1));
-            if (d.empty()) {
-                e.we   = false;
-                e.data = data_t(0);
-            } else {
-                // "addr,data" → implicit write
-                e.we   = true;
-                e.data = agu_data_from_u64<data_t>(std::strtoull(d.c_str(), nullptr, 0));
-            }
+            // "addr,data,..." → implicit write
+            e.we   = true;
+            e.data = agu_data_from_u64<data_t>(std::strtoull(f[1].c_str(), nullptr, 0));
         }
         return e;
     }
 
-    void load_trace(const std::string &path) {
-        std::ifstream f(path.c_str());
+    void load_trace(const std::string &path_in) {
+        const std::string path = resolve_stim_path(path_in);
+        std::ifstream     f(path.c_str());
         if (!f) {
             SC_REPORT_INFO(name(), ("no stimuli (" + path + "), will be idle").c_str());
             return;

@@ -59,6 +59,7 @@
 
 #include "bank.hpp"
 #include "crossbar.hpp"
+#include "map_func.hpp"
 #include "obi_ports.hpp"
 
 namespace tc_detail {
@@ -103,6 +104,14 @@ SC_MODULE(top_crossbar) {
     static constexpr int NUM_L2_L3      = NUM_BANK;
     static constexpr int NUM_PHYS_BANKS = NUM_BANK * 2;
 
+#ifdef XBAR_HASH_DYNAMIC
+    // The dynamic hash below writes a map_func::map_one() bank_id (a fixed
+    // 5-bit value, see doc/specs/map_func.md's "32 banks" note) into the
+    // L1+L2 logical-bank field, so that field must be exactly 5 bits wide.
+    static_assert(LOG_REQ + LOG_BANK_GRP == 5,
+                  "XBAR_HASH_DYNAMIC needs a 5-bit logical bank field (NUM_BANK == 32)");
+#endif
+
     // -----------------------------------------------------------------------
     // External ports
     // -----------------------------------------------------------------------
@@ -126,6 +135,23 @@ SC_MODULE(top_crossbar) {
     sc_out<bool>    wport_gnt_o[NUM_WPORT_PORTS];
     sc_out<bool>    wport_rvalid_o[NUM_WPORT_PORTS];
     sc_out<data_t>  wport_rdata_o[NUM_WPORT_PORTS];
+
+#ifdef XBAR_HASH_DYNAMIC
+    // Per-port-group mapping geometry (experimental) — one scalar set per
+    // read/write driver group, broadcast to that group's NUM_REQ lanes, same
+    // shape as top_tdm.hpp's buf_map_r_i/etc. Driven by tb_top.cpp from each
+    // AGU's current p_R_/p_C_/p_L_/p_store_mode_ (see agu.hpp's "TDM mapping
+    // note"). Only present in this build; the default static addr_hash needs
+    // no mapping geometry.
+    sc_in<uint64_t> rport_map_r_i[NUM_RPORT];
+    sc_in<uint64_t> rport_map_c_i[NUM_RPORT];
+    sc_in<uint64_t> rport_map_l_i[NUM_RPORT];
+    sc_in<uint64_t> rport_map_store_mode_i[NUM_RPORT];
+    sc_in<uint64_t> wport_map_r_i[NUM_WPORT];
+    sc_in<uint64_t> wport_map_c_i[NUM_WPORT];
+    sc_in<uint64_t> wport_map_l_i[NUM_WPORT];
+    sc_in<uint64_t> wport_map_store_mode_i[NUM_WPORT];
+#endif
 
     // -----------------------------------------------------------------------
     // Hashed addresses and bank-local addresses
@@ -183,6 +209,23 @@ SC_MODULE(top_crossbar) {
         return r;
     }
 
+#ifdef XBAR_HASH_DYNAMIC
+    // Dynamic hash (experimental, doc/report Appendix A.8): reuses the TDM
+    // XOR-skew placement (map_func.hpp, same scheme as tdm.hpp) to pick the
+    // L1+L2 logical-bank field from the group's current R/C/L/store_mode,
+    // instead of addr_hash()'s fixed bit-mixing above. L3's even/odd select
+    // bit and everything above stay raw address bits, untouched — same scope
+    // as addr_hash()'s own L2-only hash.
+    static uint64_t addr_hash_dynamic(uint64_t a, uint64_t R, uint64_t C, uint64_t L,
+                                      uint64_t store_mode) {
+        uint64_t bank_id = 0, row_id = 0;
+        map_func::map_one(a, static_cast<uint64_t>(NUM_BANK), static_cast<uint64_t>(BYTES_PER_ROW), R,
+                          C, L, static_cast<tdm_stor_mode>(store_mode), bank_id, row_id);
+        const uint64_t field_mask = (1ull << (LOG_REQ + LOG_BANK_GRP)) - 1;
+        return (a & ~(field_mask << ROUTE_LSB)) | (bank_id << ROUTE_LSB);
+    }
+#endif
+
     static uint64_t local_addr(uint64_t a) {
         const uint64_t below = a & ((1ULL << ROUTE_LSB) - 1);
         const uint64_t above = a >> (ROUTE_LSB + ROUTE_BITS);
@@ -190,13 +233,35 @@ SC_MODULE(top_crossbar) {
     }
 
     void hash_rd_addr() {
+#ifdef XBAR_HASH_DYNAMIC
+        for (int j = 0; j < NUM_RPORT; ++j) {
+            const uint64_t R = rport_map_r_i[j].read(), C = rport_map_c_i[j].read(),
+                           L = rport_map_l_i[j].read(), sm = rport_map_store_mode_i[j].read();
+            for (int m = 0; m < NUM_REQ; ++m) {
+                const int ext = j * NUM_REQ + m;
+                rport_haddr[ext].write(addr_hash_dynamic(rport_addr_i[ext].read(), R, C, L, sm));
+            }
+        }
+#else
         for (int m = 0; m < NUM_RPORT_PORTS; ++m)
             rport_haddr[m].write(addr_hash(rport_addr_i[m].read()));
+#endif
     }
 
     void hash_wr_addr() {
+#ifdef XBAR_HASH_DYNAMIC
+        for (int j = 0; j < NUM_WPORT; ++j) {
+            const uint64_t R = wport_map_r_i[j].read(), C = wport_map_c_i[j].read(),
+                           L = wport_map_l_i[j].read(), sm = wport_map_store_mode_i[j].read();
+            for (int m = 0; m < NUM_REQ; ++m) {
+                const int ext = j * NUM_REQ + m;
+                wport_haddr[ext].write(addr_hash_dynamic(wport_addr_i[ext].read(), R, C, L, sm));
+            }
+        }
+#else
         for (int m = 0; m < NUM_WPORT_PORTS; ++m)
             wport_haddr[m].write(addr_hash(wport_addr_i[m].read()));
+#endif
     }
 
     void compute_bank_addr() {
@@ -317,10 +382,20 @@ SC_MODULE(top_crossbar) {
         SC_METHOD(hash_rd_addr);
         for (int m = 0; m < NUM_RPORT_PORTS; ++m)
             sensitive << rport_addr_i[m];
+#ifdef XBAR_HASH_DYNAMIC
+        for (int j = 0; j < NUM_RPORT; ++j)
+            sensitive << rport_map_r_i[j] << rport_map_c_i[j] << rport_map_l_i[j]
+                      << rport_map_store_mode_i[j];
+#endif
 
         SC_METHOD(hash_wr_addr);
         for (int m = 0; m < NUM_WPORT_PORTS; ++m)
             sensitive << wport_addr_i[m];
+#ifdef XBAR_HASH_DYNAMIC
+        for (int j = 0; j < NUM_WPORT; ++j)
+            sensitive << wport_map_r_i[j] << wport_map_c_i[j] << wport_map_l_i[j]
+                      << wport_map_store_mode_i[j];
+#endif
 
         SC_METHOD(compute_bank_addr);
         for (int i = 0; i < NUM_PHYS_BANKS; ++i)

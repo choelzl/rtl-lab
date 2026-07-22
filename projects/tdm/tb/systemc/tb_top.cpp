@@ -317,6 +317,12 @@ int sc_main(int, char *[]) {
         // wait_cycles to get pure contention wait. A cycle with >=1
         // contention-run lane waiting counts as contention.
         uint64_t wait_cycles = 0, serve_cycles = 0, fill_wait_cycles = 0;
+        // Method-1 (per-beat) level attribution, crossbar builds only (see
+        // blocked_level[]/touched_lvl below): a delayed beat may touch more
+        // than one level across its wait streak, so delayed_l1+l2+l3 can
+        // exceed `delayed` — each counts "was this beat EVER blocked here",
+        // not a partition of it.
+        uint64_t delayed_l1 = 0, delayed_l2 = 0, delayed_l3 = 0;
     };
     grp_stat_t    gstat[9] = {{"ragu_a", true},  {"ragu_b", true},  {"ragu_c", true},
                               {"ragu_d", true},  {"ragu_e", true},  {"wagu_a", false},
@@ -327,6 +333,12 @@ int sc_main(int, char *[]) {
         dut_t::WAGU_A_PORTS + dut_t::WAGU_B_PORTS + dut_t::WAGU_D_PORTS + dut_t::WAGU_E_PORTS;
     std::vector<int>             wait_ctr(kNRdFlat + kNWrFlat, 0);
     std::vector<uint8_t>         run_fill(kNRdFlat + kNWrFlat, 0);
+    // Method-1 per-beat level attribution (crossbar builds only): bit 0/1/2
+    // set if the beat currently accumulating in wait_ctr[p] has been
+    // blocked at L1/L2/L3 on any cycle of its (still in progress) wait
+    // streak. Same lifecycle as wait_ctr — cleared on grant or on an
+    // abandoned (!rq) run — so it always reflects only the CURRENT streak.
+    std::vector<uint8_t> touched_lvl(kNRdFlat + kNWrFlat, 0);
     bool                         prev_any_real[9] = {};
     std::vector<std::deque<int>> rd_gnt_q(kNRdFlat + kNWrFlat);
     uint64_t                     rsp_events = 0;
@@ -494,8 +506,122 @@ int sc_main(int, char *[]) {
         }
 #endif
 
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_DYNAMIC)
+        // top_crossbar.hpp's dynamic-hash experiment: broadcast each AGU's
+        // current task R/C/L/store_mode to every crossbar port-group index
+        // that AGU drives. Crossbar mode has no prefetch buffer (unlike the
+        // TDM wiring above), so the plain per-task fields suffice — no
+        // lookahead accessors needed. Defaults mirror the TDM write_map
+        // lambda above for groups with no CRL geometry (D/E lane_agu).
+        {
+            constexpr uint64_t kDfltR = 4, kDfltC = 4, kDfltL = 8, kDfltSM = 0;
+            auto               get_r  = [](const auto &s, uint64_t d) { return s->p_has_crl_ ? s->p_R_ : d; };
+            auto               get_c  = [](const auto &s, uint64_t d) { return s->p_has_crl_ ? s->p_C_ : d; };
+            auto               get_l  = [](const auto &s, uint64_t d) { return s->p_has_crl_ ? s->p_L_ : d; };
+            auto               get_sm = [](const auto &s, uint64_t d) {
+                return s->p_has_crl_ ? s->p_store_mode_ : d;
+            };
+            auto write_rmap = [&](int base, int count, const auto &s) {
+                const uint64_t r = get_r(s, kDfltR), c = get_c(s, kDfltC), l = get_l(s, kDfltL),
+                               sm = get_sm(s, kDfltSM);
+                for (int j = base; j < base + count; ++j) {
+                    dut.impl_rport_map_r[j].write(r);
+                    dut.impl_rport_map_c[j].write(c);
+                    dut.impl_rport_map_l[j].write(l);
+                    dut.impl_rport_map_store_mode[j].write(sm);
+                }
+            };
+            auto write_wmap = [&](int base, int count, const auto &s) {
+                const uint64_t r = get_r(s, kDfltR), c = get_c(s, kDfltC), l = get_l(s, kDfltL),
+                               sm = get_sm(s, kDfltSM);
+                for (int j = base; j < base + count; ++j) {
+                    dut.impl_wport_map_r[j].write(r);
+                    dut.impl_wport_map_c[j].write(c);
+                    dut.impl_wport_map_l[j].write(l);
+                    dut.impl_wport_map_store_mode[j].write(sm);
+                }
+            };
+            write_rmap(0, dut_t::NUM_RAGU_A, ragu_a_src);
+            write_rmap(4, dut_t::NUM_RAGU_B, ragu_b_src);
+            write_rmap(6, dut_t::NUM_RAGU_C, ragu_c_src);
+            write_rmap(7, dut_t::NUM_RAGU_D, ragu_d_src);
+            write_rmap(8, dut_t::NUM_RAGU_E, ragu_e_src);
+            write_wmap(0, dut_t::NUM_WAGU_A, wagu_a_src);
+            write_wmap(4, dut_t::NUM_WAGU_B, wagu_b_src);
+            write_wmap(6, dut_t::NUM_WAGU_D, wagu_d_src);
+            write_wmap(7, dut_t::NUM_WAGU_E, wagu_e_src);
+        }
+#endif
+
         sc_start(CLK_PERIOD_NS, SC_NS);
         ++actual;
+
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+        // Method-1 per-lane level attribution: walk the crossbar's own
+        // winner registers (crossbar.hpp's win_[], public by convention) to
+        // learn, per flat lane (same indexing as dut.impl.rport_req_i/
+        // wport_req_i), whether it won L1 and L2 this cycle. Unlike the
+        // aggregate a/b/c counts further below (anonymous totals at each
+        // boundary — how MANY lanes are blocked where, not WHICH ones),
+        // this preserves per-lane identity so tally_group() below can
+        // attribute a delayed BEAT to the specific level(s) that blocked
+        // it. A lane that's req&&!gnt and won L1 and L2 must be blocked at
+        // L3 by elimination (gnt_o is the AND of all three), so L3 needs no
+        // separate winner walk. Values: 0=blocked at L1, 1=at L2, 2=at L3,
+        // 3=not blocked (irrelevant/unused for such lanes).
+        std::vector<uint8_t> blocked_level(kNRdFlat + kNWrFlat, 3);
+        {
+            using impl_t = decltype(dut.impl);
+            // --- read side ---
+            {
+                std::vector<uint8_t> won_l1(kNRdFlat, 0), won_l2(kNRdFlat, 0);
+                for (int j = 0; j < dut_t::NUM_RPORT; ++j)
+                    for (int m = 0; m < dut_t::NUM_REQ; ++m) {
+                        const int w = dut.impl.l1_rd_[j].win_[m].read();
+                        if (w >= 0)
+                            won_l1[j * dut_t::NUM_REQ + w] = 1;
+                    }
+                for (int k = 0; k < dut_t::NUM_REQ; ++k)
+                    for (int g = 0; g < impl_t::NUM_BANK_GRP; ++g) {
+                        const int jw = dut.impl.l2_rd_[k].win_[g].read();
+                        if (jw < 0)
+                            continue;
+                        const int orig = dut.impl.l1_rd_[jw].win_[k].read();
+                        if (orig >= 0)
+                            won_l2[jw * dut_t::NUM_REQ + orig] = 1;
+                    }
+                for (int p = 0; p < kNRdFlat; ++p) {
+                    if (!dut.impl.rport_req_i[p].read() || dut.impl.rport_gnt_o[p].read())
+                        continue; // not requesting, or fully granted -> not blocked
+                    blocked_level[p] = !won_l1[p] ? 0 : !won_l2[p] ? 1 : 2;
+                }
+            }
+            // --- write side ---
+            {
+                std::vector<uint8_t> won_l1(kNWrFlat, 0), won_l2(kNWrFlat, 0);
+                for (int j = 0; j < dut_t::NUM_WPORT; ++j)
+                    for (int m = 0; m < dut_t::NUM_REQ; ++m) {
+                        const int w = dut.impl.l1_wr_[j].win_[m].read();
+                        if (w >= 0)
+                            won_l1[j * dut_t::NUM_REQ + w] = 1;
+                    }
+                for (int k = 0; k < dut_t::NUM_REQ; ++k)
+                    for (int g = 0; g < impl_t::NUM_BANK_GRP; ++g) {
+                        const int jw = dut.impl.l2_wr_[k].win_[g].read();
+                        if (jw < 0)
+                            continue;
+                        const int orig = dut.impl.l1_wr_[jw].win_[k].read();
+                        if (orig >= 0)
+                            won_l2[jw * dut_t::NUM_REQ + orig] = 1;
+                    }
+                for (int p = 0; p < kNWrFlat; ++p) {
+                    if (!dut.impl.wport_req_i[p].read() || dut.impl.wport_gnt_o[p].read())
+                        continue;
+                    blocked_level[kNRdFlat + p] = !won_l1[p] ? 0 : !won_l2[p] ? 1 : 2;
+                }
+            }
+        }
+#endif
 
         // --- sample this cycle's settled req/gnt state into the counters ---
         int  cyc_wait_rd = 0, cyc_wait_wr = 0; // this cycle's waiting input ports
@@ -514,6 +640,9 @@ int sc_main(int, char *[]) {
                 if (!rq) {
                     wait_ctr[p] = 0; // abandoned run — a beat's delay is only
                                      // the wait immediately preceding its grant
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+                    touched_lvl[p] = 0;
+#endif
                 } else if (!gt) {
                     ++port_wait;
                     (gs.is_rd ? cyc_wait_rd : cyc_wait_wr) += 1;
@@ -526,6 +655,9 @@ int sc_main(int, char *[]) {
                             any_stall_wait = true;
                             ++cyc_stall_lanes;
                         }
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+                        touched_lvl[p] |= static_cast<uint8_t>(1u << blocked_level[p]);
+#endif
                     } else {
                         wait_ctr[p] = 0; // NOP/flush wait: idle time, not a conflict
                     }
@@ -545,7 +677,22 @@ int sc_main(int, char *[]) {
                                 ep_stall = true;
                             }
                             ep = true;
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+                            // Method-1 per-level: this beat touched a level
+                            // if any of its wait cycles were blocked there
+                            // (see touched_lvl's own comment) — a beat can
+                            // set more than one bit across its streak.
+                            if (touched_lvl[p] & 1u)
+                                ++gs.delayed_l1;
+                            if (touched_lvl[p] & 2u)
+                                ++gs.delayed_l2;
+                            if (touched_lvl[p] & 4u)
+                                ++gs.delayed_l3;
+#endif
                         }
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+                        touched_lvl[p] = 0;
+#endif
                     } else {
                         ++gs.nop_beats;
                     }
@@ -813,6 +960,9 @@ int sc_main(int, char *[]) {
                 sf << gs.name << "_wait_cycles," << gs.wait_cycles << "\n";
                 sf << gs.name << "_fill_wait_cycles," << gs.fill_wait_cycles << "\n";
                 sf << gs.name << "_serve_cycles," << gs.serve_cycles << "\n";
+                sf << gs.name << "_delayed_l1," << gs.delayed_l1 << "\n";
+                sf << gs.name << "_delayed_l2," << gs.delayed_l2 << "\n";
+                sf << gs.name << "_delayed_l3," << gs.delayed_l3 << "\n";
             }
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
             static const char *kLvl[4] = {"l1", "l2", "l3", "bank"};
