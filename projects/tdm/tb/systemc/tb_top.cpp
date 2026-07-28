@@ -506,7 +506,8 @@ int sc_main(int, char *[]) {
         }
 #endif
 
-#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_DYNAMIC)
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && \
+    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2))
         // top_crossbar.hpp's dynamic-hash experiment: broadcast each AGU's
         // current task R/C/L/store_mode to every crossbar port-group index
         // that AGU drives. Crossbar mode has no prefetch buffer (unlike the
@@ -521,7 +522,7 @@ int sc_main(int, char *[]) {
             auto               get_sm = [](const auto &s, uint64_t d) {
                 return s->p_has_crl_ ? s->p_store_mode_ : d;
             };
-            auto write_rmap = [&](int base, int count, const auto &s) {
+            auto write_rmap = [&](int base, int count, const auto &s, bool hi_bank) {
                 const uint64_t r = get_r(s, kDfltR), c = get_c(s, kDfltC), l = get_l(s, kDfltL),
                                sm = get_sm(s, kDfltSM);
                 for (int j = base; j < base + count; ++j) {
@@ -529,9 +530,15 @@ int sc_main(int, char *[]) {
                     dut.impl_rport_map_c[j].write(c);
                     dut.impl_rport_map_l[j].write(l);
                     dut.impl_rport_map_store_mode[j].write(sm);
+#if defined(XBAR_HASH_L1_V2)
+                    dut.impl_rport_map_napa1[j].write(s->ports_used_ <= dut_t::NUM_REQ);
+#endif
+#if defined(XBAR_HASH16)
+                    dut.impl_rport_map_hi_bank[j].write(hi_bank);
+#endif
                 }
             };
-            auto write_wmap = [&](int base, int count, const auto &s) {
+            auto write_wmap = [&](int base, int count, const auto &s, bool hi_bank) {
                 const uint64_t r = get_r(s, kDfltR), c = get_c(s, kDfltC), l = get_l(s, kDfltL),
                                sm = get_sm(s, kDfltSM);
                 for (int j = base; j < base + count; ++j) {
@@ -539,17 +546,29 @@ int sc_main(int, char *[]) {
                     dut.impl_wport_map_c[j].write(c);
                     dut.impl_wport_map_l[j].write(l);
                     dut.impl_wport_map_store_mode[j].write(sm);
+#if defined(XBAR_HASH_L1_V2)
+                    dut.impl_wport_map_napa1[j].write(s->ports_used_ <= dut_t::NUM_REQ);
+#endif
+#if defined(XBAR_HASH16)
+                    dut.impl_wport_map_hi_bank[j].write(hi_bank);
+#endif
                 }
             };
-            write_rmap(0, dut_t::NUM_RAGU_A, ragu_a_src);
-            write_rmap(4, dut_t::NUM_RAGU_B, ragu_b_src);
-            write_rmap(6, dut_t::NUM_RAGU_C, ragu_c_src);
-            write_rmap(7, dut_t::NUM_RAGU_D, ragu_d_src);
-            write_rmap(8, dut_t::NUM_RAGU_E, ragu_e_src);
-            write_wmap(0, dut_t::NUM_WAGU_A, wagu_a_src);
-            write_wmap(4, dut_t::NUM_WAGU_B, wagu_b_src);
-            write_wmap(6, dut_t::NUM_WAGU_D, wagu_d_src);
-            write_wmap(7, dut_t::NUM_WAGU_E, wagu_e_src);
+            // Static per-AGU bank-half assignment for XBAR_HASH16 (see
+            // top_crossbar.hpp's rport_map_hi_bank_i comment): ragu_a is the
+            // heaviest single contributor to residual conflict (Table
+            // E11/E15), so it gets the low half (banks 0-15) to itself;
+            // every other AGU shares the high half (banks 16-31). This is a
+            // fixed assignment, not derived from live traffic.
+            write_rmap(0, dut_t::NUM_RAGU_A, ragu_a_src, false);
+            write_rmap(4, dut_t::NUM_RAGU_B, ragu_b_src, true);
+            write_rmap(6, dut_t::NUM_RAGU_C, ragu_c_src, true);
+            write_rmap(7, dut_t::NUM_RAGU_D, ragu_d_src, true);
+            write_rmap(8, dut_t::NUM_RAGU_E, ragu_e_src, true);
+            write_wmap(0, dut_t::NUM_WAGU_A, wagu_a_src, true);
+            write_wmap(4, dut_t::NUM_WAGU_B, wagu_b_src, true);
+            write_wmap(6, dut_t::NUM_WAGU_D, wagu_d_src, true);
+            write_wmap(7, dut_t::NUM_WAGU_E, wagu_e_src, true);
         }
 #endif
 

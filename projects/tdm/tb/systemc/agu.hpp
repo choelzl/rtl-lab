@@ -815,17 +815,23 @@ SC_MODULE(agu) {
                                 !granted_[p];
             if (active) {
                 const bool real = has_row(group_, p);
-                if (!real && tdm_window_ == 0) {
-                    // Crossbar backend: no fixed-size buffer window downstream
-                    // needs this lane's content, so a padding lane has nothing
-                    // to gain from an addr=0 NOP request — every NOP hashes to
-                    // the same bank (top_crossbar.hpp's addr_hash(0)==0), so a
-                    // live NOP would just steal a real round-robin grant slot
-                    // from whichever OTHER buffer's genuine traffic also
-                    // lands on that bank (confirmed directly: a real RAGU_A
-                    // request sharing that bank sat behind 6+ other buffers'
-                    // NOPs for 7 extra cycles). Drop it at the port instead —
-                    // no request at all — and treat it as trivially granted so
+                // A row is a NOP either from out-of-bounds padding (!real)
+                // or because an in-bounds trace row's own address is the
+                // literal 0x0 filler sentinel — has_row() only checks index
+                // bounds, not content, so an explicit addr=0 stimuli line
+                // (e.g. the padded/patroklos sources' filler rows) would
+                // otherwise be driven as a live request. Both must be
+                // dropped identically for the crossbar backend: every NOP
+                // hashes to the same bank (top_crossbar.hpp's
+                // addr_hash(0)==0), so a live one would just steal a real
+                // grant slot from whichever other buffer's genuine traffic
+                // lands there too (regression test:
+                // doc/report/tools/check_stats_invariants.sh's
+                // nop_regression case).
+                const bool nop = !real || request_addr(group_, p) == 0;
+                if (nop && tdm_window_ == 0) {
+                    // Drop it at the port instead — no request at all — and
+                    // treat it as trivially granted so
                     // advance_group_if_granted() doesn't wait on a grant that
                     // will never come. TDM write buffers (tdm_window_ > 0)
                     // still need the real NOP request below: their fill stage

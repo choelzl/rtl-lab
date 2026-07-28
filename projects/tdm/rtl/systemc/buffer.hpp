@@ -1,84 +1,32 @@
 // -----------------------------------------------------------------------------
 // Author: Cedric Hölzl
 //
-// Description:
-//   Prefetch / write buffer — one instance per port group.
-//   Composed of NUM_TDM buffer_cell instances (one per TDM slot), plus
-//   combinatorial logic to orchestrate drain windows and drive port outputs.
+// Prefetch/write buffer, one instance per port group: NUM_TDM buffer_cell
+// instances (one per TDM slot) plus comb logic orchestrating drain windows
+// and port I/O. NUM_REQ: OBI beats/port. PORT_COUNT: ports/groups. NUM_TDM:
+// lanes+slots per window. IS_WRITE: false=read-prefetch, true=write.
+// -----------------------------------------------------------------------------
 //
-//   Template parameters:
-//     NUM_REQ       — OBI beats per port
-//     PORT_COUNT    — maximum ports/groups connected to this buffer
-//     BYTES_PER_ROW — data width in bytes
-//     NUM_TDM       — TDM lanes and slots in one fetch window
-//     IS_WRITE      — false (default): read-prefetch buffer; true: write buffer
+// Read mode: cells proactively fetch on fetch_addr_valid_i. Drained group-
+// by-group (beats_for_mode(window_mode_q), the LATCHED geometry so a
+// mid-window active_mode change can't tear a window). Each cell starts its
+// own next fetch the instant its own group drains (buffer_cell.hpp), so
+// there's no shared "prefetch trigger" to time — a fetch's 2-cycle round
+// trip is hidden by the n_groups-1 cycles before that position is needed
+// again (zero-bubble for 3+ groups). Restart from idle (reset/fence/task
+// switch) reuses the same path: a boot latch fires when every cell is idle,
+// snapping the staged window under current geometry.
 //
-//   Window drain protocol (read mode) — pipelined, no window-transition gap:
-//     Cells are drained sequentially in groups of beats_for_mode(window_mode_q)
-//     = ports_for_mode(window_mode_q) * NUM_REQ — the LATCHED window geometry,
-//     so a mid-stream active_mode change never tears a window in flight.
-//     rd_ptr_q tracks the current group's base slot.  Each cell
-//     starts fetching its OWN next value the instant its OWN group drains
-//     (see buffer_cell.hpp's header comment) — there is no single
-//     whole-window "prefetch trigger" position to time: a plain per-cell
-//     mux between "present what's stored" and "forward what just arrived"
-//     (is_fwd), gated on that cell's own all_valid_i. This is safe by
-//     construction and needs no special-casing: a group can only drain once
-//     every cell in it is valid (not pending), so a cell's own refetch can
-//     never start while an earlier one for it is still in flight, and this
-//     exact group position isn't needed again until every OTHER group in
-//     the window has had its own turn — n_groups-1 cycles of slack, which
-//     covers the fetch's 2-cycle round trip (1 arbiter grant + 1 bank
-//     response) with room to spare for any window with 3+ groups. A 1- or
-//     2-group window has too little slack to fully hide the round trip
-//     (0 or 1 cycles respectively) and keeps a small, unavoidable bubble —
-//     not expected to matter for this buffer's actual configurations, which
-//     all have several groups per window.
+// Write mode: pipelined fill/snapshot/posted-respond (see comb_proc/
+// seq_proc write branches). Fill accepts one group/cycle when ports request
+// and cells are free. Snapshot hands a full window to the cells' shadow
+// flush engines (one atomic burst) while ports fill the next window.
+// Respond posts acks right behind snapshot — "write is in flight", not
+// "bank committed" — so a slow burst back-pressures only the next
+// snapshot, not the acks already streaming.
 //
-//     Because there's no separate signal to time, window_mode_q (this
-//     window's own frozen geometry — see that signal's own comment) simply
-//     tracks active_mode continuously until primed, then re-latches once
-//     at each real wraparound.
-//
-//     Restart from idle (after reset, a fence, or a parked task switch) is
-//     the same path, not a special case: when every cell reports idle and
-//     the fetch bus is enabled, a boot latch snaps the staged window under
-//     the CURRENT geometry and pulses the same window_reset a wraparound
-//     does — one pulse, one meaning ("advance the lookahead one window"),
-//     for the caller and the cells alike (see seq_proc's boot_latch).
-//
-//   Read mode (IS_WRITE=false):
-//     Cells proactively fetch TDM data when fetch_addr_valid_i fires.  Group
-//     drains when all cells are VALID and all active ports have asserted p_req_i.
-//     p_rdata_o carries the fetched data.
-//
-//   Write mode (IS_WRITE=true) — pipelined fill / snapshot / posted respond
-//   (the write-side twin of the read pipelining above; see the write branch
-//   in comb_proc/seq_proc for the full picture):
-//     Fill     : ports write one group (fill_beats) at a time; p_gnt_o fires
-//                when all active lanes request AND the group's cells have
-//                free primary latches. The fill pointer advances one group
-//                per cycle until the whole window (NUM_TDM slots) is
-//                latched — including straight through window boundaries.
-//     Snapshot : a one-cycle reset_window_i pulse hands the filled window
-//                to the cells' shadow flush engines, which burst all
-//                NUM_TDM TDM writes together (one atomic window burst) and
-//                drain to their banks independently — while the ports are
-//                already filling the NEXT window into the freed primaries.
-//     Respond  : POSTED port acks — one group of p_rvalid_o per cycle
-//                right behind the snapshot, meaning "the buffer holds the
-//                write and its burst is in flight", NOT "the bank
-//                committed it". Uncontended, windows ack back to back at
-//                the crossbar's exact pacing; a slow/conflicted burst
-//                instead back-pressures the NEXT window's snapshot (its
-//                fill parks as full_q until the shadows and acks drain).
-//                p_rdata_o is always 0.
-//     fetch_addr_i and fetch_addr_valid_i are present but unused in write mode.
-//
-//   active_mode encoding (matches buffer.sv):
-//     0   → 1 active port
-//     1   → 2 active ports
-//     2/3 → 4 active ports (clamped to PORT_COUNT)
+// active_mode (matches buffer.sv): 0->1 port, 1->2 ports, 2/3->4 ports
+// (clamped to PORT_COUNT).
 // -----------------------------------------------------------------------------
 
 #ifndef BUFFER_HPP
@@ -181,62 +129,29 @@ SC_MODULE(buffer) {
     // -----------------------------------------------------------------------
     sc_signal<int> rd_ptr_q;
 
-    // Read mode only: the group that drained on the IMMEDIATELY PRECEDING
-    // cycle (-1 if none) and how wide it was, so comb_proc can give that
-    // group's cells exactly one extra all_valid_i pulse the cycle after
-    // they're no longer at rd_ptr. Without this, a group's cells only ever
-    // see all_valid_i while rd_ptr is actually parked on them — for a window
-    // with few enough groups that this same position gets revisited again
-    // very soon (2 groups is the tightest real case), their still-valid_q
-    // register from the drain that just happened hasn't had a chance to
-    // register-clear yet, so the next visit sees "still valid" and can
-    // drain the exact same (already-delivered) data a second time under a
-    // different label. One extra all_valid_i pulse immediately after the
-    // drain is enough: buffer_cell.hpp's own commit logic (unchanged) either
-    // promotes a same-cycle-ready new fetch (is_fwd) or, if not ready yet,
-    // takes the ordinary "plain drained" branch and clears valid_q — either
-    // way the cell can no longer look "still valid" by the time this same
-    // position comes up again. This is purely a buffer.hpp-level fix (no
-    // buffer_cell.hpp changes) specifically so it can't let one cell in a
-    // multi-lane group race ahead of its groupmates the way gating this on
-    // a per-cell "already delivered" escape inside safe's own definition
-    // did (tried and reverted — see git history: broke DMA's wide,
-    // two-lane task by letting the primary lane commit independently of
-    // the secondary).
+    // Read mode only: the group that drained last cycle (-1 if none) and
+    // its width, giving those cells one extra all_valid_i pulse the cycle
+    // after they leave rd_ptr — needed for narrow windows (2 groups is the
+    // tightest case) where the same position is revisited before valid_q
+    // has cleared, which would otherwise re-drain stale data. A per-cell
+    // fix (inside buffer_cell.hpp's safe) was tried and reverted: it let
+    // one lane in a multi-lane group commit ahead of its groupmates.
     sc_signal<int> last_drained_base_q;
     sc_signal<int> last_drained_n_beats_q;
 
-    // -----------------------------------------------------------------------
-    // Read mode only: this window's own latched geometry. Each cell starts
-    // its own refetch off its own all_valid_i (see buffer_cell.hpp's header
-    // comment), so — unlike a design with one shared "prefetch trigger" —
-    // there is no single early moment where the incoming window's config
-    // needs to be captured ahead of time. window_mode_q just tracks
-    // active_mode continuously until primed_q (bootstrap: nothing has
-    // drained yet, nothing to protect), then re-latches active_mode once
-    // per window, exactly at the real wraparound (this window's actual
-    // last group) — so it stays stable for the whole of a window's drain,
-    // and group boundaries are never misclassified mid-drain even if
-    // active_mode changes right underneath. Write mode doesn't need any of
-    // this: it has no lookahead prefetch to race against, so it just reads
-    // active_mode live (see active_ports()).
-    // -----------------------------------------------------------------------
+    // Read mode only: this window's latched geometry. Tracks active_mode
+    // live until primed_q, then re-latches once per window exactly at the
+    // real wraparound — so group boundaries stay stable for a whole drain
+    // even if active_mode changes mid-drain. Write mode has no lookahead
+    // to race against, so it just reads active_mode live (active_ports()).
     sc_signal<uint32_t> window_mode_q;
     sc_signal<bool>     primed_q;
 
-    // -----------------------------------------------------------------------
-    // Write mode only — the pipelined fill/snapshot/respond stages (the
-    // write-side twin of the read pipelining; see the header comment):
-    //   fill_ptr_q     — next group to accept from the ports (chases the
-    //                    respond/snapshot machinery window by window)
-    //   full_q         — window fully latched, snapshot pending (only when
-    //                    the previous window's flush/respond isn't done yet)
-    //   resp_pending_q — a snapshotted window still owes port acks;
-    //                    rd_ptr_q doubles as its respond pointer
-    //   resp_mode_q    — the geometry the responding window was FILLED
-    //                    with (fill always uses live active_mode; a task
-    //                    boundary may change it while the previous
-    //                    window's acks are still streaming)
+    // Write mode: pipelined fill/snapshot/respond stages (see header).
+    // fill_ptr_q: next group to accept. full_q: window latched, snapshot
+    // pending. resp_pending_q: a snapshotted window still owes acks
+    // (rd_ptr_q doubles as its pointer). resp_mode_q: geometry the
+    // responding window was FILLED with (may differ from live active_mode).
     sc_signal<int>      fill_ptr_q;
     sc_signal<bool>     full_q;
     sc_signal<bool>     resp_pending_q;
@@ -277,16 +192,10 @@ SC_MODULE(buffer) {
                 sensitive << cell_invalid_s[t];
         }
         if constexpr (!IS_WRITE) {
-            // last_drained_*_q matter here: comb_proc derives the one-cycle
-            // all_valid_i echo from them (see last_drained_base_q's own
-            // comment) — without them in this list, the echo's CLEAR (the
-            // -1 written the edge after a drain) never re-triggers
-            // comb_proc, leaving the drained group's cell_all_valid_s stuck
-            // high until some unrelated input happens to wiggle. A caller
-            // that re-drives p_addr_i every cycle (every AGU harness) masks
-            // that completely; a quiet caller sees the stuck echo let a
-            // parked cell spuriously restart a fetch with whatever stale
-            // address is still on the bus (caught by tb_buffer T22).
+            // last_drained_*_q needed: without them, the echo's CLEAR (-1
+            // the edge after a drain) never re-triggers comb_proc, leaving
+            // cell_all_valid_s stuck high until an unrelated input wiggles
+            // (caught by tb_buffer T22).
             sensitive << window_mode_q << last_drained_base_q << last_drained_n_beats_q;
         }
         for (int t = 0; t < NUM_TDM; ++t)
@@ -387,11 +296,9 @@ SC_MODULE(buffer) {
             int  n_beats = beats_for_mode(window_mode_q.read());
             auto grp     = eval_group(base, n_beats);
 
-            // cell_reset_window_s itself is registered from seq_proc for
-            // read mode now (see that process's own comment) — not driven
-            // here, so an external observer polling snapshot() right after
-            // an edge can't catch a same-cycle glitch from p_req_i still
-            // reflecting whichever group it was last written for.
+            // cell_reset_window_s is registered from seq_proc for read mode
+            // (not driven here), so snapshot() can't catch a same-cycle
+            // glitch from stale p_req_i wiring.
 
             int last_drained_base    = last_drained_base_q.read();
             int last_drained_n_beats = last_drained_n_beats_q.read();
@@ -399,16 +306,11 @@ SC_MODULE(buffer) {
             for (int t = 0; t < NUM_TDM; ++t) {
                 bool in_grp = (t >= base) && (t < base + n_beats);
                 int  lane   = t - base;
-                // See last_drained_base_q's own comment: a one-cycle echo
-                // of all_valid_i for whichever group drained last cycle,
-                // so its cells get a chance to clear/recommit before this
-                // exact position can ever be revisited again. (Removing
-                // this was re-tried after the bootstrap window_reset pulse
-                // fix landed, on the theory it only compensated for the old
-                // one-window-behind lag: still 12/60/22 failures across
-                // tb_buffer/stim_bank_tdm/top_tdm — it is genuinely
-                // load-bearing for narrow-window revisits, not a
-                // compensation artifact.)
+                // One-cycle echo of all_valid_i for whichever group drained
+                // last cycle (see last_drained_base_q) — confirmed
+                // load-bearing, not a compensation artifact: removing it
+                // still fails 12/60/22 tests across tb_buffer/stim_bank_tdm/
+                // top_tdm even with the bootstrap window_reset fix in place.
                 bool just_drained = last_drained_base >= 0 && t >= last_drained_base &&
                                     t < last_drained_base + last_drained_n_beats;
                 cell_all_valid_s[t].write(grp.can_drain && in_grp);
@@ -421,32 +323,13 @@ SC_MODULE(buffer) {
                 p[i].gnt_o.write(grp.can_drain && (i < n_beats));
 
         } else {
-            // ------------------------------------------------------------------
-            // WRITE mode, pipelined: window k's flush+respond overlap window
-            // k+1's fill (see the header comment). Three concurrent pieces:
-            //
-            //   Fill    — accept one group of port writes at fill_ptr_q when
-            //             every lane requests AND every cell in the group has
-            //             a free primary latch (cell_invalid_s — the natural
-            //             chase: window k+1's group g frees the instant the
-            //             snapshot fires, not when a global phase ends).
-            //   Snapshot — the one-cycle reset_window_i pulse handing a fully
-            //             latched window to the cells' shadow flush engines
-            //             (they burst the whole window to TDM together,
-            //             exactly as before). Fires the same cycle the
-            //             window's last fill group is granted when nothing
-            //             blocks it, else as soon as the previous window's
-            //             respond finishes and its shadows are free.
-            //   Respond — port acks for the snapshotted window, one group
-            //             per cycle at rd_ptr_q under the geometry that
-            //             window was filled with. POSTED: an ack means "the
-            //             buffer holds the write and its TDM burst is in
-            //             flight", not "the bank committed it" — that is
-            //             what lets the acks stream concurrently with the
-            //             next fill instead of serializing behind the bank
-            //             round trip (the read-back checks in every
-            //             integration suite verify the data does land).
-            // ------------------------------------------------------------------
+            // Write mode, pipelined (see header): Fill accepts one group at
+            // fill_ptr_q once every lane requests and every cell is free.
+            // Snapshot (one-cycle reset_window_i) hands a full window to the
+            // shadows once the previous window's respond/shadows are clear.
+            // Respond posts one ack group/cycle right behind snapshot —
+            // POSTED, meaning in-flight not bank-committed, so it can stream
+            // concurrently with the next fill.
             int fbase      = fill_ptr_q.read();
             int fill_beats = active_beats();
             int resp_beats = beats_for_mode(resp_mode_q.read());
@@ -530,36 +413,14 @@ SC_MODULE(buffer) {
                 uint32_t cur_mode = window_mode_q.read();
                 bool     en_now   = fetch_addr_valid_i.read();
 
-                // ---- Bootstrap latch: every cell restarts at once ----
-                //
-                // A cell starts a fetch whenever it holds nothing and en is
-                // high (see buffer_cell.hpp's start rule) — so the moment
-                // en_now is high while EVERY cell is idle (parked:
-                // !valid_q && !pending_q, read off invalid_o), all of them
-                // latch the staged bus together this very edge. That
-                // consumes the entire staged window in one go, exactly like
-                // a full drain cycle does group by group — so it must pulse
-                // window_reset ("advance your cursor one window") just like
-                // a wraparound, and it re-latches the window geometry from
-                // whatever the caller has active_mode set to NOW (base is
-                // snapped to 0 for self-consistency; a fully-parked buffer
-                // has no meaningful drain position).
-                //
-                // All-cells-idle can only happen three ways — after reset,
-                // after a fence (the caller held en low while the last
-                // window drained, so no cell could restart), and after a
-                // caller-side task/mode switch against a parked buffer —
-                // and the response is correct for all three: fetch the
-                // staged window under the caller's current geometry. It
-                // can NEVER fire mid-window: with en high, a drained cell
-                // restarts the same edge it drains (so it's pending, not
-                // idle), and a still-presenting cell is valid — so a brief
-                // en dip, a mid-drain mode change, or in-flight fetches
-                // all leave at least one cell non-idle and the latched
-                // window undisturbed. Since a start wipes nothing (see the
-                // cell's own comment), no gap threshold or edge detection
-                // is needed: a short en_i dip simply resumes where things
-                // stood.
+                // Bootstrap latch: if EVERY cell is idle (parked) while
+                // en_now is high, all of them latch the staged bus together
+                // this edge — consuming the whole window at once, so it
+                // must pulse window_reset like a wraparound and re-latch
+                // geometry from active_mode now. Can only trigger after
+                // reset, a fence, or a parked task switch — never
+                // mid-window, since a drained cell is pending (not idle)
+                // and a presenting one is valid.
                 bool all_idle = true;
                 for (int t = 0; all_idle && t < NUM_TDM; ++t)
                     all_idle = cell_invalid_s[t].read();
@@ -573,34 +434,17 @@ SC_MODULE(buffer) {
                 auto grp      = eval_group(base, n_beats);
                 bool wrap_now = grp.can_drain && grp.is_last;
 
-                // Registered here (using this invocation's stable, pre-advance
-                // base/grp) rather than left as a raw combinational signal in
-                // comb_proc — an external observer (e.g. an AGU's lookahead
-                // cursor) polling snapshot() right after an edge would
-                // otherwise be able to catch comb_proc reacting to the
-                // freshly-advanced rd_ptr with whichever p_req_i values
-                // happen to still be on the (reused) lane wires from the
-                // group that just drained, before anything's had a chance to
-                // update them for the new position — a same-cycle glitch,
-                // not a real second wrap. Registering it here means it only
-                // ever reflects what THIS edge's own seq_proc pass actually
-                // decided, once, synchronized to the real clock.
+                // Registered here (this invocation's stable pre-advance
+                // base/grp), not left combinational in comb_proc, so an
+                // observer polling snapshot() right after an edge can't
+                // catch a same-cycle glitch from the freshly-advanced
+                // rd_ptr against stale lane wires.
                 //
-                // Pulsed on boot_latch_now as well as wrap_now: both events
-                // mean "the staged window's addresses have all been
-                // latched by cells — advance the lookahead cursor", the
-                // wrap because window N's drain-triggered refetches
-                // consumed window N+1's slices group by group, the
-                // bootstrap because every cell latched its slice at once.
-                // One unified caller contract: one pulse = advance one
-                // window. Without the bootstrap pulse the caller's cursor
-                // runs one window behind from every bootstrap onward:
-                // during window N's drain the bus still holds N's own
-                // addresses, every refetch re-latches the window it came
-                // from, and every window's drain delivers the PREVIOUS
-                // window's data for the rest of the task. The two can't
-                // fire together — a bootstrap edge has no valid cells, so
-                // can_drain (hence wrap_now) is false.
+                // Pulsed on wrap_now OR boot_latch_now: both mean "advance
+                // the lookahead cursor one window". Without the bootstrap
+                // pulse the caller's cursor runs one window behind forever
+                // after any bootstrap. The two can't fire together (a
+                // bootstrap edge has no valid cells, so can_drain is false).
                 cell_reset_window_s.write(wrap_now || boot_latch_now);
 
                 if (grp.can_drain) {

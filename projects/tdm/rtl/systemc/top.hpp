@@ -1,31 +1,17 @@
 // -----------------------------------------------------------------------------
 // Author: Cedric Hoelzl
 //
-// Description:
-//   Unified SystemC DUT wrapper for the TDM project.  Pass IMPL=<tokens>
-//   to select an implementation; the flow splits on commas and uppercases
-//   each token to -DIMPL_<UPPER> (e.g. IMPL=crossbar,sv → -DIMPL_CROSSBAR
-//   -DIMPL_SV).  The sv token selects the Verilated SV backend (built from
-//   SV_MODS=<top module>); without it the native SystemC model builds
-//   directly with g++.
-//   Recognised combinations:
-//     IMPL=crossbar                            → native SC crossbar
-//     IMPL=crossbar,sv SV_MODS=top_crossbar    → Verilated SV crossbar
-//     IMPL=tdm                                 → native SC TDM
-//     IMPL=tdm,sv      SV_MODS=top_tdm         → Verilated SV TDM
-//                        (wrapper top_tdm_sv.hpp not yet present)
+// Unified SystemC DUT wrapper for the TDM project. IMPL=<tokens> selects an
+// implementation (comma-split, uppercased to -DIMPL_<UPPER>, e.g.
+// IMPL=crossbar,sv -> -DIMPL_CROSSBAR -DIMPL_SV); the sv token builds the
+// Verilated SV backend from SV_MODS=<top module>, else native SystemC.
+// Recognised: IMPL=crossbar[,sv SV_MODS=top_crossbar], IMPL=tdm[,sv
+// SV_MODS=top_tdm] (wrapper not yet present). IMPL=tdm_sc aliases native TDM.
 //
-//   IMPL=tdm_sc is kept as a compatibility alias for the native SC TDM.
-//
-//   The wrapper packs the RAGU/WAGU driver port groups onto the flat port arrays
-//   used by the implementation tops:
-//     read : 0..3 RAGU_A, 4..5 RAGU_B, 6 RAGU_C, 7 RAGU_D, 8 RAGU_E
-//     write: 0..3 WAGU_A, 4..5 WAGU_B, 6 WAGU_D, 7 WAGU_E
-//
-//   NUM_REQ sub-ports are exposed per driver, so RAGU_A_PORTS =
-//   NUM_RAGU_A * NUM_REQ (e.g. 4*4=16 flat OBI connections for RAGU_A).
-//   The crossbar receives NUM_RPORT=9 / NUM_WPORT=8 groups with NUM_REQ sub-ports
-//   each (36 and 32 flat internal ports respectively).
+// Packs RAGU/WAGU driver groups onto the flat port arrays the implementation
+// tops expect: read 0..3=RAGU_A, 4..5=RAGU_B, 6=RAGU_C, 7=RAGU_D, 8=RAGU_E;
+// write 0..3=WAGU_A, 4..5=WAGU_B, 6=WAGU_D, 7=WAGU_E — each *_PORTS =
+// NUM_<driver> * NUM_REQ sub-ports (crossbar: 36 read / 32 write flat ports).
 // -----------------------------------------------------------------------------
 
 #ifndef TOP_HPP
@@ -140,7 +126,7 @@ SC_MODULE(top) {
 #else
     top_crossbar<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
         impl;
-#if defined(XBAR_HASH_DYNAMIC)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
     // Per-port-group mapping geometry for top_crossbar.hpp's dynamic-hash
     // experiment — one scalar set per read/write driver group (see
     // top_crossbar.hpp's rport_map_r_i/etc). Written by the testbench from
@@ -153,6 +139,18 @@ SC_MODULE(top) {
     sc_signal<uint64_t> impl_wport_map_c[NUM_WPORT];
     sc_signal<uint64_t> impl_wport_map_l[NUM_WPORT];
     sc_signal<uint64_t> impl_wport_map_store_mode[NUM_WPORT];
+#endif
+#if defined(XBAR_HASH_L1_V2)
+    // napa==1 flag (ports_used_ <= NUM_REQ) driving XBAR_HASH_L1_V2's
+    // vector-axis dynamic repair — see top_crossbar.hpp's rport_map_napa1_i.
+    sc_signal<bool> impl_rport_map_napa1[NUM_RPORT];
+    sc_signal<bool> impl_wport_map_napa1[NUM_WPORT];
+#endif
+#if defined(XBAR_HASH16)
+    // Fixed per-AGU "high bank half" selector — see top_crossbar.hpp's
+    // rport_map_hi_bank_i.
+    sc_signal<bool> impl_rport_map_hi_bank[NUM_RPORT];
+    sc_signal<bool> impl_wport_map_hi_bank[NUM_WPORT];
 #endif
 #endif
 #elif defined(IMPL_TDM)
@@ -260,7 +258,8 @@ SC_MODULE(top) {
                        impl.wport_wdata_i, impl.wport_gnt_o, impl.wport_rvalid_o,
                        impl.wport_rdata_o, impl_wport);
 
-#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_DYNAMIC)
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && \
+    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2))
         for (int i = 0; i < NUM_RPORT; ++i) {
             impl.rport_map_r_i[i](impl_rport_map_r[i]);
             impl.rport_map_c_i[i](impl_rport_map_c[i]);
@@ -273,6 +272,18 @@ SC_MODULE(top) {
             impl.wport_map_l_i[i](impl_wport_map_l[i]);
             impl.wport_map_store_mode_i[i](impl_wport_map_store_mode[i]);
         }
+#endif
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_L1_V2)
+        for (int i = 0; i < NUM_RPORT; ++i)
+            impl.rport_map_napa1_i[i](impl_rport_map_napa1[i]);
+        for (int i = 0; i < NUM_WPORT; ++i)
+            impl.wport_map_napa1_i[i](impl_wport_map_napa1[i]);
+#endif
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH16)
+        for (int i = 0; i < NUM_RPORT; ++i)
+            impl.rport_map_hi_bank_i[i](impl_rport_map_hi_bank[i]);
+        for (int i = 0; i < NUM_WPORT; ++i)
+            impl.wport_map_hi_bank_i[i](impl_wport_map_hi_bank[i]);
 #endif
 
 #if defined(IMPL_TDM) && !defined(IMPL_SV)

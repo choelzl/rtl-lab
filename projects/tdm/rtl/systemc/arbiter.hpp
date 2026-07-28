@@ -1,36 +1,21 @@
 // -----------------------------------------------------------------------------
 // Author: Simone Machetti
 //
-// Description:
-//   Native SystemC strict round-robin selector — a free-running counter over
-//   NUM_AGU indices that advances EVERY clock cycle, independent of any request
-//   or grant (0, 1, ..., NUM_AGU-1, 0, 1, ...). It has no data inputs; it is
-//   purely a cyclic index generator.
+// Native SystemC strict round-robin selector — a free-running counter over
+// NUM_AGU indices, advancing every clock cycle independent of request/grant
+// (0,1,...,NUM_AGU-1,0,1,...). No data inputs, purely a cyclic generator.
 //
-//   Two registered index outputs:
-//     - sel_req_o : the index selected THIS cycle.
-//     - sel_rsp_o : the index selected the PREVIOUS cycle (sel_req_o delayed by
-//                   one clock). Useful for a consumer whose return path lags its
-//                   forward path by one cycle and must be steered with the prior
-//                   selection.
+// sel_req_o: index selected this cycle. sel_rsp_o: sel_req_o delayed one
+// clock, for a consumer whose return path lags its forward path. Both start
+// at seq_[0] after reset (active-low rst_ni).
 //
-//   sel_req_o starts at 0 on the first cycle after reset release; sel_rsp_o then
-//   trails it by exactly one cycle (sel_rsp_o(T) = sel_req_o(T-1)). Reset is
-//   active-low (rst_ni): while asserted both outputs are held at seq_[0].
+// Programmable slot table (set_sequence()): by default walks 0..NUM_AGU-1;
+// a deployment that never drives one client can program a shorter table
+// skipping it, so the rotation stops wasting a turn on an idle client.
+// Entries may repeat (weighted slots); static config, set before reset
+// release, not a per-cycle input.
 //
-//   Programmable slot table: by default the counter walks the identity
-//   sequence 0..NUM_AGU-1. set_sequence() replaces it with an arbitrary
-//   client list — e.g. a system whose stimuli never drive one of the
-//   NUM_AGU clients programs an (NUM_AGU-1)-entry table that skips it, so
-//   the free-running rotation stops wasting one bus turn per revolution on
-//   a client with nothing to send. Entries may repeat (weighted slots) and
-//   order is arbitrary; the table is static configuration (a slot register
-//   file in hardware terms), programmed once before reset release, not a
-//   per-cycle input.
-//
-// Template parameters:
-//   NUM_AGU - number of client indices (default 2); also the maximum
-//             sequence table length
+// Template param: NUM_AGU (client count, default 2; also max table length).
 // -----------------------------------------------------------------------------
 
 #ifndef ARBITER_HPP

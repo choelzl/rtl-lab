@@ -1,36 +1,17 @@
 // -----------------------------------------------------------------------------
 // Author: Simone Machetti, Cedric Hölzl
 //
-// Description:
-//   Native SystemC single-port memory bank — an OBI subordinate wrapping a
-//   word-addressable RAM array. It implements the simplified single-channel OBI
-//   protocol (see doc/specs/obi.md), exposed as `obi` (see obi_ports.hpp):
+// Native SystemC single-port memory bank — an OBI subordinate (doc/specs/
+// obi.md) wrapping a word-addressable RAM array, exposed as `obi`
+// (obi_ports.hpp). gnt_o follows req_i combinationally (no back-pressure;
+// contention is resolved upstream, one request/cycle to this port). 1-cycle
+// latency: a request accepted at T produces rvalid_o/rdata_o at T+1. Reads
+// return mem[word]; writes apply be_i byte lanes. Array is zero-init.
 //
-//     request  (manager -> bank) : obi.req_i, obi.addr_i, obi.we_i, obi.be_i, obi.wdata_i
-//     response (bank -> manager) : obi.gnt_o, obi.rvalid_o, obi.rdata_o
-//
-//   Behaviour (all sampled / driven on the rising edge of clk_i):
-//     - obi.gnt_o follows obi.req_i combinationally: the bank accepts whenever
-//       a request is present and never back-pressures. Any contention for the
-//       bank is resolved by the upstream interconnect, which presents at most
-//       one request to this single port per cycle.
-//     - 1-cycle access latency: a request accepted at cycle T (req_i & gnt_o)
-//       produces its response (rvalid_o, and rdata_o on reads) at cycle T+1.
-//       One request is accepted per cycle (no outstanding/pipelined depth > 1).
-//     - Reads return mem[word]; writes update the byte lanes selected by be_i.
-//     - The array is zero-initialised at construction.
-//
-//   Addressing: addr_i is a BANK-LOCAL byte address — the bank-select field has
-//   already been stripped upstream, so word = addr_i / BYTES_PER_WORD indexes
-//   into this bank's array (capacity NUM_ROW words, one word per row). The row
-//   index is taken modulo NUM_ROW, so any address wraps to a valid row rather
-//   than faulting.
-//
-//   Reset is active-low (rst_ni), matching OBI reset_n directly.
-//
-// Template parameters (set from PARAMS macros N_ROW, BYTES_PER_ROW):
-//   NUM_ROW      - rows per bank (default 1024)
-//   BYTES_PER_ROW - bytes per OBI data beat = WORDS_PER_ROW * BYTES_PER_WORD (default 16)
+// addr_i is bank-local (bank-select already stripped upstream): word =
+// addr_i/BYTES_PER_WORD, row = word % NUM_ROW (wraps rather than faulting).
+// Reset is active-low (rst_ni). Template params (from PARAMS N_ROW,
+// BYTES_PER_ROW): NUM_ROW (rows/bank), BYTES_PER_ROW (bytes/OBI beat).
 // -----------------------------------------------------------------------------
 
 #ifndef BANK_HPP

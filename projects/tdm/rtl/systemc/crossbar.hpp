@@ -1,58 +1,22 @@
 // -----------------------------------------------------------------------------
 // Author: Simone Machetti, Cedric Hölzl
 //
-// Description:
-//   Native SystemC crossbar interconnect for the crossbar design — an
-//   NUM_IN x NUM_OUT switch between OBI manager ports and OBI
-//   subordinate banks. Implements the simplified single-channel OBI protocol
-//   (see doc/specs/obi.md) with word-interleaved banking and a per-bank
-//   round-robin arbiter.
+// NUM_IN x NUM_OUT OBI crossbar (doc/specs/obi.md), word-interleaved banking
+// with a per-bank round-robin arbiter. m_ports[NUM_IN] (crossbar =
+// subordinate) <-> b_ports[NUM_OUT] (crossbar = manager). Combinational data
+// path; only rr_ptr/owner are registered per bank.
 //
-//   Manager side (the crossbar is the subordinate seen by each manager) —
-//   m_ports[NUM_IN], see obi_ports.hpp's obi_subordinate_ports:
-//     in : req_i, addr_i (global byte addr), we_i, be_i, wdata_i
-//     out: gnt_o, rvalid_o, rdata_o
-//   Bank side (the crossbar is the manager seen by each bank) —
-//   b_ports[NUM_OUT], see obi_ports.hpp's obi_manager_ports:
-//     out: req_o, addr_o (bank-local byte addr), we_o, be_o, wdata_o
-//     in : gnt_i, rvalid_i, rdata_i
+// SEL_LEN==0 (default, beat-interleaved): bank = (addr/BYTES_PER_ROW) %
+// NUM_OUT, bank-local addr = row*BYTES_PER_ROW (routing bits stripped).
+// SEL_LEN>0 (used by the 3-level crossbar backend, doc/specs/crossbar.md):
+// bank = (addr>>SEL_START) & mask, full address passed through unchanged.
 //
-//   Address decode (beat-interleaved — this primitive's default SEL_LEN==0
-//   mode, reused by the TDM backend; see doc/specs/map_func.md's "Use in
-//   the TDM design". The three-level crossbar BACKEND in doc/specs/
-//   crossbar.md instead composes this primitive with SEL_LEN>0 bit-field
-//   routing at each level):
-//     beat = addr / BYTES_PER_ROW ; bank = beat % NUM_OUT ; row = beat / NUM_OUT
-//   The bank receives the bank-local byte address row * BYTES_PER_ROW.
-//
-//   Routing & arbitration (the data path is combinational — the crossbar adds
-//   no pipeline register; only small per-bank control state is registered):
-//     - Each cycle, for every bank, the requesters targeting it are arbitrated
-//       round-robin (rr_ptr advances past the winner). The winner's request is
-//       forwarded to the bank and its grant returned; losing managers keep
-//       their request asserted until their turn — the source
-//       of the conflict penalty.
-//     - Connection / response routing: the bank's response arrives one cycle
-//       after its grant (1-cycle bank latency), so the manager that won bank b
-//       is remembered in a per-bank owner register. When the bank raises rvalid
-//       the next cycle, its response is steered back to that owner. No
-//       transaction IDs are needed.
-//
-//   Reset is active-low (rst_ni). Banks are always-ready (gnt = req), so the
-//   arbiter winner is effectively granted every cycle.
-//
-// Template parameters (NUM_IN = port_count*NUM_REQ; NUM_OUT, BYTES_PER_ROW from PARAMS):
-//   NUM_IN        - number of manager request ports (default 8)
-//   NUM_OUT       - number of slave ports (default 8)
-//   BYTES_PER_ROW - bytes per OBI data beat = WORDS_PER_ROW*BYTES_PER_WORD; used
-//                   when SEL_LEN == 0 to compute bank index and slave address (default 16)
-//   SEL_START      - LSB of routing address slice; ignored when SEL_LEN == 0 (default 0)
-//   SEL_LEN        - slice width; 0 = use legacy word-interleaved routing (default 0)
-//
-//   When SEL_LEN == 0 (default): routes by (addr/BYTES_PER_ROW) % NUM_OUT and
-//   delivers the bank-local address to the slave (routing bits stripped).
-//   When SEL_LEN > 0: routes by (addr >> SEL_START) & mask and passes the full
-//   address through to the slave unchanged (caller strips routing bits).
+// Arbitration: round-robin winner per bank forwarded to the bank; losers
+// hold req until their turn. Response routing: bank latency is 1 cycle, so
+// the winning manager is latched in a per-bank owner register and steered
+// the response when rvalid arrives next cycle — no transaction IDs needed.
+// Banks are always-ready (gnt=req), so the arbiter winner is granted every
+// cycle; reset is active-low.
 // -----------------------------------------------------------------------------
 
 #ifndef CROSSBAR_HPP

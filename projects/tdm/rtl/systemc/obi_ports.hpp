@@ -1,49 +1,18 @@
 // -----------------------------------------------------------------------------
-// Reusable OBI port bundles — every module in this design exposes at least
-// one OBI-like req/addr/we/be/wdata/gnt/rvalid/rdata octet (see
-// doc/specs/obi.md), and until now each one spelled out all 8 sc_in/sc_out
-// declarations by hand. That's the single most repeated block in the whole
-// codebase (bank.hpp, buffer_cell.hpp, buffer.hpp, crossbar.hpp, tdm.hpp,
-// agu.hpp, lane_agu.hpp, obi_monitor.hpp, top.hpp, top_tdm.hpp,
-// top_crossbar.hpp...).
+// Reusable OBI port bundles (see doc/specs/obi.md) — every module here
+// needs the same req/addr/we/be/wdata/gnt/rvalid/rdata octet; these types
+// group it into one named MEMBER (not a base class: these modules are
+// class templates on data width, and unqualified lookup doesn't reach into
+// a dependent base — tried, reverted). Bind sites are `mod.<member>.req_i`
+// instead of the old flat `mod.req_i`.
 //
-// obi_subordinate_ports<DATA_T> / obi_manager_ports<DATA_T> group those 8
-// ports into one named type, brought into a module as a NAMED MEMBER (not a
-// base class): every module here is a class template parameterized on the
-// data width, which would make the bundle a dependent base class if
-// inherited — and C++ doesn't do unqualified lookup into a dependent base,
-// so every reference inside the module's own method bodies would break
-// (tried, reverted). A plain member sidesteps that: `obi.req_i` resolves
-// through ordinary member lookup regardless of template-dependence.
+//   subordinate (target): in req/addr/we/be/wdata_i, out gnt/rvalid/rdata_o
+//   manager (initiator): out req/addr/we/be/wdata_o, in gnt/rvalid/rdata_i
+//   observer (passive tap): all 8 fields sc_in
+//   signal bundle: the 8 plain sc_signals wiring two submodules together
 //
-// This DOES mean every external bind site changes shape, from
-// `mod.req_i(sig)` to `mod.<member_name>.req_i(sig)` — there is no way to
-// get the old flat names back without either the dependent-base problem
-// above or a macro. Each module picks its own member name(s) for readability
-// (e.g. bank<>'s single group is just `obi`; a module with two groups, like
-// buffer<>'s port-facing and TDM-facing sides, needs two distinctly-named
-// members).
-//
-//   subordinate (the OBI *target* — receives req, drives response):
-//     in : req_i, addr_i, we_i, be_i, wdata_i
-//     out: gnt_o, rvalid_o, rdata_o
-//   manager (the OBI *initiator* — drives req, receives response):
-//     out: req_o, addr_o, we_o, be_o, wdata_o
-//     in : gnt_i, rvalid_i, rdata_i
-//   observer (a passive wire-tap — drives nothing, all fields sc_in):
-//     in : req_i, addr_i, we_i, be_i, wdata_i, gnt_i, rvalid_i, rdata_i
-//   signal bundle (plain internal wiring between two submodules — neither
-//   sc_in nor sc_out, just the 8 sc_signals a req/resp OBI link needs):
-//     req, addr, we, be, wdata, gnt, rvalid, rdata
-//
-// Signal names are deliberately left auto-generated (no explicit string
-// passed to each sc_in/sc_out constructor) rather than hardcoded to
-// "req_i"/etc: a hardcoded name would collide the moment two bundle members
-// exist as siblings under the same parent module, exactly like
-// preload_ctrl_t's naming rule elsewhere in this codebase. SystemC's default
-// per-object unique naming already produces distinct, if less immediately
-// descriptive, names in waveforms; the C++ member path (`obi.req_i` etc.)
-// remains fully descriptive in code.
+// Signal names are left auto-generated rather than hardcoded ("req_i" etc.)
+// since two bundle members as siblings would otherwise collide.
 // -----------------------------------------------------------------------------
 
 #ifndef OBI_PORTS_HPP
@@ -108,11 +77,8 @@ template <typename DATA_T> struct obi_signal_bundle {
 };
 
 // Binds a flat subordinate-shaped port group (the *_req_i/../_rdata_o arrays
-// every top_*<> wrapper still exposes, kept flat for SV-backend parity — see
-// top_crossbar_sv.hpp/top_tdm_sv.hpp) to an obi_signal_bundle array one-shot,
-// replacing the 8-line per-index bind loop that appeared at every such call
-// site (top.hpp's own impl binding, and every unit test that instantiates
-// top_tdm<>/top_crossbar<> directly).
+// every top_*<> wrapper exposes, kept flat for SV-backend parity) to an
+// obi_signal_bundle array one-shot, replacing an 8-line per-index bind loop.
 template <int N, typename DATA_T>
 void bind_obi_group(sc_in<bool> (&req_i)[N], sc_in<uint64_t> (&addr_i)[N], sc_in<bool> (&we_i)[N],
                     sc_in<uint32_t> (&be_i)[N], sc_in<DATA_T> (&wdata_i)[N],
@@ -131,14 +97,11 @@ void bind_obi_group(sc_in<bool> (&req_i)[N], sc_in<uint64_t> (&addr_i)[N], sc_in
 }
 
 // Binds one obi_manager_ports/obi_subordinate_ports member to an
-// obi_signal_bundle wire one-shot (the other half of the bundle-to-bundle
-// wiring pattern that shows up at every crossbar/mux stage in
-// top_crossbar.hpp and top_tdm.hpp — L1/L2/L3 inter-level wires, TDM
-// buf<->mux<->map<->crossbar<->bank chains — replacing an 8-line
-// field-by-field bind with one call). A third overload binds two
-// obi_manager_ports directly together for the hierarchical port-export case
-// (a parent module's own sc_out bound straight to a child submodule's sc_out,
-// e.g. buffer<>'s cells[t]->m export to its own m[t] — see buffer.hpp).
+// obi_signal_bundle wire one-shot — the bundle-to-bundle pattern used at
+// every crossbar/mux stage (top_crossbar.hpp/top_tdm.hpp). A third overload
+// binds two obi_manager_ports directly for the hierarchical port-export
+// case (a child submodule's sc_out bound to its parent's own, e.g.
+// buffer<>'s cells[t]->m to its own m[t]).
 template <typename DATA_T>
 void bind_obi(obi_manager_ports<DATA_T> &port, obi_signal_bundle<DATA_T> &sig) {
     port.req_o(sig.req);

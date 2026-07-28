@@ -339,8 +339,15 @@ SC_MODULE(tb) {
         // output: full 4:1 fold. With XBAR_HASH_L1 the select also takes
         // addr[11:10], which splits lanes 0/1 (bit 10 clear) from lanes 2/3
         // (bit 10 set) into a 2+2 fold — half the serialization, still 100%
-        // of frames conflicted. Same test, build-dependent depth:
-#ifdef XBAR_HASH_L1
+        // of frames conflicted. XBAR_HASH_L1_V2 is deliberately NOT covered
+        // here: this test instantiates top_crossbar<> directly and never
+        // wires the R/C/napa1 port-group signals that macro's dynamic
+        // dispatch (top_crossbar.hpp's hash_rd_addr()/hash_wr_addr()) reads,
+        // so a build with it defined fails at elaboration ("port not
+        // bound") before any test runs — a known, accepted limitation (see
+        // top_crossbar.hpp's adaptive_group_hash()/adaptive_vector_axis_hash()
+        // for where that macro's actual logic now lives).
+#if defined(XBAR_HASH_L1)
         constexpr int kFold = 2; // lanes per L1 output (2+2)
 #else
         constexpr int kFold = 4; // all four lanes on one output
@@ -367,7 +374,7 @@ SC_MODULE(tb) {
                       s3.waited_beats, N_FRAMES * N_LANES);
         CHECK(s3.waited_beats == N_FRAMES * (N_LANES - N_LANES / kFold), lbl);
 
-        std::puts("=== T04: 0x100 lane stride — 4:1 L1 fold the hash cannot repair ===");
+        std::puts("=== T04: 0x100 lane stride — 4:1 L1 fold XBAR_HASH_L1 cannot repair ===");
         uint64_t s100[N_FRAMES][N_LANES];
         for (int f = 0; f < N_FRAMES; ++f)
             for (int m = 0; m < N_LANES; ++m)
@@ -375,20 +382,32 @@ SC_MODULE(tb) {
                              static_cast<uint64_t>(m) * 0x100; // bit 8 only: hash-blind
         frame_stats_t s4 = drive_read_frames(s100);
 
+        // The four lanes share addr[5:4] AND addr[11:10], varying only in
+        // addr[9:8] — XBAR_HASH_L1's single addr[11:10] fold term never
+        // sees that bit range, so it's a full 4:1 fold with or without it.
+        // (XBAR_HASH_L1_V2 would fully split this exact pattern via
+        // l1_field_add()'s addr[9:8] term — see top_crossbar.hpp — but this
+        // test can't build under that macro at all, see T03's comment, so
+        // there's no build-dependent case to select here.)
+        constexpr int kFold04 = 4; // all four lanes on one output
         std::snprintf(lbl, sizeof(lbl), "T04a all %d reads completed (took %d cycles)",
                       N_FRAMES * N_LANES, s4.total_cycles);
         CHECK(!s4.timed_out && s4.rv_count == N_FRAMES * N_LANES, lbl);
         bool full_fold = true;
         for (int f = 0; f < N_FRAMES; ++f)
-            if (s4.frame_cycles[f] != N_LANES)
+            if (s4.frame_cycles[f] != kFold04)
                 full_fold = false;
-        CHECK(full_fold, "T04b every frame takes exactly 4 cycles — full 4:1 fold with or "
-                         "without XBAR_HASH_L1 (all lanes share addr[5:4] AND addr[11:10])");
-        CHECK(s4.max_gnt_per_cycle == 1, "T04c never more than 1 grant/cycle");
         std::snprintf(lbl, sizeof(lbl),
-                      "T04d %d of %d beats waited (75%% — the hash-proof residual class)",
-                      s4.waited_beats, N_FRAMES * N_LANES);
-        CHECK(s4.waited_beats == N_FRAMES * (N_LANES - 1), lbl);
+                      "T04b every frame takes exactly %d cycle(s) (%d:1 fold per L1 output)",
+                      kFold04, kFold04);
+        CHECK(full_fold, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "T04c never more than %d grant(s)/cycle", N_LANES / kFold04);
+        CHECK(s4.max_gnt_per_cycle == N_LANES / kFold04, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "T04d %d of %d beats waited (%s)", s4.waited_beats, N_FRAMES * N_LANES,
+                      kFold04 == 1 ? "zero — fully repaired" : "75% — the hash-proof residual class");
+        CHECK(s4.waited_beats == N_FRAMES * (N_LANES - N_LANES / kFold04), lbl);
     }
 };
 

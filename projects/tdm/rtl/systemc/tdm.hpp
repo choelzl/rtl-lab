@@ -1,39 +1,18 @@
 // -----------------------------------------------------------------------------
 // Author: Simone Machetti, Cedric Hölzl
 //
-// Description:
-//   Native SystemC TDM mapping function. Given a request group's base
-//   address (a group = NUM_WORD parallel OBI lanes, one mapped word each,
-//   sharing scalar we/be — see doc/specs/obi.md) and kernel-wide mapping parameters
-//   (num_banks, bank_width, R, C, L, store_mode), it places each of the NUM_WORD
-//   words of the group (logical address base + w*BYTES_PER_WORD) into a
-//   (bank_id, row_id) location with an XOR-skewed banking scheme, then emits
-//   one OBI request per lane for a downstream beat-interleaved interconnect
-//   (the word exists only in the placement math — the emitted requests are
-//   ordinary full-beat OBI, routed by the reused crossbar as bank = beat %
-//   NUM_BANK).
+// Native SystemC TDM mapping function. Given a request group's base address
+// (NUM_WORD parallel OBI lanes sharing scalar we/be, doc/specs/obi.md) and
+// kernel mapping params (num_banks, bank_width, R, C, L, store_mode), places
+// each word (base + w*BYTES_PER_WORD) into a (bank_id, row_id) via map_func.hpp's
+// XOR-skewed scheme (spec: doc/specs/map_func.md), then emits one ordinary
+// full-beat OBI request per lane, re-encoded as (row_id*NUM_BANK+bank_id)*
+// BYTES_PER_ROW so a downstream bank=beat%NUM_BANK decode recovers it. Bank
+// collisions across words are left to the interconnect's per-bank arbiter.
 //
-//   The placement scheme itself (get_k, map_one, the con/str/l split, and the
-//   5-bit bank-id XOR matrix) lives in map_func.hpp, shared with other
-//   backends that want the same placement (e.g. top_crossbar.hpp's
-//   XBAR_HASH_DYNAMIC experiment). Parameter meaning, the get_k boundaries,
-//   the address split into con/str/l, and the XOR matrix are specified in
-//   doc/specs/map_func.md. The emitted OBI byte address re-encodes the placement
-//   as (row_id * NUM_BANK + bank_id) * BYTES_PER_ROW, so a downstream decode of
-//   bank = beat % NUM_BANK and row = beat / NUM_BANK recovers exactly that
-//   (bank_id, row_id); a bank collision (>=2 words sharing a bank) is left for
-//   the interconnect's per-bank arbiter to serialize.
-//
-//   The scalar group we/be are broadcast to every emitted port; per-word
-//   req/wdata pass straight through, as do the returning per-word gnt/rvalid/
-//   rdata. Purely combinational, no state. bank_id is a 5-bit value (0..31); if
-//   it reaches NUM_BANK the build is too small for the mapping (NUM_BANK must be
-//   >= 32) and the module reports a fatal error.
-//
-// Template parameters (NUM_BANK, BYTES_PER_ROW from PARAMS N_BANK, BYTES_PER_ROW):
-//   NUM_WORD      - words per group / manager ports out (default 8)
-//   NUM_BANK      - number of banks the re-encoded address targets (default 32)
-//   BYTES_PER_ROW - bytes per OBI data beat = WORDS_PER_ROW*BYTES_PER_WORD (default 16)
+// Purely combinational, no state. bank_id is 5-bit (0..31); NUM_BANK must be
+// >= 32 or the module reports fatal. Template params: NUM_WORD (words per
+// group), NUM_BANK, BYTES_PER_ROW (both from PARAMS N_BANK/BYTES_PER_ROW).
 // -----------------------------------------------------------------------------
 
 #ifndef TDM_HPP

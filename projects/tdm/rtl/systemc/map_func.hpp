@@ -1,17 +1,12 @@
 // -----------------------------------------------------------------------------
 // Author: Simone Machetti, Cedric Hölzl
 //
-// Description:
-//   TDM address-mapping function, shared. Given a byte address and kernel-wide
-//   mapping parameters (num_banks, bank_width, R, C, L, store_mode), places
-//   the address into a (bank_id, row_id) location with an XOR-skewed banking
-//   scheme. Pure functions, no state — see doc/specs/map_func.md for the full
-//   specification (parameter meaning, the get_k boundaries, the address split
-//   into con/str/l, and the 5-bit bank-id XOR matrix).
-//
-//   Originally private to tdm.hpp (the TDM interconnect's mapping module);
-//   extracted here so other backends (e.g. top_crossbar.hpp's XBAR_HASH_DYNAMIC
-//   experiment) can reuse the exact same placement scheme.
+// TDM address-mapping function, shared. Given a byte address and kernel
+// mapping params (num_banks, bank_width, R, C, L, store_mode), places it
+// into a (bank_id, row_id) via an XOR-skewed banking scheme. Pure functions,
+// no state — see doc/specs/map_func.md for the full spec. Extracted from
+// tdm.hpp so other backends (e.g. top_crossbar.hpp's XBAR_HASH_DYNAMIC) can
+// reuse the same placement scheme.
 // -----------------------------------------------------------------------------
 
 #ifndef MAP_FUNC_HPP
@@ -100,17 +95,12 @@ inline std::pair<uint32_t, uint32_t> get_k(tdm_stor_mode mode, uint32_t e, uint3
                                            uint32_t tzC, uint32_t tzL) {
     const std::pair<uint32_t, uint32_t> k = get_k_raw(mode, e, tzR, tzC, tzL);
 #ifdef TDM_GETK_GUARD
-    // Degenerate-split guard (experimental; doc/report Appendix A.8): when the
-    // mode's LEADING dimension has no trailing zeros (e.g. C = 1 under
-    // Loop_Row), k1 collapses onto e, the con field is zero-width, every
-    // con term of the bank-id XOR matrix drops out, and some window
-    // layouts fold pairwise onto half the banks. Borrow up to two bits
-    // from the bottom of str so con is never empty — bank_id stays a
-    // bijection per routing field, row_id untouched. NOTE: the guard is
-    // necessarily pattern-blind (get_k sees only the geometry, not the
-    // window layout); measured statically it repairs the napa=4
-    // offender but can introduce collisions on other layouts sharing
-    // the same split — hence opt-in, see the report for the evaluation.
+    // Degenerate-split guard (experimental, opt-in; doc/report Appendix
+    // A.8): when the mode's leading dimension has no trailing zeros (e.g.
+    // C=1 under Loop_Row), con collapses to zero-width and some window
+    // layouts fold onto half the banks. Borrows up to two bits from str's
+    // bottom so con is never empty; pattern-blind, so it can also
+    // introduce collisions elsewhere — see the report for the evaluation.
     using M = tdm_stor_mode;
     const uint32_t lead =
         (mode == M::Loop_Row_Col || mode == M::Loop_Row || mode == M::Row_Loop_Col ||
@@ -153,31 +143,14 @@ inline void map_one(uint64_t addr, uint64_t nb, uint64_t bw, uint64_t R, uint64_
 }
 
 // -----------------------------------------------------------------------
-// "Stride XOR" bank hash — an alternate candidate mapping, ported from
-// projects/tdm/pythonXOR_mapfun.py (research sandbox:
-// ~/files/tdm-mapping-function/src/, input_layer.py's StorMode/get_addr,
-// which use the exact same mode names/values as tdm_stor_mode above).
-//
-// Unlike map_one() above (bit-shift con/str/l fields, assumes power-of-two
-// R/C/L), this derives the two outer strides as plain dimension products —
-// str1 = size(innermost axis), str2 = size(middle axis) * str1 — so it also
-// works for non-power-of-two R/C/L. Which axis is innermost/middle is read
-// directly off the mode name (each of the 6 simple permutation names spells
-// out its axis order outermost_middle_innermost, e.g. Loop_Row_Col = Loop
-// outer, Row middle, Col inner), the same way get_k_raw() above picks its
-// k1/k2 formula per mode — no need to sample get_addr()'s own address
-// arithmetic to rediscover that order at runtime. It only covers those 6
-// permutation modes (0-5) and the two Loop_4x4 modes (8, 9): the reference
-// python's get_strides() raises NotImplementedError for every other mode,
-// so stride_get_strides() below reports fatal instead of guessing.
-//
-// Ported 1:1, including scope: STRIDE_XOR_N_BANKS/STRIDE_XOR_BANK_WIDTH (8
-// banks, a 3-bit XOR of hand-picked bit positions) match the python
-// reference's own defaults, not this project's N_BANK=32 crossbar/TDM
-// target — the bit-select formula was tuned for exactly 3 output bits, so
-// it is NOT a drop-in replacement for map_one() at N_BANK=32 without a
-// redesigned (wider) XOR matrix. addr is in ELEMENTS (matching
-// input_layer.py's get_addr()), not bytes like map_one() takes.
+// "Stride XOR" bank hash — alternate candidate mapping, ported 1:1 from
+// projects/tdm/pythonXOR_mapfun.py (input_layer.py's StorMode/get_addr).
+// Unlike map_one() (bit-shift fields, power-of-two R/C/L only), this uses
+// plain dimension products for the strides, so it also covers non-power-
+// of-two geometries — but only the 6 simple permutation modes (0-5) and
+// Loop_4x4 (8,9); STRIDE_XOR_N_BANKS/WIDTH (8 banks, 3-bit XOR) match the
+// python reference, not this project's N_BANK=32 target. addr is in
+// ELEMENTS, not bytes like map_one().
 // -----------------------------------------------------------------------
 
 constexpr int STRIDE_XOR_N_BANKS    = 8;

@@ -439,7 +439,7 @@ using tc_t = top_crossbar<dut_t::NUM_RPORT, dut_t::NUM_WPORT, dut_t::NUM_REQ, N_
                           WORD_BYTES, WORDS_PER_ROW>;
 
 inline void route_xbar_hash(uint64_t addr, int &bank, uint64_t &local_addr) {
-    const uint64_t h = tc_t::addr_hash(addr);
+    const uint64_t h = tc_t::hash_ops::addr_hash(addr);
     const int      k = crossbar<1, 8, 1, tc_t::ROUTE_LSB, tc_t::LOG_REQ>::bank_of(h);
     const int      g = crossbar<1, 8, 1, tc_t::L2_SEL, tc_t::LOG_BANK_GRP>::bank_of(h);
     const int      b = k * tc_t::NUM_BANK_GRP + g;

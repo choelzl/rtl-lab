@@ -1,76 +1,32 @@
 // -----------------------------------------------------------------------------
 // Author: Cedric Hölzl
 //
-// Description:
-//   Native SystemC design top (DUT) for the TDM read/write path.
+// Native SystemC design top (DUT) for the TDM read/write path.
 //
-//   Pipeline:
-//     RPORT groups --> buf_r{0..4} -+
-//     WPORT groups --> buf_w{0..3} -+--> mux (arbiter sel) --> tdm --> crossbar --> bank[NUM_BANK]
+// Pipeline: RPORT groups -> buf_r{0..4} -+
+//           WPORT groups -> buf_w{0..3} -+-> mux (arbiter sel) -> tdm -> crossbar -> bank[NUM_BANK]
 //
-//   Read buffers (IS_WRITE=false):
-//     buf_r0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (RAGU_A)
-//     buf_r1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (RAGU_B)
-//     buf_r2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_C)
-//     buf_r3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_D)
-//     buf_r4 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (RAGU_E)
+// 5 read buffers (PORT_COUNT 4,2,1,1,1 = RAGU_A..E) + 4 write buffers
+// (PORT_COUNT 4,2,1,1 = WAGU_A,B,D,E), all NUM_TDM=NUM_BANK. active_mode
+// per buffer (0/1/2 -> 1/2/4 active port groups) comes from stimuli's
+// ports_used_groups field; buffer indices 0..4=r, 5..8=w (enum buf_client).
+// -----------------------------------------------------------------------------
 //
-//   Write buffers (IS_WRITE=true):
-//     buf_w0 : PORT_COUNT=4, NUM_TDM=NUM_BANK  (WAGU_A)
-//     buf_w1 : PORT_COUNT=2, NUM_TDM=NUM_BANK  (WAGU_B)
-//     buf_w2 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_D)
-//     buf_w3 : PORT_COUNT=1, NUM_TDM=NUM_BANK  (WAGU_E)
+// Each read buffer's fetch_addr_i/fetch_addr_valid_i is wired to its own
+// AGU's lookahead bus (agu.hpp's lookahead_addr/lookahead_ready), which
+// already knows its next NUM_BANK addresses — so a whole window can
+// prefetch at once and only the first group after a window reset pays the
+// TDM round trip. Write buffers ignore fetch_addr_i.
 //
-//   active_mode encoding per buffer (driven from buf_active_mode_i[0..NUM_TOTAL_BUF-1]):
-//     0 → 1 active port group  (active_beats = NUM_REQ)
-//     1 → 2 active port groups (active_beats = 2*NUM_REQ)
-//     2 → 4 active port groups (active_beats = 4*NUM_REQ, clamped to PORT_COUNT)
-//   Set from stimuli ports_used_groups field; indices: buf_r0..r4=0..4, buf_w0..w3=5..8.
+// The arbiter round-robins across all 9 buffers; mux_comb routes the
+// selected buffer's OBI to/from the TDM module and steers gnt/rvalid/rdata
+// back. IMPL_ARB_ADAPTIVE (off by default) swaps in arbiter_adaptive.hpp,
+// which skips requestless clients instead of visiting all 9 every cycle —
+// same sel_req_o/sel_rsp_o interface either way.
 //
-//   Each read buffer's fetch_addr_i[0..NUM_BANK-1]/fetch_addr_valid_i is
-//   wired to a per-buffer lookahead bus (rdN_lookahead_i[]/
-//   rdN_lookahead_valid_i) driven by that buffer's own AGU (agu.hpp's
-//   lookahead_addr()/lookahead_ready() accessors), which already knows its
-//   next NUM_BANK addresses from its own pre-loaded trace and exposes them
-//   directly (zero-padded past the end) — the whole window's worth of
-//   upcoming groups can be prefetching at once, so only the FIRST group
-//   after a window reset pays the TDM round-trip cost and the rest drain as
-//   fast as the port-side handshake allows (see buffer_cell.hpp/agu.hpp's
-//   step_tdm_read()). Write buffers ignore fetch_addr_i entirely.
-//
-//   The arbiter round-robins across all 9 buffers.  mux_comb routes the
-//   selected buffer's full NUM_BANK-wide OBI (including wdata) to/from the TDM
-//   module and steers gnt/rvalid/rdata back to the correct buffer.
-//
-//   Arbiter client list (buffer index = arbiter slot, see enum buf_client):
-//     0 BUF_RAGU_A   1 BUF_RAGU_B   2 BUF_RAGU_C   3 BUF_RAGU_D   4 BUF_RAGU_E
-//     5 BUF_WAGU_A   6 BUF_WAGU_B   7 BUF_WAGU_D   8 BUF_WAGU_E
-//   For the free-running arbiter the rotation sequence over these clients is
-//   programmable via set_arb_sequence() (default: all 9 in index order) — a
-//   deployment whose stimuli never use a client drops it from the table so
-//   the rotation stops spending one bus turn per revolution on an idle
-//   buffer. The adaptive arbiter needs no such table: it already skips
-//   requestless clients cycle-by-cycle.
-//
-//   IMPL_ARB_ADAPTIVE (compile-time toggle, off by default): selects
-//   arbiter_adaptive.hpp in place of arbiter.hpp's free-running counter.
-//   The default arbiter advances through all 9 buffer slots every cycle
-//   unconditionally, so a buffer with no pending request still only gets
-//   the shared TDM bus once every 9 cycles even when every other buffer is
-//   idle. The adaptive arbiter instead scans (round-robin, for fairness
-//   among simultaneously-active buffers) for the next buffer that actually
-//   has a pending request and skips the rest, closing that gap. Both
-//   variants share the same sel_req_o/sel_rsp_o interface, so no other
-//   wiring in this module depends on which one is selected.
-//
-// Template parameters:
-//   NUM_RPORT       -- read port groups; must be >= 9 (4+2+1+1+1 split)
-//   NUM_WPORT       -- write port groups; must be >= 8 (4+2+1+1 split)
-//   NUM_REQ         -- OBI buses per port (default 4)
-//   NUM_BANK        -- TDM bus width / buffer window size (default 32)
-//   NUM_ROW         -- rows per bank (default 1024)
-//   BYTES_PER_WORD  -- bytes per word (default 4)
-//   WORDS_PER_ROW   -- words per bank row (default 4)
+// Template params: NUM_RPORT (>=9, 4+2+1+1+1 split), NUM_WPORT (>=8,
+// 4+2+1+1 split), NUM_REQ (OBI buses/port), NUM_BANK (TDM width/window
+// size), NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW.
 // -----------------------------------------------------------------------------
 
 #ifndef TOP_TDM_HPP
@@ -182,21 +138,12 @@ SC_MODULE(top_tdm) {
     sc_in<uint64_t> rd3_lookahead_i[NUM_BANK];
     sc_in<uint64_t> rd4_lookahead_i[NUM_BANK];
 
-    // Per-buffer fetch_addr_valid_i (buf_r0..r3 only — buf_r4/DMA keeps the
-    // shared always-true constant, see stim_bank_common.hpp's comment on why
-    // it has no lookahead source): a task fenced behind a start_cycle (e.g. a
-    // write-then-read phase boundary) leaves this AGU's lookahead cursor
-    // pointing past the end of its current task until that fence clears
-    // (see agu.hpp's lookahead_ready()/retry_lookahead_fence()). Without
-    // this gate, cells would still latch whatever stale/zero content
-    // lookahead_addr() happens to return during that wait — since cells
-    // fetch unconditionally once IDLE, regardless of whether the port side
-    // is ready — and that stale window then gets wrongly drained the
-    // instant the fence clears and ports_req turns true, permanently
-    // desyncing the lookahead cursor from the AGU's own capture-side
-    // group_/task_idx_ for the rest of the run. Gating fetch on readiness
-    // means cells simply hold IDLE (no fetch at all) until real data is
-    // available.
+    // Per-buffer fetch_addr_valid_i (buf_r0..r3 only — buf_r4/DMA has no
+    // lookahead source, see stim_bank_common.hpp). Gates fetch on the AGU's
+    // own readiness (lookahead_ready()) so a fence-stalled task (e.g. a
+    // write-then-read boundary) holds cells IDLE instead of latching stale
+    // lookahead content, which would otherwise desync the lookahead cursor
+    // from the AGU's own capture-side state for the rest of the run.
     sc_in<bool> rd0_lookahead_valid_i;
     sc_in<bool> rd1_lookahead_valid_i;
     sc_in<bool> rd2_lookahead_valid_i;

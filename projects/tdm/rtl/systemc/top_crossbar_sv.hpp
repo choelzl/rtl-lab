@@ -1,49 +1,26 @@
 // -----------------------------------------------------------------------------
 // Author: Cedric Hölzl
 //
-// Description:
-//   SystemC wrapper for the Verilated SV top_crossbar (Verilator --sc output).
-//   Mirrors the port convention of the native rtl/systemc/top_crossbar.hpp so
-//   that the unified top.hpp wrapper can select this SV backend with
-//   IMPL=top_crossbar.
+// SystemC wrapper for the Verilated SV top_crossbar (Verilator --sc output),
+// mirroring rtl/systemc/top_crossbar.hpp's port convention so top.hpp can
+// select this backend with IMPL=top_crossbar. Port-group mapping (see
+// top.hpp/tb_top.cpp): read ports 0-3/4-5/6/7/8 -> RAGU_A/B/C/D/E; write
+// ports 0-3/4-5/6/7 -> WAGU_A/B/D/E.
 //
-//   Each flat read/write port group is driven by one RAGU/WAGU trace driver.
-//   The port-group mapping (established in top.hpp and tb_top.cpp) is:
-//     read : ports 0-3 → RAGU_A, ports 4-5 → RAGU_B, port 6 → RAGU_C,
-//            port 7 → RAGU_D, port 8 → RAGU_E
-//     write: ports 0-3 → WAGU_A, ports 4-5 → WAGU_B, port 6 → WAGU_D,
-//            port 7 → WAGU_E
-//   In the TDM backend the RAGU drivers feed per-group buffers; the TDM
-//   arbiter and slot-allocation logic sit between those buffers and the
-//   crossbar/bank backend. In the crossbar backend the mapping is direct.
+// Vtop_crossbar exposes packed OBI arrays as flat bit vectors:
+// rport_req_i/wport_req_i: sc_in<sc_bv<N*SV_NUM_REQ*OBI_REQ_W>>;
+// rport_resp_o/wport_resp_o: sc_out<sc_bv<N*SV_NUM_REQ*OBI_RESP_W>>.
 //
-//   The Verilated module (Vtop_crossbar, generated from top_crossbar.sv) exposes
-//   packed OBI request/response arrays as flat wide bit vectors:
-//     rport_req_i  : sc_in <sc_bv<NUM_RPORT * SV_NUM_REQ * OBI_REQ_W>>
-//     rport_resp_o : sc_out<sc_bv<NUM_RPORT * SV_NUM_REQ * OBI_RESP_W>>
-//     wport_req_i  : sc_in <sc_bv<NUM_WPORT * SV_NUM_REQ * OBI_REQ_W>>
-//     wport_resp_o : sc_out<sc_bv<NUM_WPORT * SV_NUM_REQ * OBI_RESP_W>>
+// Packed field layout (SV, LSB = last-declared field):
+//   obi_req_t:  [OBI_DW-1:0]wdata [OBI_DW+31:OBI_DW]addr
+//               [OBI_DW+32+BEW-1:OBI_DW+32]be [+BEW]we [+BEW+1]req
+//   obi_resp_t: [OBI_DW-1:0]rdata [OBI_DW]rvalid [OBI_DW+1]gnt
 //
-//   OBI struct field layout (SystemVerilog packed, LSB = field declared last):
-//     obi_req_t (OBI_REQ_W bits per manager):
-//       [OBI_DW-1        :  0       ] wdata
-//       [OBI_DW+31       :  OBI_DW  ] addr
-//       [OBI_DW+32+BEW-1 :  OBI_DW+32] be
-//       [OBI_DW+32+BEW   ]            we
-//       [OBI_DW+32+BEW+1 ]            req
-//     obi_resp_t (OBI_RESP_W bits per manager):
-//       [OBI_DW-1 :  0      ] rdata
-//       [OBI_DW   ]           rvalid
-//       [OBI_DW+1 ]           gnt
+// OBI_DATA_WIDTH must reach both Verilator (-G) and C++ (-D) with the same
+// value via PARAMS=; port arrays use uint64_t, so >64 truncates silently.
 //
-//   OBI_DATA_WIDTH must be passed consistently via PARAMS= so that Verilator
-//   receives -G and C++ receives -D with the same value. The port arrays use
-//   uint64_t, so OBI_DATA_WIDTH > 64 silently truncates data in this wrapper.
-//
-// Template parameters:
-//   NUM_RPORT, NUM_WPORT - read/write port counts
-//   NUM_REQ              - OBI buses per external read/write port
-//   SV_NUM_REQ           - NUM_REQ compiled into top_crossbar.sv packed ports
+// Template params: NUM_RPORT/NUM_WPORT (port counts), NUM_REQ (OBI buses per
+// external port), SV_NUM_REQ (NUM_REQ compiled into top_crossbar.sv).
 // -----------------------------------------------------------------------------
 
 #ifndef TOP_CROSSBAR_SV_HPP
