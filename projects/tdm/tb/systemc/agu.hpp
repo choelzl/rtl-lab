@@ -431,19 +431,33 @@ SC_MODULE(agu) {
             }
         }
 
-        // SEL_NO_FENCE (throughput-bound harness mode): keep only the
-        // stream's initial start_cycle fence and run every later task
-        // back-to-back. With the fences gone, consecutive SAME-geometry
-        // tasks are also merged into one (trace concatenation): the
-        // window rounding below then pads to the TDM window boundary once
-        // per merged run instead of once per task, removing the addr-0
-        // filler beats that otherwise occupy the shared bus between every
-        // pair of adjacent tasks. Geometry must match exactly
-        // (ports_used + C/R/L/store_mode) — the same condition as the
-        // buffer's seamless task-roll path (la_same_geometry()).
+        // SEL_NO_FENCE (throughput-bound harness mode): remove every
+        // fence, including the stream's own first one — the buffer is
+        // idle from reset, so task 0 doesn't need lookahead-based fill
+        // hiding the way a mid-stream task does (there's no prior task's
+        // residue to roll seamlessly past); it can boot-latch its first
+        // window at cycle 0 exactly like any other from-idle start
+        // elsewhere in this codebase. Left un-zeroed, task 0's ORIGINAL
+        // start_cycle (copied straight from the fenced schedule) can be
+        // tens of thousands of cycles on real production stimuli — not a
+        // small pipeline-fill bubble, the dominant term in the reported
+        // "unfenced" total (measured directly: 23271 of a 31431-cycle
+        // total on one real set, i.e. 74% of what this mode reports as
+        // "throughput-bound" was actually just this one un-removed fence).
+        // Every later task's fence is removed the same way, and — only
+        // when there's more than one task to begin with — consecutive
+        // SAME-geometry tasks are also merged into one (trace
+        // concatenation): the window rounding below then pads to the TDM
+        // window boundary once per merged run instead of once per task,
+        // removing the addr-0 filler beats that otherwise occupy the
+        // shared bus between every pair of adjacent tasks. Geometry must
+        // match exactly (ports_used + C/R/L/store_mode) — the same
+        // condition as the buffer's seamless task-roll path
+        // (la_same_geometry()).
+        if (no_fence())
+            for (auto &t : tasks_)
+                t.start_cycle = 0;
         if (no_fence() && tasks_.size() > 1) {
-            for (std::size_t i = 1; i < tasks_.size(); ++i)
-                tasks_[i].start_cycle = 0;
             std::vector<task_t> packed;
             packed.push_back(std::move(tasks_.front()));
             for (std::size_t i = 1; i < tasks_.size(); ++i) {

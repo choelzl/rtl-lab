@@ -25,17 +25,26 @@ struct addr_hash_ops {
         const uint64_t sum = (hi + mid) & 0x7;
         uint64_t       r   = (a & ~(static_cast<uint64_t>(0x7) << 6)) | (sum << 6);
 #if defined(XBAR_HASH_L1_V2)
-        // 4-term additive fold of the non-overlapping windows addr[5:4]/
-        // [7:6]/[9:8]/[11:10] — repairs strided R/C column-walks
+        // 5-term additive fold of the non-overlapping windows addr[5:4]/
+        // [7:6]/[9:8]/[11:10]/[13:12] — repairs strided R/C column-walks
         // XBAR_HASH_L1's single term misses (doc/report Appendix A.8).
-        // Tiles bits[4:11] with no gap: a stride that only ever touches
-        // bit 10 (the old window boundary at addr[12:11] skipped it) was a
-        // blind spot the fold couldn't see at all. Per-address only (no
+        // This is also the fold every geometry uses now (see
+        // is_vector_geometry() below): a dedicated fold for napa>1 vector
+        // tasks was tried and measured WORSE (these tasks are confined to
+        // small buffers, so a wider dedicated window mostly read constant
+        // bits). Also tried and measured no better (same sweep): a 6th
+        // term (addr[15:14]); XOR instead of additive here; a 3rd L2 term
+        // (addr[14:12], L1_V2-only); extending vector_axis_fold_addr()'s
+        // own XOR fold to 5 terms. This is this fold family's practical
+        // floor on real traffic, well short of HASH16/32's <1%, which
+        // comes from knowing the task's actual R/C/L stride instead of
+        // guessing at fixed bit windows. Per-address only (no
         // cross-lane state: bank.hpp needs same address -> same field).
         uint64_t l1 = (a >> 4) & 0x3;
         l1          = (l1 + ((a >> 6) & 0x3)) & 0x3;
         l1          = (l1 + ((a >> 8) & 0x3)) & 0x3;
         l1          = (l1 + ((a >> 10) & 0x3)) & 0x3;
+        l1          = (l1 + ((a >> 12) & 0x3)) & 0x3;
         r           = (r & ~(static_cast<uint64_t>(0x3) << 4)) | (l1 << 4);
 #elif defined(XBAR_HASH_L1)
         // Single-term fold: addr[5:4] with addr[11:10].
@@ -56,47 +65,62 @@ struct addr_hash_ops {
     }
 
 #if defined(XBAR_HASH_L1_V2)
-    // Repair for the residual XBAR_HASH_L1_V2's fold handles poorly: a
-    // degenerate "vector" axis (R==1 or C==1), split by napa below.
-    static bool is_vector_geometry(uint64_t R, uint64_t C) {
-        return R == 1 || C == 1;
-    }
-
-    // napa==1: applies addr_hash()'s own L2 fold (hi+mid into bits[8:6]) —
-    // a vector task is otherwise the only path that left L2 completely raw,
-    // which is a real gap: a short/degenerate axis often leaves addr[8:6]
-    // literally constant across every lane, guaranteeing an L2 collision.
-    // L1 is then XOR-folded (not additive: vector strides can vary across
-    // two bit positions with equal weight, which addition can't distinguish
-    // once they land in the same output bit) over the same non-overlapping
-    // windows addr[5:4]/[7:6]/[9:8]/[11:10] as the non-vector fold above.
-    static uint64_t vector_axis_fold_addr(uint64_t a) {
+    // Picks the L1 fold's own LENGTH (still ADD, still the same
+    // non-overlapping addr[5:4]/[7:6]/[9:8]/[11:10]/[13:12] windows) per
+    // port-group from a fixed R/C/napa rule — promoted from an earlier
+    // "XBAR_HASH_L1_V2_ALT" comparison scheme to the deployed
+    // XBAR_HASH_L1_V2 formula once it measured at least as good as the old
+    // fixed two-path dispatch (is_vector_geometry()+napa1 selecting a
+    // dedicated 4-term XOR vs. the ordinary 5-term ADD) and a small real
+    // edge under full-traffic contention (doc/report §4.4). Mined from an
+    // offline oracle sweep: with ragu_a's own descriptors broken out by
+    // (R,C,L,store_mode,napa), the BEST achievable per-shape choice among
+    // {no fold, 2-term ADD, 3-term ADD, 5-term ADD} reaches 5.5% weighted M1
+    // L1% — but that ceiling assumes an oracle that already knows the right
+    // answer per shape. This rule is the best *practically expressible*
+    // R/C/napa-keyed selector found by search (a 2-level threshold split,
+    // footprint = R*C): it only reaches ~7.8%, because the winning fold
+    // doesn't correlate cleanly enough with these fields for a static rule
+    // to recover most of the oracle's gap (a single huge-volume napa=8
+    // shape needs the 5-term fold specifically while other napa=8 shapes of
+    // similar volume need 2/3-term — no threshold separates them).
+    //
+    // CORRECTNESS CAVEAT: R/C/napa are properties of the task descriptor
+    // CURRENTLY active on a port, not of the address. Real buffers in this
+    // traffic are commonly touched by 10+ distinct (napa,R,C,L,store_mode)
+    // combinations over their lifetime, so this rule can route the SAME
+    // address to a DIFFERENT bank at different points in that buffer's
+    // life — a live correctness risk this session flagged and explicitly
+    // deferred (the actual fix is a software-assigned, buffer-stable
+    // formula ID, analogous to XBAR_HASH16's existing hi_bank mechanism,
+    // not something re-derived from a task's transient R/C/L view). The
+    // production testbench performs no read-after-write verification, so
+    // none of this scheme's timing numbers are evidence of correctness
+    // either way.
+    static uint64_t addr_hash_l1_v2(uint64_t a, uint64_t R, uint64_t C, uint64_t napa) {
+        const uint64_t footprint = R * C;
+        int            n_terms;
+        if (napa <= 4) {
+            n_terms = (footprint <= 2048) ? 3 : 2;
+        } else if (footprint <= 1024) {
+            n_terms = 5;
+        } else {
+            return a; // "baseline" leg of the rule: no fold at all, raw passthrough
+        }
         const uint64_t hi  = (a >> 9) & 0x7;
         const uint64_t mid = (a >> 6) & 0x7;
         uint64_t       r   = (a & ~(static_cast<uint64_t>(0x7) << 6)) | (((hi + mid) & 0x7) << 6);
-
-        uint64_t v = 0;
-        for (int s : {4, 6, 8, 10})
-            v ^= (a >> s) & 0x3;
-        const uint64_t field_mask = (1ull << LOG_REQ) - 1;
-        return (r & ~(field_mask << ROUTE_LSB)) | (v << ROUTE_LSB);
-    }
-
-    // napa>1: folds the FULL 5-bit L1+L2 field with addr[11:7]/[16:12] — a
-    // short vector stride often leaves L2 constant, so L1 alone can't avoid
-    // a pigeonhole collision across many simultaneous requesters. The
-    // overlap with the base window (bits 7-8) was tried as a "clean,
-    // non-overlapping" tiling instead (addr[13:9]/[18:14]) and measured
-    // WORSE on real traffic (12.5%->17.8% conflict rate, ragu_a-isolation
-    // sweep): these vector tasks are confined to small buffers, so the
-    // wider windows mostly read constant/unused high address bits instead
-    // of the real entropy the overlapping window happens to capture.
-    static uint64_t vector_multiport_addr(uint64_t a) {
-        uint64_t v = (a >> ROUTE_LSB) & 0x1F;
-        for (int s : {7, 12})
-            v = (v + ((a >> s) & 0x1F)) & 0x1F;
-        const uint64_t field_mask = (1ull << (LOG_REQ + LOG_BANK_GRP)) - 1;
-        return (a & ~(field_mask << ROUTE_LSB)) | (v << ROUTE_LSB);
+        uint64_t       l1  = (a >> 4) & 0x3;
+        if (n_terms >= 2)
+            l1 = (l1 + ((a >> 6) & 0x3)) & 0x3;
+        if (n_terms >= 3)
+            l1 = (l1 + ((a >> 8) & 0x3)) & 0x3;
+        if (n_terms >= 4)
+            l1 = (l1 + ((a >> 10) & 0x3)) & 0x3;
+        if (n_terms >= 5)
+            l1 = (l1 + ((a >> 12) & 0x3)) & 0x3;
+        r = (r & ~(static_cast<uint64_t>(0x3) << 4)) | (l1 << 4);
+        return r;
     }
 #endif
 

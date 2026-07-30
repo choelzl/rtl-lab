@@ -126,7 +126,8 @@ SC_MODULE(top) {
 #else
     top_crossbar<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
         impl;
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+    defined(XBAR_HASH_L1_V2)
     // Per-port-group mapping geometry for top_crossbar.hpp's dynamic-hash
     // experiment — one scalar set per read/write driver group (see
     // top_crossbar.hpp's rport_map_r_i/etc). Written by the testbench from
@@ -141,10 +142,11 @@ SC_MODULE(top) {
     sc_signal<uint64_t> impl_wport_map_store_mode[NUM_WPORT];
 #endif
 #if defined(XBAR_HASH_L1_V2)
-    // napa==1 flag (ports_used_ <= NUM_REQ) driving XBAR_HASH_L1_V2's
-    // vector-axis dynamic repair — see top_crossbar.hpp's rport_map_napa1_i.
-    sc_signal<bool> impl_rport_map_napa1[NUM_RPORT];
-    sc_signal<bool> impl_wport_map_napa1[NUM_WPORT];
+    // Actual napa integer (ports_used_) driving XBAR_HASH_L1_V2's
+    // R/C/napa-keyed fold-length rule — see top_crossbar.hpp's
+    // rport_map_napa_i and addr_hash.hpp's addr_hash_l1_v2().
+    sc_signal<uint64_t> impl_rport_map_napa[NUM_RPORT];
+    sc_signal<uint64_t> impl_wport_map_napa[NUM_WPORT];
 #endif
 #if defined(XBAR_HASH16)
     // Fixed per-AGU "high bank half" selector — see top_crossbar.hpp's
@@ -258,8 +260,9 @@ SC_MODULE(top) {
                        impl.wport_wdata_i, impl.wport_gnt_o, impl.wport_rvalid_o,
                        impl.wport_rdata_o, impl_wport);
 
-#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && \
-    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2))
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) &&                                                \
+    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                \
+     defined(XBAR_HASH_L1_V2))
         for (int i = 0; i < NUM_RPORT; ++i) {
             impl.rport_map_r_i[i](impl_rport_map_r[i]);
             impl.rport_map_c_i[i](impl_rport_map_c[i]);
@@ -275,9 +278,9 @@ SC_MODULE(top) {
 #endif
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH_L1_V2)
         for (int i = 0; i < NUM_RPORT; ++i)
-            impl.rport_map_napa1_i[i](impl_rport_map_napa1[i]);
+            impl.rport_map_napa_i[i](impl_rport_map_napa[i]);
         for (int i = 0; i < NUM_WPORT; ++i)
-            impl.wport_map_napa1_i[i](impl_wport_map_napa1[i]);
+            impl.wport_map_napa_i[i](impl_wport_map_napa[i]);
 #endif
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_HASH16)
         for (int i = 0; i < NUM_RPORT; ++i)

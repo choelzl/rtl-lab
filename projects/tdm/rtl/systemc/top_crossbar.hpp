@@ -77,8 +77,8 @@ SC_MODULE(top_crossbar) {
     // The dynamic hash below writes a map_func::map_one() bank_id (a fixed
     // 5-bit value, see doc/specs/map_func.md's "32 banks" note) into the
     // L1+L2 logical-bank field, so that field must be exactly 5 bits wide.
-    // XBAR_HASH_L1_V2's vector_multiport_addr() has the same 5-bit-field
-    // dependency (hardcoded 0x1F masks), so it needs this too.
+    // XBAR_HASH_L1_V2's own folds hardcode LOG_REQ==2/LOG_BANK_GRP==3
+    // (0x3/0x7 masks), so it needs this too.
     static_assert(LOG_REQ + LOG_BANK_GRP == 5,
                   "XBAR_HASH_DYNAMIC/XBAR_HASH16/XBAR_HASH32/XBAR_HASH_L1_V2 need a 5-bit logical bank field (NUM_BANK == 32)");
 #endif
@@ -107,7 +107,8 @@ SC_MODULE(top_crossbar) {
     sc_out<bool>    wport_rvalid_o[NUM_WPORT_PORTS];
     sc_out<data_t>  wport_rdata_o[NUM_WPORT_PORTS];
 
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+    defined(XBAR_HASH_L1_V2)
     // Per-port-group task geometry (one scalar set per read/write driver
     // group, broadcast to that group's NUM_REQ lanes), fed by tb_top.cpp from
     // each AGU's current R/C/L/store_mode. XBAR_HASH_L1_V2 only reads R/C.
@@ -122,11 +123,11 @@ SC_MODULE(top_crossbar) {
 #endif
 
 #if defined(XBAR_HASH_L1_V2)
-    // Per-port-group "exactly one physical port active this task" flag
-    // (ports_used_ <= NUM_REQ) — selects between vector_axis_fold_addr() and
-    // vector_multiport_addr() for vector-axis tasks (is_vector_geometry()).
-    sc_in<bool> rport_map_napa1_i[NUM_RPORT];
-    sc_in<bool> wport_map_napa1_i[NUM_WPORT];
+    // Per-port-group napa (simultaneously-active physical ports), the actual
+    // integer — addr_hash_l1_v2()'s rule keys directly on it. See its own
+    // comment for the correctness caveat.
+    sc_in<uint64_t> rport_map_napa_i[NUM_RPORT];
+    sc_in<uint64_t> wport_map_napa_i[NUM_WPORT];
 #endif
 
 #if defined(XBAR_HASH16)
@@ -226,21 +227,15 @@ SC_MODULE(top_crossbar) {
             }
         }
 #elif defined(XBAR_HASH_L1_V2)
-        // Per port-group: a vector-axis task takes the geometry-aware
-        // repair (split by napa1), everything else takes the ordinary fixed
-        // fold via addr_hash(). Every branch is a pure per-address function
-        // — none reads another lane's address (see addr_hash()'s comment on
-        // why an adaptive, cross-lane variant was rejected).
+        // See addr_hash_l1_v2()'s own comment for the rule and its
+        // correctness caveat.
         for (int j = 0; j < NUM_RPORT; ++j) {
             const uint64_t R = rport_map_r_i[j].read(), C = rport_map_c_i[j].read();
-            const bool     napa1  = rport_map_napa1_i[j].read();
-            const bool     is_vec = hash_ops::is_vector_geometry(R, C);
+            const uint64_t napa = rport_map_napa_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int      ext = j * NUM_REQ + m;
                 const uint64_t a   = rport_addr_i[ext].read();
-                rport_haddr[ext].write(
-                    is_vec ? (napa1 ? hash_ops::vector_axis_fold_addr(a) : hash_ops::vector_multiport_addr(a))
-                           : hash_ops::addr_hash(a));
+                rport_haddr[ext].write(hash_ops::addr_hash_l1_v2(a, R, C, napa));
             }
         }
 #else
@@ -289,14 +284,11 @@ SC_MODULE(top_crossbar) {
 #elif defined(XBAR_HASH_L1_V2)
         for (int j = 0; j < NUM_WPORT; ++j) {
             const uint64_t R = wport_map_r_i[j].read(), C = wport_map_c_i[j].read();
-            const bool     napa1  = wport_map_napa1_i[j].read();
-            const bool     is_vec = hash_ops::is_vector_geometry(R, C);
+            const uint64_t napa = wport_map_napa_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int      ext = j * NUM_REQ + m;
                 const uint64_t a   = wport_addr_i[ext].read();
-                wport_haddr[ext].write(
-                    is_vec ? (napa1 ? hash_ops::vector_axis_fold_addr(a) : hash_ops::vector_multiport_addr(a))
-                           : hash_ops::addr_hash(a));
+                wport_haddr[ext].write(hash_ops::addr_hash_l1_v2(a, R, C, napa));
             }
         }
 #else
@@ -423,14 +415,15 @@ SC_MODULE(top_crossbar) {
         SC_METHOD(hash_rd_addr);
         for (int m = 0; m < NUM_RPORT_PORTS; ++m)
             sensitive << rport_addr_i[m];
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+    defined(XBAR_HASH_L1_V2)
         for (int j = 0; j < NUM_RPORT; ++j)
             sensitive << rport_map_r_i[j] << rport_map_c_i[j] << rport_map_l_i[j]
                       << rport_map_store_mode_i[j];
 #endif
 #if defined(XBAR_HASH_L1_V2)
         for (int j = 0; j < NUM_RPORT; ++j)
-            sensitive << rport_map_napa1_i[j];
+            sensitive << rport_map_napa_i[j];
 #endif
 #if defined(XBAR_HASH16)
         for (int j = 0; j < NUM_RPORT; ++j)
@@ -440,14 +433,15 @@ SC_MODULE(top_crossbar) {
         SC_METHOD(hash_wr_addr);
         for (int m = 0; m < NUM_WPORT_PORTS; ++m)
             sensitive << wport_addr_i[m];
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+    defined(XBAR_HASH_L1_V2)
         for (int j = 0; j < NUM_WPORT; ++j)
             sensitive << wport_map_r_i[j] << wport_map_c_i[j] << wport_map_l_i[j]
                       << wport_map_store_mode_i[j];
 #endif
 #if defined(XBAR_HASH_L1_V2)
         for (int j = 0; j < NUM_WPORT; ++j)
-            sensitive << wport_map_napa1_i[j];
+            sensitive << wport_map_napa_i[j];
 #endif
 #if defined(XBAR_HASH16)
         for (int j = 0; j < NUM_WPORT; ++j)

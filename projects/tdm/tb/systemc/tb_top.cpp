@@ -323,6 +323,40 @@ int sc_main(int, char *[]) {
         // exceed `delayed` — each counts "was this beat EVER blocked here",
         // not a partition of it.
         uint64_t delayed_l1 = 0, delayed_l2 = 0, delayed_l3 = 0;
+        // Method-2 (per-AGU cycle-inflation), crossbar builds only (see
+        // wait_lvl_cyc above): extra wait-CYCLES this group's own beats
+        // spent blocked at each level — a true partition, always summing to
+        // exactly delay_sum. Correct with multiple AGUs active at once,
+        // unlike the global lvl_rd_l1/l2/l3 counters below (which are only
+        // "this AGU's own" when it's the sole traffic source).
+        uint64_t delay_l1_sum = 0, delay_l2_sum = 0, delay_l3_sum = 0;
+        // M3 basis (cycle-inflation vs. a perfectly conflict-free execution
+        // of this exact same traffic, wall-clock not per-lane).
+        // arrival_cycles: distinct cycles in which >=1 lane's request is
+        // genuinely NEW (wait_ctr[p]==0 the instant it's seen — the first
+        // cycle of its req/gnt streak, whether granted same-cycle or forced
+        // to wait), counted once per cycle regardless of how many lanes
+        // arrive simultaneously. This is NOT lambda-based (an earlier
+        // attempt bucketed real_beats by the task's configured
+        // ports_used_/napa and divided by it — measures capacity-if-fully-
+        // utilized, not this-traffic-if-uncontended, and gives a false 300%
+        // "overhead" on the conflictfree fixture, which deliberately drives
+        // only 1 of 4 lanes per group: napa says lambda=4, but the traffic
+        // itself never asks for more than 1 beat/cycle, so lambda was never
+        // the right denominator). active_cycles already excludes idle/NOP
+        // time (see its own comment); in a genuinely conflict-free run every
+        // arrival is granted its own cycle and nothing else stays pending,
+        // so arrival_cycles == active_cycles exactly (M3=0%). Verified
+        // directly: conflictfree (8 sequential, never-simultaneous arrivals)
+        // gives arrival_cycles=8=active_cycles, M3=0%; fullconflict (4
+        // simultaneous arrivals in 1 cycle, pigeonhole-serialized over 4)
+        // gives arrival_cycles=1, active_cycles=4, M3=300%; l3conflict_2bank
+        // (2 simultaneous, INDEPENDENT 1-cycle waits on different banks)
+        // gives arrival_cycles=1, active_cycles=2, M3=100% for BOTH the
+        // 1-bank and 2-bank case identically per bank pair — confirming
+        // simultaneous-but-independent conflicts don't inflate M3 by lane
+        // count the way delay_sum (M2) does.
+        uint64_t arrival_cycles = 0;
     };
     grp_stat_t    gstat[9] = {{"ragu_a", true},  {"ragu_b", true},  {"ragu_c", true},
                               {"ragu_d", true},  {"ragu_e", true},  {"wagu_a", false},
@@ -339,6 +373,20 @@ int sc_main(int, char *[]) {
     // streak. Same lifecycle as wait_ctr — cleared on grant or on an
     // abandoned (!rq) run — so it always reflects only the CURRENT streak.
     std::vector<uint8_t> touched_lvl(kNRdFlat + kNWrFlat, 0);
+    // Method-2 per-beat, per-level CYCLE counts (crossbar builds only, same
+    // lifecycle/indexing as touched_lvl): unlike tb_top.cpp's global
+    // lvl_rd_l1/l2/l3 (summed across every active read port, so only valid
+    // as "this AGU's own" when it's the only one with traffic), this is
+    // indexed per flat port, so accumulating it into gs.delay_lN_sum below
+    // stays correct even with multiple AGUs active simultaneously.
+    // blocked_level[p] is exactly one level per cycle, so wait_lvl_cyc[0][p]
+    // + [1][p] + [2][p] always sums to wait_ctr[p] exactly (no double count,
+    // unlike touched_lvl's bitmask).
+    std::vector<int> wait_lvl_cyc[3] = {
+        std::vector<int>(kNRdFlat + kNWrFlat, 0),
+        std::vector<int>(kNRdFlat + kNWrFlat, 0),
+        std::vector<int>(kNRdFlat + kNWrFlat, 0),
+    };
     bool                         prev_any_real[9] = {};
     std::vector<std::deque<int>> rd_gnt_q(kNRdFlat + kNWrFlat);
     uint64_t                     rsp_events = 0;
@@ -506,8 +554,9 @@ int sc_main(int, char *[]) {
         }
 #endif
 
-#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && \
-    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2))
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) &&                                                \
+    (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                \
+     defined(XBAR_HASH_L1_V2))
         // top_crossbar.hpp's dynamic-hash experiment: broadcast each AGU's
         // current task R/C/L/store_mode to every crossbar port-group index
         // that AGU drives. Crossbar mode has no prefetch buffer (unlike the
@@ -531,7 +580,7 @@ int sc_main(int, char *[]) {
                     dut.impl_rport_map_l[j].write(l);
                     dut.impl_rport_map_store_mode[j].write(sm);
 #if defined(XBAR_HASH_L1_V2)
-                    dut.impl_rport_map_napa1[j].write(s->ports_used_ <= dut_t::NUM_REQ);
+                    dut.impl_rport_map_napa[j].write(s->ports_used_);
 #endif
 #if defined(XBAR_HASH16)
                     dut.impl_rport_map_hi_bank[j].write(hi_bank);
@@ -547,7 +596,7 @@ int sc_main(int, char *[]) {
                     dut.impl_wport_map_l[j].write(l);
                     dut.impl_wport_map_store_mode[j].write(sm);
 #if defined(XBAR_HASH_L1_V2)
-                    dut.impl_wport_map_napa1[j].write(s->ports_used_ <= dut_t::NUM_REQ);
+                    dut.impl_wport_map_napa[j].write(s->ports_used_);
 #endif
 #if defined(XBAR_HASH16)
                     dut.impl_wport_map_hi_bank[j].write(hi_bank);
@@ -647,7 +696,7 @@ int sc_main(int, char *[]) {
         int  cyc_stall_lanes = 0;              // real lanes blocked by contention (fill excluded)
         auto tally_group     = [&](const obi_signal_bundle<data_t> *g, int n, int base, int gi) {
             grp_stat_t &gs       = gstat[gi];
-            bool        any_real = false;
+            bool        any_real = false, any_arrival = false;
             bool        ep = false, ep_stall = false, any_wait = false, any_serve = false;
             bool        any_stall_wait = false;
             for (int i = 0; i < n; ++i) {
@@ -656,11 +705,19 @@ int sc_main(int, char *[]) {
                 const bool gt   = g[i].gnt.read();
                 const bool real = rq && g[i].addr.read() != 0;
                 any_real        = any_real || real;
+                // Fresh arrival: wait_ctr[p] still holds last cycle's final
+                // value here (unmodified so far this iteration) — ==0 means
+                // this lane wasn't mid-wait, so if it's real this is the
+                // first cycle of a new req/gnt streak, granted immediately
+                // or not. See grp_stat_t::arrival_cycles for why this (not a
+                // lambda/napa-based capacity guess) is the M3 basis.
+                any_arrival     = any_arrival || (real && wait_ctr[p] == 0);
                 if (!rq) {
                     wait_ctr[p] = 0; // abandoned run — a beat's delay is only
                                      // the wait immediately preceding its grant
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
                     touched_lvl[p] = 0;
+                    wait_lvl_cyc[0][p] = wait_lvl_cyc[1][p] = wait_lvl_cyc[2][p] = 0;
 #endif
                 } else if (!gt) {
                     ++port_wait;
@@ -676,6 +733,7 @@ int sc_main(int, char *[]) {
                         }
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
                         touched_lvl[p] |= static_cast<uint8_t>(1u << blocked_level[p]);
+                        ++wait_lvl_cyc[blocked_level[p]][p];
 #endif
                     } else {
                         wait_ctr[p] = 0; // NOP/flush wait: idle time, not a conflict
@@ -707,10 +765,17 @@ int sc_main(int, char *[]) {
                                 ++gs.delayed_l2;
                             if (touched_lvl[p] & 4u)
                                 ++gs.delayed_l3;
+                            // Method-2 per-level: a true partition of this
+                            // beat's wait_ctr[p] cycles (see wait_lvl_cyc's
+                            // own comment) — always sums to gs.delay_sum.
+                            gs.delay_l1_sum += wait_lvl_cyc[0][p];
+                            gs.delay_l2_sum += wait_lvl_cyc[1][p];
+                            gs.delay_l3_sum += wait_lvl_cyc[2][p];
 #endif
                         }
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
                         touched_lvl[p] = 0;
+                        wait_lvl_cyc[0][p] = wait_lvl_cyc[1][p] = wait_lvl_cyc[2][p] = 0;
 #endif
                     } else {
                         ++gs.nop_beats;
@@ -729,6 +794,8 @@ int sc_main(int, char *[]) {
             }
             if (any_real)
                 ++gs.active_cycles;
+            if (any_arrival)
+                ++gs.arrival_cycles;
             gs.wait_cycles += any_wait;
             gs.fill_wait_cycles += any_wait && !any_stall_wait;
             gs.serve_cycles += any_serve;
@@ -972,6 +1039,7 @@ int sc_main(int, char *[]) {
                 sf << gs.name << "_delay_sum," << gs.delay_sum << "\n";
                 sf << gs.name << "_delay_max," << gs.delay_max << "\n";
                 sf << gs.name << "_active_cycles," << gs.active_cycles << "\n";
+                sf << gs.name << "_arrival_cycles," << gs.arrival_cycles << "\n";
                 sf << gs.name << "_fill_delayed," << gs.fill_delayed << "\n";
                 sf << gs.name << "_fill_delay_sum," << gs.fill_delay_sum << "\n";
                 sf << gs.name << "_episodes," << gs.episodes << "\n";
@@ -982,6 +1050,9 @@ int sc_main(int, char *[]) {
                 sf << gs.name << "_delayed_l1," << gs.delayed_l1 << "\n";
                 sf << gs.name << "_delayed_l2," << gs.delayed_l2 << "\n";
                 sf << gs.name << "_delayed_l3," << gs.delayed_l3 << "\n";
+                sf << gs.name << "_delay_l1_sum," << gs.delay_l1_sum << "\n";
+                sf << gs.name << "_delay_l2_sum," << gs.delay_l2_sum << "\n";
+                sf << gs.name << "_delay_l3_sum," << gs.delay_l3_sum << "\n";
             }
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
             static const char *kLvl[4] = {"l1", "l2", "l3", "bank"};
