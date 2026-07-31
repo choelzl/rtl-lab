@@ -19,11 +19,10 @@
 #ifndef ACC_HPP
 #define ACC_HPP
 
-#include <systemc.h>
 #include <cstdint>
+#include <systemc.h>
 
-template <int PROD_WIDTH>
-SC_MODULE(acc) {
+template <int PROD_WIDTH> SC_MODULE(acc) {
     sc_in<bool>     clk_i;
     sc_in<bool>     rst_i;
     sc_in<uint32_t> prod_i;

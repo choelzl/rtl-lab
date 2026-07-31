@@ -13,14 +13,14 @@
 //   IS_SIGNED - 1 = signed B (sign-extended before shifting); 0 = unsigned
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module booth_r4_cell #(
     parameter int IN_WIDTH  = 16,
     parameter bit IS_SIGNED = 1,
 
     localparam int OUT_WIDTH = IN_WIDTH + 2
-)(
+) (
     input  logic [ IN_WIDTH-1:0] mult_i,
     input  logic [          2:0] sel_i,
     output logic [OUT_WIDTH-1:0] pp_o

@@ -15,7 +15,7 @@
 
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_s_4_bit_alpha_array #(
     parameter int IN_SIZE   = 8,
@@ -24,9 +24,9 @@ module sqr_s_4_bit_alpha_array #(
     localparam int IN_WIDTH = 4,
     localparam int PP_SIZE  = IN_SIZE,
     localparam int PP_WIDTH = IS_SQUARE ? (2 * IN_WIDTH) : IN_WIDTH
-)(
-    input  logic [IN_WIDTH-1:0] a_i  [0:IN_SIZE-1],
-    output logic [PP_WIDTH-1:0] pp_o [0:PP_SIZE-1]
+) (
+    input  logic [IN_WIDTH-1:0] a_i [0:IN_SIZE-1],
+    output logic [PP_WIDTH-1:0] pp_o[0:PP_SIZE-1]
 );
 
     genvar i;

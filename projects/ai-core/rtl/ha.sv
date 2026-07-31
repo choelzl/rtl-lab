@@ -7,7 +7,7 @@
 
 /* verilator lint_off UNOPTFLAT */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module ha (
     input  logic in_i,

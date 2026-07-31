@@ -401,12 +401,13 @@ SC_MODULE(tb) {
                       "T04b every frame takes exactly %d cycle(s) (%d:1 fold per L1 output)",
                       kFold04, kFold04);
         CHECK(full_fold, lbl);
-        std::snprintf(lbl, sizeof(lbl),
-                      "T04c never more than %d grant(s)/cycle", N_LANES / kFold04);
+        std::snprintf(lbl, sizeof(lbl), "T04c never more than %d grant(s)/cycle",
+                      N_LANES / kFold04);
         CHECK(s4.max_gnt_per_cycle == N_LANES / kFold04, lbl);
-        std::snprintf(lbl, sizeof(lbl),
-                      "T04d %d of %d beats waited (%s)", s4.waited_beats, N_FRAMES * N_LANES,
-                      kFold04 == 1 ? "zero — fully repaired" : "75% — the hash-proof residual class");
+        std::snprintf(lbl, sizeof(lbl), "T04d %d of %d beats waited (%s)", s4.waited_beats,
+                      N_FRAMES * N_LANES,
+                      kFold04 == 1 ? "zero — fully repaired"
+                                   : "75% — the hash-proof residual class");
         CHECK(s4.waited_beats == N_FRAMES * (N_LANES - N_LANES / kFold04), lbl);
     }
 };

@@ -23,10 +23,10 @@
 //   updating A_W/B_W here, since SystemC port widths are compile-time.
 // -----------------------------------------------------------------------------
 
-#include <systemc.h>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <systemc.h>
 
 #include "verilated.h"
 #include "verilated_vcd_sc.h"
@@ -98,8 +98,8 @@ SC_MODULE(driver) {
             std::cout << "[tb_top_mul_s] PASS: " << N_TESTS
                       << " products accumulated, sum = " << got << std::endl;
         } else {
-            std::cout << "[tb_top_mul_s] FAIL: sum = " << got
-                      << ", expected = " << expected << std::endl;
+            std::cout << "[tb_top_mul_s] FAIL: sum = " << got << ", expected = " << expected
+                      << std::endl;
         }
         sc_stop();
     }
@@ -110,7 +110,7 @@ SC_MODULE(driver) {
     }
 };
 
-int sc_main(int argc, char* argv[]) {
+int sc_main(int argc, char *argv[]) {
     Verilated::commandArgs(argc, argv);
     Verilated::traceEverOn(true);
 
@@ -123,20 +123,20 @@ int sc_main(int argc, char* argv[]) {
     driver drv("drv");
     drv.clk_i(clk);
     drv.rst_o(rst);
-    drv.a_o  (a);
-    drv.b_o  (b);
+    drv.a_o(a);
+    drv.b_o(b);
     drv.sum_i(sum);
 
     top_mul_s<OUT_W> top("top");
     top.clk_i(clk);
     top.rst_i(rst);
-    top.a_i  (a);
-    top.b_i  (b);
+    top.a_i(a);
+    top.b_i(b);
     top.sum_o(sum);
 
     sc_start(SC_ZERO_TIME);
 
-    VerilatedVcdSc* tfp = new VerilatedVcdSc;
+    VerilatedVcdSc *tfp = new VerilatedVcdSc;
     top.dut.trace(tfp, 99);
     tfp->open("activity.vcd");
 

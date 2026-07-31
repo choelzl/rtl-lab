@@ -77,14 +77,16 @@ SC_MODULE(top_crossbar) {
     static constexpr int NUM_L2_L3      = NUM_BANK;
     static constexpr int NUM_PHYS_BANKS = NUM_BANK * 2;
 
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || defined(XBAR_HASH_L1_V2)
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                  \
+    defined(XBAR_HASH_L1_V2)
     // The dynamic hash below writes a map_func::map_one() bank_id (a fixed
     // 5-bit value, see doc/specs/map_func.md's "32 banks" note) into the
     // L1+L2 logical-bank field, so that field must be exactly 5 bits wide.
     // XBAR_HASH_L1_V2's own folds hardcode LOG_REQ==2/LOG_BANK_GRP==3
     // (0x3/0x7 masks), so it needs this too.
     static_assert(LOG_REQ + LOG_BANK_GRP == 5,
-                  "XBAR_HASH_DYNAMIC/XBAR_HASH16/XBAR_HASH32/XBAR_HASH_L1_V2 need a 5-bit logical bank field (NUM_BANK == 32)");
+                  "XBAR_HASH_DYNAMIC/XBAR_HASH16/XBAR_HASH32/XBAR_HASH_L1_V2 need a 5-bit logical "
+                  "bank field (NUM_BANK == 32)");
 #endif
 
     // -----------------------------------------------------------------------
@@ -111,7 +113,7 @@ SC_MODULE(top_crossbar) {
     sc_out<bool>    wport_rvalid_o[NUM_WPORT_PORTS];
     sc_out<data_t>  wport_rdata_o[NUM_WPORT_PORTS];
 
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                  \
     defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3)
     // Per-port-group task geometry (one scalar set per read/write driver
     // group, broadcast to that group's NUM_REQ lanes), fed by tb_top.cpp from
@@ -207,15 +209,15 @@ SC_MODULE(top_crossbar) {
     static constexpr int ROB_PORTS = rob_t::ROB_PORTS;
     static constexpr int ROB_DEPTH = rob_t::ROB_DEPTH;
     static constexpr int ROB_LANES = rob_t::ROB_LANES;
-    rob_t rob_;
-    sc_signal<bool>     rob_l1_req[ROB_LANES];
-    sc_signal<uint64_t> rob_l1_addr[ROB_LANES];
-    sc_signal<bool>     rob_l1_gnt[ROB_LANES];
-    sc_signal<bool>     rob_l1_rvalid[ROB_LANES];
-    sc_signal<data_t>   rob_l1_rdata[ROB_LANES];
-    sc_signal<bool>     rob_l1_we[ROB_LANES];
-    sc_signal<uint32_t> rob_l1_be[ROB_LANES];
-    sc_signal<data_t>   rob_l1_wdata[ROB_LANES];
+    rob_t                rob_;
+    sc_signal<bool>      rob_l1_req[ROB_LANES];
+    sc_signal<uint64_t>  rob_l1_addr[ROB_LANES];
+    sc_signal<bool>      rob_l1_gnt[ROB_LANES];
+    sc_signal<bool>      rob_l1_rvalid[ROB_LANES];
+    sc_signal<data_t>    rob_l1_rdata[ROB_LANES];
+    sc_signal<bool>      rob_l1_we[ROB_LANES];
+    sc_signal<uint32_t>  rob_l1_be[ROB_LANES];
+    sc_signal<data_t>    rob_l1_wdata[ROB_LANES];
 
     void bind_rob() {
         rob_.clk_i(clk_i);
@@ -256,19 +258,21 @@ SC_MODULE(top_crossbar) {
                            L = rport_map_l_i[j].read(), sm = rport_map_store_mode_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int ext = j * NUM_REQ + m;
-                rport_haddr[ext].write(hash_ops::addr_hash_dynamic(rport_addr_i[ext].read(), R, C, L, sm));
+                rport_haddr[ext].write(
+                    hash_ops::addr_hash_dynamic(rport_addr_i[ext].read(), R, C, L, sm));
             }
         }
 #elif defined(XBAR_HASH16)
         for (int j = 0; j < NUM_RPORT; ++j) {
             const uint64_t R = rport_map_r_i[j].read(), C = rport_map_c_i[j].read(),
                            L = rport_map_l_i[j].read(), sm = rport_map_store_mode_i[j].read();
-            const bool     hi_bank = rport_map_hi_bank_i[j].read();
+            const bool hi_bank = rport_map_hi_bank_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
-                const int      ext = j * NUM_REQ + m;
-                uint64_t       h   = hash_ops::addr_hash16(rport_addr_i[ext].read(), R, C, L, sm, hi_bank);
+                const int ext = j * NUM_REQ + m;
+                uint64_t  h = hash_ops::addr_hash16(rport_addr_i[ext].read(), R, C, L, sm, hi_bank);
 #if defined(XBAR_HASH_L2_COMPOSE)
-                h = hash_ops::addr_hash(hash_ops::addr_hash_inv(h)); // sanity check — see addr_hash_inv()'s comment
+                h = hash_ops::addr_hash(
+                    hash_ops::addr_hash_inv(h)); // sanity check — see addr_hash_inv()'s comment
 #endif
                 rport_haddr[ext].write(h);
             }
@@ -278,10 +282,11 @@ SC_MODULE(top_crossbar) {
             const uint64_t R = rport_map_r_i[j].read(), C = rport_map_c_i[j].read(),
                            L = rport_map_l_i[j].read(), sm = rport_map_store_mode_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
-                const int      ext = j * NUM_REQ + m;
-                uint64_t       h   = hash_ops::addr_hash32(rport_addr_i[ext].read(), R, C, L, sm);
+                const int ext = j * NUM_REQ + m;
+                uint64_t  h   = hash_ops::addr_hash32(rport_addr_i[ext].read(), R, C, L, sm);
 #if defined(XBAR_HASH_L2_COMPOSE)
-                h = hash_ops::addr_hash(hash_ops::addr_hash_inv(h)); // sanity check — see the HASH16 branch's comment
+                h = hash_ops::addr_hash(
+                    hash_ops::addr_hash_inv(h)); // sanity check — see the HASH16 branch's comment
 #endif
                 rport_haddr[ext].write(h);
             }
@@ -320,19 +325,21 @@ SC_MODULE(top_crossbar) {
                            L = wport_map_l_i[j].read(), sm = wport_map_store_mode_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int ext = j * NUM_REQ + m;
-                wport_haddr[ext].write(hash_ops::addr_hash_dynamic(wport_addr_i[ext].read(), R, C, L, sm));
+                wport_haddr[ext].write(
+                    hash_ops::addr_hash_dynamic(wport_addr_i[ext].read(), R, C, L, sm));
             }
         }
 #elif defined(XBAR_HASH16)
         for (int j = 0; j < NUM_WPORT; ++j) {
             const uint64_t R = wport_map_r_i[j].read(), C = wport_map_c_i[j].read(),
                            L = wport_map_l_i[j].read(), sm = wport_map_store_mode_i[j].read();
-            const bool     hi_bank = wport_map_hi_bank_i[j].read();
+            const bool hi_bank = wport_map_hi_bank_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
-                const int      ext = j * NUM_REQ + m;
-                uint64_t       h   = hash_ops::addr_hash16(wport_addr_i[ext].read(), R, C, L, sm, hi_bank);
+                const int ext = j * NUM_REQ + m;
+                uint64_t  h = hash_ops::addr_hash16(wport_addr_i[ext].read(), R, C, L, sm, hi_bank);
 #if defined(XBAR_HASH_L2_COMPOSE)
-                h = hash_ops::addr_hash(hash_ops::addr_hash_inv(h)); // sanity check — see hash_rd_addr()'s comment
+                h = hash_ops::addr_hash(
+                    hash_ops::addr_hash_inv(h)); // sanity check — see hash_rd_addr()'s comment
 #endif
                 wport_haddr[ext].write(h);
             }
@@ -342,10 +349,11 @@ SC_MODULE(top_crossbar) {
             const uint64_t R = wport_map_r_i[j].read(), C = wport_map_c_i[j].read(),
                            L = wport_map_l_i[j].read(), sm = wport_map_store_mode_i[j].read();
             for (int m = 0; m < NUM_REQ; ++m) {
-                const int      ext = j * NUM_REQ + m;
-                uint64_t       h   = hash_ops::addr_hash32(wport_addr_i[ext].read(), R, C, L, sm);
+                const int ext = j * NUM_REQ + m;
+                uint64_t  h   = hash_ops::addr_hash32(wport_addr_i[ext].read(), R, C, L, sm);
 #if defined(XBAR_HASH_L2_COMPOSE)
-                h = hash_ops::addr_hash(hash_ops::addr_hash_inv(h)); // sanity check — see hash_rd_addr()'s comment
+                h = hash_ops::addr_hash(
+                    hash_ops::addr_hash_inv(h)); // sanity check — see hash_rd_addr()'s comment
 #endif
                 wport_haddr[ext].write(h);
             }
@@ -500,7 +508,8 @@ SC_MODULE(top_crossbar) {
         : l1_rd_("l1_rd"), l1_wr_("l1_wr"), l2_rd_("l2_rd"), l2_wr_("l2_wr"), l3_("l3"),
           banks_("bank")
 #if defined(XBAR_ROB)
-          , rob_("rob")
+          ,
+          rob_("rob")
 #endif
     {
         l1_rd_.init(NUM_RPORT);
@@ -513,7 +522,7 @@ SC_MODULE(top_crossbar) {
         SC_METHOD(hash_rd_addr);
         for (int m = 0; m < NUM_RPORT_PORTS; ++m)
             sensitive << rport_addr_i[m];
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                  \
     defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3)
         for (int j = 0; j < NUM_RPORT; ++j)
             sensitive << rport_map_r_i[j] << rport_map_c_i[j] << rport_map_l_i[j]
@@ -531,7 +540,7 @@ SC_MODULE(top_crossbar) {
         SC_METHOD(hash_wr_addr);
         for (int m = 0; m < NUM_WPORT_PORTS; ++m)
             sensitive << wport_addr_i[m];
-#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
+#if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                  \
     defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3)
         for (int j = 0; j < NUM_WPORT; ++j)
             sensitive << wport_map_r_i[j] << wport_map_c_i[j] << wport_map_l_i[j]

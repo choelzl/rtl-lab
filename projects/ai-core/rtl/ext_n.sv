@@ -12,20 +12,20 @@
 
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module ext_n #(
     parameter int IN_SIZE  = 2,
     parameter int IN_WIDTH = 8,
     parameter int EXTEND   = 4
-)(
+) (
     input  logic                       is_signed_i,
     input  logic                       is_shift_i,
-    input  logic [       IN_WIDTH-1:0] in_i  [0:IN_SIZE-1],
-    output logic [IN_WIDTH+EXTEND-1:0] out_o [0:IN_SIZE-1]
+    input  logic [       IN_WIDTH-1:0] in_i       [0:IN_SIZE-1],
+    output logic [IN_WIDTH+EXTEND-1:0] out_o      [0:IN_SIZE-1]
 );
 
-    logic [IN_WIDTH+EXTEND-1:0] tmp [0:IN_SIZE-1];
+    logic [IN_WIDTH+EXTEND-1:0] tmp[0:IN_SIZE-1];
 
     genvar i;
     generate

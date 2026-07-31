@@ -157,10 +157,10 @@ SC_MODULE(agu) {
     };
 
     struct task_t {
-        uint64_t                   start_cycle = 0;
-        int                        num_port_active = 1;         // raw descriptor field v[1]
-        int                        ports_used  = NUM_REQ;       // = num_port_active * N_PER_GROUP
-        uint64_t                   store_mode  = 0;
+        uint64_t                   start_cycle     = 0;
+        int                        num_port_active = 1;       // raw descriptor field v[1]
+        int                        ports_used      = NUM_REQ; // = num_port_active * N_PER_GROUP
+        uint64_t                   store_mode      = 0;
         uint64_t                   C = 4, R = 4, L = 8;
         bool                       has_crl = true;
         std::vector<trace_entry_t> trace;
@@ -878,10 +878,9 @@ SC_MODULE(agu) {
 
     void drive_requests() {
         for (int p = 0; p < NUM_REQ; ++p) {
-            const bool active = !all_tasks_done() &&
-                                (ignore_fence_ || cycle_ >= cur_task().start_cycle) &&
-                                group_ < cur_task().n_groups && p < effective_ports_used() &&
-                                !granted_[p];
+            const bool active =
+                !all_tasks_done() && (ignore_fence_ || cycle_ >= cur_task().start_cycle) &&
+                group_ < cur_task().n_groups && p < effective_ports_used() && !granted_[p];
             if (active) {
                 const bool real = has_row(group_, p);
                 // A row is a NOP either from out-of-bounds padding (!real)

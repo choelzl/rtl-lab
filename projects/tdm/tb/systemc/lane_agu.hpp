@@ -373,8 +373,7 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
             const std::string hex = strip_0x(f[1]);
             if (t.width > BYTES_PER_BEAT) {
                 if (t.width > 2 * BYTES_PER_BEAT)
-                    SC_REPORT_FATAL("lane_agu",
-                                    "WAGU_E width must be in (0, 2*BYTES_PER_BEAT]");
+                    SC_REPORT_FATAL("lane_agu", "WAGU_E width must be in (0, 2*BYTES_PER_BEAT]");
                 if (hex.size() != static_cast<std::size_t>(t.width) * 2)
                     SC_REPORT_FATAL("lane_agu",
                                     "WAGU_E data length does not match width*2 hex chars");
@@ -456,9 +455,9 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
     // sub-port has nothing ready. Only called for a sub-port that isn't
     // already mid-task (sp_active_[sp]==false) — see drive_crossbar_requests().
     void decide_content_for(int sp) {
-        auto             &s         = subports_[sp];
-        const bool        ready     = !s.done() && (ignore_fence_ || cycle_ >= s.tasks[s.idx].start_cycle);
-        const dma_task_t *t         = ready ? &s.tasks[s.idx] : nullptr;
+        auto      &s        = subports_[sp];
+        const bool ready    = !s.done() && (ignore_fence_ || cycle_ >= s.tasks[s.idx].start_cycle);
+        const dma_task_t *t = ready ? &s.tasks[s.idx] : nullptr;
         const int         primary   = sp * LANES_PER_SUBPORT;
         const int         secondary = primary + 1;
 
@@ -536,7 +535,7 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
             uint32_t    be      = kBeFull;
             if (pending && is_write && !s.done()) {
                 const int w = s.tasks[s.idx].width;
-                be          = primary ? be_for_width(w) : be_for_width(std::max(0, w - BYTES_PER_BEAT));
+                be = primary ? be_for_width(w) : be_for_width(std::max(0, w - BYTES_PER_BEAT));
             }
             obi[p].be_o.write(pending ? be : uint32_t{0});
             obi[p].wdata_o.write(pending && is_write ? c.data : data_t{});

@@ -39,8 +39,7 @@
 #include <cstdint>
 #include <systemc.h>
 
-template <int N_PORTS, int NUM_REQ, int NUM_BANK_GRP, int DEPTH, typename DATA_T,
-          typename HASH_OPS>
+template <int N_PORTS, int NUM_REQ, int NUM_BANK_GRP, int DEPTH, typename DATA_T, typename HASH_OPS>
 SC_MODULE(rob_complex) {
     static constexpr int ROB_PORTS = N_PORTS;
     static constexpr int ROB_DEPTH = DEPTH;
@@ -98,24 +97,24 @@ SC_MODULE(rob_complex) {
     // (grantable against a raw addr-0 pad request; nothing to fetch).
     enum state_t { ROB_INVALID, ROB_FETCHING, ROB_VALID };
     struct entry_t {
-        uint64_t    haddr = 0;
-        state_t st    = ROB_INVALID;
-        bool        hole  = false;
-        DATA_T      data{};
+        uint64_t haddr = 0;
+        state_t  st    = ROB_INVALID;
+        bool     hole  = false;
+        DATA_T   data{};
     };
-    entry_t ent_[ROB_PORTS][ROB_DEPTH][NUM_REQ];
-    uint64_t    slot_seq_[ROB_PORTS][ROB_DEPTH] = {};
-    int         head_[ROB_PORTS]  = {};
-    int         count_[ROB_PORTS] = {};
-    uint64_t    seq_next_ = 1;
+    entry_t  ent_[ROB_PORTS][ROB_DEPTH][NUM_REQ];
+    uint64_t slot_seq_[ROB_PORTS][ROB_DEPTH] = {};
+    int      head_[ROB_PORTS]                = {};
+    int      count_[ROB_PORTS]               = {};
+    uint64_t seq_next_                       = 1;
     // Per-lane-wire bookkeeping. The fabric pipelines: a wire can carry a
     // NEW request while earlier responses are still in flight (rvalids
     // return in grant order, one per cycle), so a wire holds one
     // awaiting-gnt slot plus a short in-order queue of granted slots
     // awaiting rvalid — freeing the wire only at rvalid would halve the
     // sustainable per-lane bandwidth.
-    int wire_req_[ROB_LANES];               // slot awaiting gnt (-1 none)
-    int wire_wd_[ROB_LANES][2];             // granted slots awaiting rvalid (FIFO)
+    int wire_req_[ROB_LANES];   // slot awaiting gnt (-1 none)
+    int wire_wd_[ROB_LANES][2]; // granted slots awaiting rvalid (FIFO)
     int wire_wd_n_[ROB_LANES] = {};
     // Delivery grants are COMBINATIONAL (deliver_comb below): the tb's
     // conflict tally samples the port signals between the posedge and the
@@ -128,8 +127,8 @@ SC_MODULE(rob_complex) {
     sc_signal<bool> state_tick_;
 
     // Counters (public; tb_top writes them to stats.log).
-    uint64_t underrun_wait = 0;  // port req cycles waiting on a not-yet-VALID head entry
-    uint64_t fabric_hold   = 0;  // held request cycles not granted (L3 R/W backstop)
+    uint64_t underrun_wait  = 0; // port req cycles waiting on a not-yet-VALID head entry
+    uint64_t fabric_hold    = 0; // held request cycles not granted (L3 R/W backstop)
     uint64_t sched_eligible = 0, sched_issued = 0;
     uint64_t ingest_groups = 0, mismatch_cnt = 0;
     // Issues accepted AFTER an older candidate was skipped for a bank/L1
@@ -146,15 +145,14 @@ SC_MODULE(rob_complex) {
     // LOOKAHEAD task's geometry.
     uint64_t hash_one(uint64_t a, int j) const {
 #if defined(XBAR_HASH_DYNAMIC)
-        return HASH_OPS::addr_hash_dynamic(a, la_r_i[j].read(), la_c_i[j].read(),
-                                           la_l_i[j].read(), la_sm_i[j].read());
+        return HASH_OPS::addr_hash_dynamic(a, la_r_i[j].read(), la_c_i[j].read(), la_l_i[j].read(),
+                                           la_sm_i[j].read());
 #elif defined(XBAR_HASH16)
-        return HASH_OPS::addr_hash16(a, la_r_i[j].read(), la_c_i[j].read(),
-                                     la_l_i[j].read(), la_sm_i[j].read(),
-                                     hi_bank_i[j].read());
+        return HASH_OPS::addr_hash16(a, la_r_i[j].read(), la_c_i[j].read(), la_l_i[j].read(),
+                                     la_sm_i[j].read(), hi_bank_i[j].read());
 #elif defined(XBAR_HASH32)
-        return HASH_OPS::addr_hash32(a, la_r_i[j].read(), la_c_i[j].read(),
-                                     la_l_i[j].read(), la_sm_i[j].read());
+        return HASH_OPS::addr_hash32(a, la_r_i[j].read(), la_c_i[j].read(), la_l_i[j].read(),
+                                     la_sm_i[j].read());
 #elif defined(XBAR_HASH_L1_V2)
         return HASH_OPS::addr_hash_l1_v2(a, la_r_i[j].read(), la_c_i[j].read(),
                                          la_napa_i[j].read());
@@ -166,8 +164,12 @@ SC_MODULE(rob_complex) {
 #endif
     }
 
-    static int l1f(uint64_t h) { return static_cast<int>((h >> 4) & 0x3); }
-    static int l2f(uint64_t h) { return static_cast<int>((h >> 6) & 0x7); }
+    static int l1f(uint64_t h) {
+        return static_cast<int>((h >> 4) & 0x3);
+    }
+    static int l2f(uint64_t h) {
+        return static_cast<int>((h >> 6) & 0x7);
+    }
 
     // Posedge half: sample fabric gnt/rvalid, drive delivery rvalid for
     // grants decided on the previous negedge, retire completed slots,
@@ -208,8 +210,7 @@ SC_MODULE(rob_complex) {
                 } else {
                     p_rvalid_o[w].write(false);
                     if (p_req_i[w].read() && !p_gnt_o[w].read()) {
-                        if (count_[j] > 0 && ent_[j][h][m].st == ROB_VALID &&
-                            !ent_[j][h][m].hole &&
+                        if (count_[j] > 0 && ent_[j][h][m].st == ROB_VALID && !ent_[j][h][m].hole &&
                             ent_[j][h][m].haddr != p_haddr_i[w].read())
                             ++mismatch_cnt;
                         ++underrun_wait;
@@ -223,9 +224,9 @@ SC_MODULE(rob_complex) {
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int w = j * NUM_REQ + m;
                 if (f_rvalid_i[w].read() && wire_wd_n_[w] > 0) {
-                    entry_t &e = ent_[j][wire_wd_[w][0]][m];
-                    e.data = f_rdata_i[w].read();
-                    e.st   = ROB_VALID;
+                    entry_t &e     = ent_[j][wire_wd_[w][0]][m];
+                    e.data         = f_rdata_i[w].read();
+                    e.st           = ROB_VALID;
                     wire_wd_[w][0] = wire_wd_[w][1];
                     --wire_wd_n_[w];
                 }
@@ -235,7 +236,7 @@ SC_MODULE(rob_complex) {
                         // entry stays FETCHING; the wire moves it from the
                         // awaiting-gnt stage to the awaiting-data queue
                         wire_wd_[w][wire_wd_n_[w]++] = s;
-                        wire_req_[w]                     = -1;
+                        wire_req_[w]                 = -1;
                     } else {
                         ++fabric_hold;
                     }
@@ -270,9 +271,9 @@ SC_MODULE(rob_complex) {
             if (fetch_valid_i[j].read() && count_[j] < ROB_DEPTH) {
                 const int s = (head_[j] + count_[j]) % ROB_DEPTH;
                 for (int m = 0; m < NUM_REQ; ++m) {
-                    entry_t &e = ent_[j][s][m];
+                    entry_t       &e   = ent_[j][s][m];
                     const uint64_t raw = fetch_addr_i[j * NUM_REQ + m].read();
-                    e = entry_t{};
+                    e                  = entry_t{};
                     if (raw == 0) {
                         e.hole = true; // INVALID; grantable via the pad rule
                     } else {
@@ -332,15 +333,15 @@ SC_MODULE(rob_complex) {
         // Scheduler. Constraint sets seed from still-arbitrating
         // (awaiting-gnt) wires only — granted requests have left the
         // arbitration stage.
-        bool l1_used[ROB_PORTS][NUM_REQ] = {};
+        bool l1_used[ROB_PORTS][NUM_REQ]       = {};
         bool bank_used[NUM_REQ * NUM_BANK_GRP] = {};
         for (int j = 0; j < ROB_PORTS; ++j)
             for (int m = 0; m < NUM_REQ; ++m) {
                 const int w = j * NUM_REQ + m;
                 const int s = wire_req_[w];
                 if (s >= 0) {
-                    const uint64_t hh = ent_[j][s][m].haddr;
-                    l1_used[j][l1f(hh)]                             = true;
+                    const uint64_t hh                           = ent_[j][s][m].haddr;
+                    l1_used[j][l1f(hh)]                         = true;
                     bank_used[l1f(hh) * NUM_BANK_GRP + l2f(hh)] = true;
                 }
             }
@@ -349,7 +350,10 @@ SC_MODULE(rob_complex) {
         // age-sort over EVERY un-issued entry plus a serial greedy walk —
         // up to ROB_LANES*ROB_DEPTH candidates and a dependency chain the
         // length of the walk. Kept for A/B against the feasible default.
-        struct cand_t { uint64_t seq; int j, s, m; };
+        struct cand_t {
+            uint64_t seq;
+            int      j, s, m;
+        };
         cand_t cands[ROB_LANES * ROB_DEPTH];
         int    nc = 0;
         for (int j = 0; j < ROB_PORTS; ++j)
@@ -376,16 +380,16 @@ SC_MODULE(rob_complex) {
             const int     w = c.j * NUM_REQ + c.m;
             if (wire_taken[w])
                 continue; // wire claimed by an older slot this cycle
-            entry_t &e  = ent_[c.j][c.s][c.m];
-            const int    f1 = l1f(e.haddr);
-            const int    bk = f1 * NUM_BANK_GRP + l2f(e.haddr);
+            entry_t  &e  = ent_[c.j][c.s][c.m];
+            const int f1 = l1f(e.haddr);
+            const int bk = f1 * NUM_BANK_GRP + l2f(e.haddr);
             if (l1_used[c.j][f1] || bank_used[bk]) {
                 older_blocked = true; // conflict skip: younger accepts below are OOO
                 continue;
             }
             l1_used[c.j][f1] = true;
             bank_used[bk]    = true;
-            wire_req_[w] = c.s;
+            wire_req_[w]     = c.s;
             wire_taken[w]    = true;
             ++sched_issued;
             if (older_blocked)
@@ -449,7 +453,8 @@ SC_MODULE(rob_complex) {
                     if (best_m < 0 || sq < best_sq) {
                         if (best_m >= 0)
                             prop_slot[j * NUM_REQ + best_m] = -1;
-                        best_m = m; best_sq = sq;
+                        best_m  = m;
+                        best_sq = sq;
                     } else {
                         prop_slot[w] = -1;
                     }
@@ -471,22 +476,22 @@ SC_MODULE(rob_complex) {
 #else
             const int urgent = -1; // single class
 #endif
-            for (int off = 0; off < ROB_LANES; ++off) {
-                const int w = (bank_rr_[bk] + off) % ROB_LANES;
-                const int s = prop_slot[w];
-                if (s < 0)
-                    continue;
-                const int j = w / NUM_REQ, m = w % NUM_REQ;
+                for (int off = 0; off < ROB_LANES; ++off) {
+                    const int w = (bank_rr_[bk] + off) % ROB_LANES;
+                    const int s = prop_slot[w];
+                    if (s < 0)
+                        continue;
+                    const int j = w / NUM_REQ, m = w % NUM_REQ;
 #if defined(XBAR_ROB_URGENT)
-                if ((s == head_[j]) != (urgent == 1))
-                    continue; // wrong class for this pass
+                    if ((s == head_[j]) != (urgent == 1))
+                        continue; // wrong class for this pass
 #endif
-                const uint64_t hh = ent_[j][s][m].haddr;
-                if (l1f(hh) * NUM_BANK_GRP + l2f(hh) == bk) {
-                    winner = w;
-                    break;
+                    const uint64_t hh = ent_[j][s][m].haddr;
+                    if (l1f(hh) * NUM_BANK_GRP + l2f(hh) == bk) {
+                        winner = w;
+                        break;
+                    }
                 }
-            }
             if (winner < 0)
                 continue;
             const int j = winner / NUM_REQ, m = winner % NUM_REQ;
@@ -495,7 +500,7 @@ SC_MODULE(rob_complex) {
             // an older still-unissued proposal that lost its bank/L1 race
             // this cycle counts as out-of-order progress.
             wire_req_[winner] = s;
-            prop_slot[winner]     = -1;
+            prop_slot[winner] = -1;
             (void)m;
             ++sched_issued;
             bank_rr_[bk] = (winner + 1) % ROB_LANES;

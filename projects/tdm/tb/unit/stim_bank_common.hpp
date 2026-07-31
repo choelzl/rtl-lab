@@ -1500,7 +1500,7 @@ static bool run_bank_check(const char *backend_label) {
     // lookahead cursor — same wiring pattern as tb_top.cpp's. ROB ports
     // 0-3 = ragu_a, 4-5 = ragu_b, 6 = ragu_c; ragu_d/e keep the plain
     // fabric path.
-    using impl_rob_t = std::remove_reference_t<decltype(dut.impl)>;
+    using impl_rob_t        = std::remove_reference_t<decltype(dut.impl)>;
     constexpr int kRobPorts = impl_rob_t::ROB_PORTS;
     constexpr int kRobLanes = impl_rob_t::ROB_LANES;
     static_assert(kRobPorts == 7, "fetch wiring assumes ragu_a(4)+ragu_b(2)+ragu_c(1)");
@@ -1543,17 +1543,17 @@ static bool run_bank_check(const char *backend_label) {
     // --- ROB protocol/invariant checkers, evaluated once per cycle at the
     // post-posedge sample instant (same instant the conflict tally uses).
     // Violation counters, all asserted ==0 after the sweep:
-    uint64_t rob_v_gnt_wo_req = 0;   // port gnt asserted without req
+    uint64_t rob_v_gnt_wo_req    = 0; // port gnt asserted without req
     uint64_t rob_v_rvalid_timing = 0; // port rvalid not exactly 1 cycle after its gnt
-    uint64_t rob_v_fab_nop = 0;      // fabric request carrying addr 0 (NOP must never route)
-    uint64_t rob_v_fab_unstable = 0; // fabric req dropped/re-addressed before gnt
-    uint64_t rob_v_sched_l1 = 0;     // two live fabric reqs of one port share an L1 field
-    uint64_t rob_v_sched_bank = 0;   // two live fabric reqs share an (L1,L2) pair
-    bool     rob_prev_gnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]     = {};
-    bool     rob_prev_rvalid[dut_t::NUM_RPORT * dut_t::NUM_REQ]  = {};
-    bool     rob_prev_freq[dut_t::NUM_RPORT * dut_t::NUM_REQ]    = {};
-    bool     rob_prev_fgnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]    = {};
-    uint64_t rob_prev_faddr[dut_t::NUM_RPORT * dut_t::NUM_REQ]   = {};
+    uint64_t rob_v_fab_nop       = 0; // fabric request carrying addr 0 (NOP must never route)
+    uint64_t rob_v_fab_unstable  = 0; // fabric req dropped/re-addressed before gnt
+    uint64_t rob_v_sched_l1      = 0; // two live fabric reqs of one port share an L1 field
+    uint64_t rob_v_sched_bank    = 0; // two live fabric reqs share an (L1,L2) pair
+    bool     rob_prev_gnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]    = {};
+    bool     rob_prev_rvalid[dut_t::NUM_RPORT * dut_t::NUM_REQ] = {};
+    bool     rob_prev_freq[dut_t::NUM_RPORT * dut_t::NUM_REQ]   = {};
+    bool     rob_prev_fgnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]   = {};
+    uint64_t rob_prev_faddr[dut_t::NUM_RPORT * dut_t::NUM_REQ]  = {};
 #endif
 
     // Generous vs. the sweep's worst case (n_data=64, ports=1 needs 64
@@ -1743,9 +1743,9 @@ static bool run_bank_check(const char *backend_label) {
                 for (int w2 = w1 + 1; w2 < impl_t::ROB_LANES; ++w2) {
                     if (!dut.impl.rob_l1_req[w2].read())
                         continue;
-                    const uint64_t a2 = dut.impl.rob_l1_addr[w2].read();
-                    const int f1a = (a1 >> 4) & 3, f1b = (a2 >> 4) & 3;
-                    const int f2a = (a1 >> 6) & 7, f2b = (a2 >> 6) & 7;
+                    const uint64_t a2  = dut.impl.rob_l1_addr[w2].read();
+                    const int      f1a = (a1 >> 4) & 3, f1b = (a2 >> 4) & 3;
+                    const int      f2a = (a1 >> 6) & 7, f2b = (a2 >> 6) & 7;
                     if (w1 / dut_t::NUM_REQ == w2 / dut_t::NUM_REQ && f1a == f1b)
                         ++rob_v_sched_l1;
                     if (f1a == f1b && f2a == f2b)

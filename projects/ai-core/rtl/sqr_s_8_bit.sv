@@ -10,10 +10,10 @@
 //   Output is 16 bits wide; out_o[15] is always 0 (128^2 = 16384 fits in 15 b).
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_s_8_bit (
-    input  logic [7:0]  in_i,
+    input  logic [ 7:0] in_i,
     output logic [15:0] out_o
 );
 

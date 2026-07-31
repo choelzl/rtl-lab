@@ -8,10 +8,10 @@
 //   from the increment chain becomes bit 16 of the 17-bit output.
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_s_9_bit (
-    input  logic [8:0]  in_i,
+    input  logic [ 8:0] in_i,
     output logic [16:0] out_o
 );
 

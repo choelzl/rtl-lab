@@ -23,14 +23,13 @@
 #ifndef TOP_MUL_S_HPP
 #define TOP_MUL_S_HPP
 
-#include <systemc.h>
 #include <cstdint>
+#include <systemc.h>
 
 #include "Vmul_s.h"
 #include "acc.hpp"
 
-template <int OUT_WIDTH>
-SC_MODULE(top_mul_s) {
+template <int OUT_WIDTH> SC_MODULE(top_mul_s) {
     sc_in<bool>     clk_i;
     sc_in<bool>     rst_i;
     sc_in<uint32_t> a_i;
@@ -39,18 +38,18 @@ SC_MODULE(top_mul_s) {
 
     sc_signal<uint32_t> prod;
 
-    Vmul_s          dut;
-    acc<OUT_WIDTH>  accu;
+    Vmul_s         dut;
+    acc<OUT_WIDTH> accu;
 
     SC_CTOR(top_mul_s) : dut("dut"), accu("acc") {
-        dut.a_i  (a_i);
-        dut.b_i  (b_i);
+        dut.a_i(a_i);
+        dut.b_i(b_i);
         dut.out_o(prod);
 
-        accu.clk_i (clk_i);
-        accu.rst_i (rst_i);
+        accu.clk_i(clk_i);
+        accu.rst_i(rst_i);
         accu.prod_i(prod);
-        accu.sum_o (sum_o);
+        accu.sum_o(sum_o);
     }
 };
 

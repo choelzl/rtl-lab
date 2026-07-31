@@ -19,16 +19,18 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off UNOPTFLAT */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module cpr_n_2 #(
     parameter int IN_SIZE      = 8,
     parameter int IN_WIDTH     = 8,
     parameter int MAX_EXT_BITS = -1,
 
-    localparam int OUT_WIDTH = MAX_EXT_BITS == -1 ? IN_WIDTH + $clog2(IN_SIZE) + 1 : IN_WIDTH + MAX_EXT_BITS
-)(
-    input  logic [ IN_WIDTH-1:0] in_i [0:IN_SIZE-1],
+    localparam int OUT_WIDTH = MAX_EXT_BITS == -1 ? IN_WIDTH + $clog2(
+        IN_SIZE
+    ) + 1 : IN_WIDTH + MAX_EXT_BITS
+) (
+    input  logic [ IN_WIDTH-1:0] in_i   [0:IN_SIZE-1],
     output logic [OUT_WIDTH-1:0] sum_o,
     output logic [OUT_WIDTH-1:0] carry_o
 );
@@ -93,25 +95,25 @@ module cpr_n_2 #(
 
             localparam int STAGE_NUM = $clog2(IN_SIZE) - 1;
 
-            logic [OUT_WIDTH-1:0] tmp [0:STAGE_NUM-1][0:IN_SIZE-1];
+            logic [OUT_WIDTH-1:0] tmp[0:STAGE_NUM-1][0:IN_SIZE-1];
 
             for (stage = 0; stage < STAGE_NUM; stage++) begin : gen_stages
 
-                localparam int IN_STAGE_NUM   = get_in_stage_size(stage);
-                localparam int CPR_NUM        = stage == 0 ? (IN_STAGE_NUM + 3) / 4 : IN_STAGE_NUM / 4;
-                localparam int REM            = stage == 0 ? (CPR_NUM * 4) - IN_STAGE_NUM : IN_STAGE_NUM % 4;
+                localparam int IN_STAGE_NUM = get_in_stage_size(stage);
+                localparam int CPR_NUM = stage == 0 ? (IN_STAGE_NUM + 3) / 4 : IN_STAGE_NUM / 4;
+                localparam int REM = stage == 0 ? (CPR_NUM * 4) - IN_STAGE_NUM : IN_STAGE_NUM % 4;
                 localparam bit IS_FIRST_STAGE = stage == 0 ? 1 : 0;
-                localparam int WIDTH_IN       = get_width_in(stage);
-                localparam int WIDTH_OUT      = get_width_in(stage + 1);
-                localparam int EXT_BITS       = WIDTH_OUT - WIDTH_IN;
+                localparam int WIDTH_IN = get_width_in(stage);
+                localparam int WIDTH_OUT = get_width_in(stage + 1);
+                localparam int EXT_BITS = WIDTH_OUT - WIDTH_IN;
 
                 for (cpr = 0; cpr < CPR_NUM; cpr++) begin : gen_cprs
 
-                    localparam int BASE_IN     = cpr * 4;
-                    localparam int BASE_OUT    = cpr * 2;
+                    localparam int BASE_IN = cpr * 4;
+                    localparam int BASE_OUT = cpr * 2;
                     localparam bit IS_LAST_CPR = cpr == CPR_NUM - 1 ? 1 : 0;
 
-                    logic [ WIDTH_IN-1:0] in [0:3];
+                    logic [ WIDTH_IN-1:0] in    [0:3];
                     logic [WIDTH_OUT-1:0] sum;
                     logic [WIDTH_OUT-1:0] carry;
 
@@ -148,12 +150,18 @@ module cpr_n_2 #(
                 end
 
 
-                localparam int BASE_IN  = (CPR_NUM - 1) * 4;
+                localparam int BASE_IN = (CPR_NUM - 1) * 4;
                 localparam int BASE_OUT = (CPR_NUM - 1) * 2;
 
                 if (!IS_FIRST_STAGE && (REM > 0)) begin
-                    assign tmp[stage][BASE_OUT+2][WIDTH_OUT-1:0] = {{(WIDTH_OUT-WIDTH_IN){tmp[stage-1][BASE_IN+4][WIDTH_IN-1]}}, tmp[stage-1][BASE_IN+4][WIDTH_IN-1:0]};
-                    assign tmp[stage][BASE_OUT+3][WIDTH_OUT-1:0] = {{(WIDTH_OUT-WIDTH_IN){tmp[stage-1][BASE_IN+5][WIDTH_IN-1]}}, tmp[stage-1][BASE_IN+5][WIDTH_IN-1:0]};
+                    assign tmp[stage][BASE_OUT+2][WIDTH_OUT-1:0] = {
+                        {(WIDTH_OUT - WIDTH_IN) {tmp[stage-1][BASE_IN+4][WIDTH_IN-1]}},
+                        tmp[stage-1][BASE_IN+4][WIDTH_IN-1:0]
+                    };
+                    assign tmp[stage][BASE_OUT+3][WIDTH_OUT-1:0] = {
+                        {(WIDTH_OUT - WIDTH_IN) {tmp[stage-1][BASE_IN+5][WIDTH_IN-1]}},
+                        tmp[stage-1][BASE_IN+5][WIDTH_IN-1:0]
+                    };
                 end
             end
 

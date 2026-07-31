@@ -69,6 +69,22 @@ struct addr_hash_ops {
         l2 ^= (a >> 8) & 0x7;
         l2 ^= (a >> 10) & 0x7;
         r = (a & ~(static_cast<uint64_t>(0x1f) << 4)) | (l2 << 6) | (l1 << 4);
+#elif defined(XBAR_HASH_LIN)
+        // "linHash" (user-supplied linear XOR-skew experiment): bank[4:0] =
+        // (q & 31) ^ G(line), q = a>>4 (16B row granule), line = q>>5 —
+        // only THREE line bits (a[11:9]) feed the skew:
+        //   g0 = l0^l1^l2, g1 = l0^l2, g2 = g0, g3 = l0^l1, g4 = 0.
+        // Selector-free / address-only. Unlike XBAR_HASH_POLY below, the
+        // skew reaches the LOW bank bits (g0/g1), i.e. the L1 field.
+        {
+            const uint64_t q   = a >> 4;
+            const uint64_t l0v = (q >> 5) & 1, l1v = (q >> 6) & 1, l2v = (q >> 7) & 1;
+            const uint64_t g0 = l0v ^ l1v ^ l2v;
+            const uint64_t g1 = l0v ^ l2v;
+            const uint64_t g3 = l0v ^ l1v;
+            const uint64_t g  = g0 | (g1 << 1) | (g0 << 2) | (g3 << 3);
+            r                 = (a & ~(static_cast<uint64_t>(0x1f) << 4)) | (((q & 31) ^ g) << 4);
+        }
 #elif defined(XBAR_HASH_POLY)
         // GF(2^5) polynomial-skew bank interleaving (classic Rau-style):
         // bank[4:0] = q[4:0] ^ (x^1 * row mod p), p = x^5 + x^2 + 1
@@ -84,9 +100,9 @@ struct addr_hash_ops {
         // banks {0,16,4,20}) land on 4 DISTINCT banks that share one L1
         // field and still serialize in the port's 4x4 switch.
         static const uint64_t kG[7] = {2, 4, 8, 16, 5, 10, 20};
-        const uint64_t q    = a >> 4;
-        const uint64_t row  = q >> 5;
-        uint64_t       fold = 0;
+        const uint64_t        q     = a >> 4;
+        const uint64_t        row   = q >> 5;
+        uint64_t              fold  = 0;
         for (int i = 0; i < 7; ++i)
             if ((row >> i) & 1)
                 fold ^= kG[i];
@@ -220,8 +236,8 @@ struct addr_hash_ops {
     static uint64_t addr_hash_dynamic(uint64_t a, uint64_t R, uint64_t C, uint64_t L,
                                       uint64_t store_mode) {
         uint64_t bank_id = 0, row_id = 0;
-        map_func::map_one(a, static_cast<uint64_t>(NUM_BANK), static_cast<uint64_t>(BYTES_PER_ROW), R,
-                          C, L, static_cast<tdm_stor_mode>(store_mode), bank_id, row_id);
+        map_func::map_one(a, static_cast<uint64_t>(NUM_BANK), static_cast<uint64_t>(BYTES_PER_ROW),
+                          R, C, L, static_cast<tdm_stor_mode>(store_mode), bank_id, row_id);
         const uint64_t field_mask = (1ull << (LOG_REQ + LOG_BANK_GRP)) - 1;
         return (a & ~(field_mask << ROUTE_LSB)) | (bank_id << ROUTE_LSB);
     }
@@ -236,18 +252,54 @@ struct addr_hash_ops {
                                    uint64_t &str0) {
         str0 = bank_width;
         switch (mode) {
-        case tdm_stor_mode::Loop_Row_Col: str2 = R * C; str1 = C; return;
-        case tdm_stor_mode::Loop_Col_Row: str2 = R * C; str1 = R; return;
-        case tdm_stor_mode::Row_Col_Loop: str2 = C * L; str1 = L; return;
-        case tdm_stor_mode::Col_Row_Loop: str2 = R * L; str1 = L; return;
-        case tdm_stor_mode::Row_Loop_Col: str2 = L * C; str1 = C; return;
-        case tdm_stor_mode::Col_Loop_Row: str2 = L * R; str1 = R; return;
-        case tdm_stor_mode::Loop_2x2_H:   str2 = R * C; str1 = C * 2; return;
-        case tdm_stor_mode::Loop_2x2_V:   str2 = R * C; str1 = R * 2; return;
-        case tdm_stor_mode::Loop_4x4_H:   str2 = R * C; str1 = C * 4; return;
-        case tdm_stor_mode::Loop_4x4_V:   str2 = R * C; str1 = R * 4; return;
-        case tdm_stor_mode::Loop_Row:     str2 = R * C * L; str1 = R * C; return;
-        case tdm_stor_mode::Row_Loop:     str2 = R * C * L; str1 = L; return;
+        case tdm_stor_mode::Loop_Row_Col:
+            str2 = R * C;
+            str1 = C;
+            return;
+        case tdm_stor_mode::Loop_Col_Row:
+            str2 = R * C;
+            str1 = R;
+            return;
+        case tdm_stor_mode::Row_Col_Loop:
+            str2 = C * L;
+            str1 = L;
+            return;
+        case tdm_stor_mode::Col_Row_Loop:
+            str2 = R * L;
+            str1 = L;
+            return;
+        case tdm_stor_mode::Row_Loop_Col:
+            str2 = L * C;
+            str1 = C;
+            return;
+        case tdm_stor_mode::Col_Loop_Row:
+            str2 = L * R;
+            str1 = R;
+            return;
+        case tdm_stor_mode::Loop_2x2_H:
+            str2 = R * C;
+            str1 = C * 2;
+            return;
+        case tdm_stor_mode::Loop_2x2_V:
+            str2 = R * C;
+            str1 = R * 2;
+            return;
+        case tdm_stor_mode::Loop_4x4_H:
+            str2 = R * C;
+            str1 = C * 4;
+            return;
+        case tdm_stor_mode::Loop_4x4_V:
+            str2 = R * C;
+            str1 = R * 4;
+            return;
+        case tdm_stor_mode::Loop_Row:
+            str2 = R * C * L;
+            str1 = R * C;
+            return;
+        case tdm_stor_mode::Row_Loop:
+            str2 = R * C * L;
+            str1 = L;
+            return;
         default:
             // No case for the remaining store_modes — hard error rather
             // than silently routing garbage.
@@ -256,9 +308,7 @@ struct addr_hash_ops {
         }
     }
 
-    static uint64_t hash16_bit(uint64_t v, int i) {
-        return (v >> i) & 0x1ull;
-    }
+    static uint64_t hash16_bit(uint64_t v, int i) { return (v >> i) & 0x1ull; }
 #endif
 
 #if defined(XBAR_HASH16)
@@ -292,11 +342,11 @@ struct addr_hash_ops {
         // Each task's buffer sits on a fixed 64KiB boundary — mask to that
         // window before the stride math, or s2/s1/s0 depend on the buffer's
         // placement instead of the task's own (row,col,loop) coordinates.
-        const uint64_t a_word  = (a & 0xFFFFull) / kBankWidth;
-        const uint64_t s2      = a_word / str2;
-        const uint64_t s1      = (a_word % str2) / str1;
-        const uint64_t s0      = (a_word % str1) / str0;
-        const uint64_t bank_id = hash16_combine(s2, s1, s0) | (hi_bank ? 0x10ull : 0); // 0..31
+        const uint64_t a_word     = (a & 0xFFFFull) / kBankWidth;
+        const uint64_t s2         = a_word / str2;
+        const uint64_t s1         = (a_word % str2) / str1;
+        const uint64_t s0         = (a_word % str1) / str0;
+        const uint64_t bank_id    = hash16_combine(s2, s1, s0) | (hi_bank ? 0x10ull : 0); // 0..31
         const uint64_t field_mask = (1ull << (LOG_REQ + LOG_BANK_GRP)) - 1;
         return (a & ~(field_mask << ROUTE_LSB)) | (bank_id << ROUTE_LSB);
     }
@@ -322,7 +372,8 @@ struct addr_hash_ops {
         return (g0 << 0) | (g1 << 1) | (g2 << 2) | (g3 << 3) | (g4 << 4);
     }
 
-    static uint64_t addr_hash32(uint64_t a, uint64_t R, uint64_t C, uint64_t L, uint64_t store_mode) {
+    static uint64_t addr_hash32(uint64_t a, uint64_t R, uint64_t C, uint64_t L,
+                                uint64_t store_mode) {
         static constexpr uint64_t kBankWidth = 4;
         uint64_t                  str2 = 0, str1 = 0, str0 = 0;
         hash16_get_strides(static_cast<tdm_stor_mode>(store_mode), R, C, L, kBankWidth, str2, str1,

@@ -8,11 +8,11 @@
 
 /* verilator lint_off UNOPTFLAT */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module ff #(
     parameter int WIDTH = 8
-)(
+) (
     input  logic             clk_i,
     input  logic             rst_ni,
     input  logic [WIDTH-1:0] d_i,

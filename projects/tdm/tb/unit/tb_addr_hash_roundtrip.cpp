@@ -28,28 +28,29 @@
 
 // Production-shaped (5-bit L1+L2 field): required by XBAR_HASH16/32's own
 // static_assert, unrelated to whether a live crossbar instance is built.
-using DUT = top_crossbar<9, 8, 4, 32, 1024, 4, 4>;
+using DUT      = top_crossbar<9, 8, 4, 32, 1024, 4, 4>;
 using hash_ops = DUT::hash_ops;
 
 int sc_main(int, char *[]) {
-    std::mt19937_64 rng(0xC0FFEE);
+    std::mt19937_64                         rng(0xC0FFEE);
     std::uniform_int_distribution<uint64_t> addr_dist(0, (1ull << 20) - 1);
     std::uniform_int_distribution<int>      rc_dist(1, 8); // small, power-of-two-friendly
-    static constexpr uint64_t kStoreModes[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    static constexpr uint64_t               kStoreModes[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 
     // --- Correctness: addr_hash()/addr_hash_inv() are true two-sided
     // inverses of each other, for arbitrary addresses (not just hash16/32
     // outputs) ---
     int checked_general = 0;
     for (int i = 0; i < 20000; ++i) {
-        const uint64_t a = addr_dist(rng);
+        const uint64_t a            = addr_dist(rng);
         const uint64_t fwd_then_inv = hash_ops::addr_hash_inv(hash_ops::addr_hash(a));
         const uint64_t inv_then_fwd = hash_ops::addr_hash(hash_ops::addr_hash_inv(a));
         if (fwd_then_inv != a || inv_then_fwd != a) {
             char lbl[160];
-            std::snprintf(lbl, sizeof(lbl),
-                          "addr_hash_inv(addr_hash(0x%llx))==a and addr_hash(addr_hash_inv(0x%llx))==a",
-                          (unsigned long long)a, (unsigned long long)a);
+            std::snprintf(
+                lbl, sizeof(lbl),
+                "addr_hash_inv(addr_hash(0x%llx))==a and addr_hash(addr_hash_inv(0x%llx))==a",
+                (unsigned long long)a, (unsigned long long)a);
             CHECK(false, lbl);
         }
         ++checked_general;
@@ -64,26 +65,27 @@ int sc_main(int, char *[]) {
         if (hash_ops::addr_hash_inv(a) != a)
             ++differed;
     }
-    CHECK(differed > 15000, "addr_hash_inv() is a real, non-identity function (differs on most inputs)");
+    CHECK(differed > 15000,
+          "addr_hash_inv() is a real, non-identity function (differs on most inputs)");
 
     // --- The actual claim under test: hash11(hash11_inv(hash16/32(addr)))
     // == hash16/32(addr) exactly, across a spread of task descriptors and
     // addresses (napa/hi_bank included for hash16 specifically) ---
     int mismatches16 = 0, mismatches32 = 0, cases = 0;
     for (int i = 0; i < 5000; ++i) {
-        const uint64_t a        = addr_dist(rng);
-        const uint64_t R        = static_cast<uint64_t>(rc_dist(rng));
-        const uint64_t C        = static_cast<uint64_t>(rc_dist(rng));
-        const uint64_t L        = static_cast<uint64_t>(rc_dist(rng)) * 4;
-        const uint64_t sm       = kStoreModes[i % 12];
-        const bool     hi_bank  = (i % 2) == 0;
+        const uint64_t a       = addr_dist(rng);
+        const uint64_t R       = static_cast<uint64_t>(rc_dist(rng));
+        const uint64_t C       = static_cast<uint64_t>(rc_dist(rng));
+        const uint64_t L       = static_cast<uint64_t>(rc_dist(rng)) * 4;
+        const uint64_t sm      = kStoreModes[i % 12];
+        const bool     hi_bank = (i % 2) == 0;
 
-        const uint64_t h16       = hash_ops::addr_hash16(a, R, C, L, sm, hi_bank);
+        const uint64_t h16         = hash_ops::addr_hash16(a, R, C, L, sm, hi_bank);
         const uint64_t roundtrip16 = hash_ops::addr_hash(hash_ops::addr_hash_inv(h16));
         if (roundtrip16 != h16)
             ++mismatches16;
 
-        const uint64_t h32       = hash_ops::addr_hash32(a, R, C, L, sm);
+        const uint64_t h32         = hash_ops::addr_hash32(a, R, C, L, sm);
         const uint64_t roundtrip32 = hash_ops::addr_hash(hash_ops::addr_hash_inv(h32));
         if (roundtrip32 != h32)
             ++mismatches32;

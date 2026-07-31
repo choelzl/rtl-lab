@@ -9,7 +9,7 @@
 
 /* verilator lint_off UNUSEDSIGNAL */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_u_4_bit (
     input  logic [3:0] in_i,
@@ -17,7 +17,7 @@ module sqr_u_4_bit (
 );
 
     logic a0, a1, a2, a3;
-    
+
     assign {a3, a2, a1, a0} = in_i;
     assign out_o[0]         = a0;
     assign out_o[1]         = 1'b0;

@@ -26,7 +26,7 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module cpr_tree_8x8 #(
     parameter bit IS_PIPELINED = 1,
@@ -38,13 +38,13 @@ module cpr_tree_8x8 #(
     localparam int ACC_WIDTH = 48,
     localparam int EXT_NUM   = 7,
     localparam int OUT_WIDTH = ACC_WIDTH
-)(
+) (
     input  logic                 clk_i,
     input  logic                 rst_ni,
-    input  logic [ACC_WIDTH-1:0] acc_i       [0:((ACC_SIZE > 0) ? ACC_SIZE-1 : 0)],
-    input  logic                 is_signed_i [ 0:EXT_NUM-1],
-    input  logic                 is_shift_i  [ 0:EXT_NUM-1],
-    input  logic [ PP_WIDTH-1:0] pp_i        [ 0:PP_SIZE-1],
+    input  logic [ACC_WIDTH-1:0] acc_i      [0:((ACC_SIZE > 0) ? ACC_SIZE-1 : 0)],
+    input  logic                 is_signed_i[                        0:EXT_NUM-1],
+    input  logic                 is_shift_i [                        0:EXT_NUM-1],
+    input  logic [ PP_WIDTH-1:0] pp_i       [                        0:PP_SIZE-1],
     output logic [OUT_WIDTH-1:0] out_o
 );
 
@@ -108,23 +108,22 @@ module cpr_tree_8x8 #(
 
             localparam int NUM_STAGES = 2;
 
-            logic [OUT_WIDTH-1:0] tmp [0:NUM_STAGES][0:PP_SIZE-1];
+            logic [OUT_WIDTH-1:0] tmp[0:NUM_STAGES][0:PP_SIZE-1];
 
-            for (i = 0; i < PP_SIZE; i++)
-                assign tmp[0][i][PP_WIDTH-1:0] = pp_i[i];
+            for (i = 0; i < PP_SIZE; i++) assign tmp[0][i][PP_WIDTH-1:0] = pp_i[i];
 
             for (stage = 0; stage < NUM_STAGES; stage++) begin
 
-                localparam int CPR_N_2_IN_SIZE      = get_in_size(stage);
-                localparam int CPR_N_2_IN_WIDTH     = gen_in_width(stage);
+                localparam int CPR_N_2_IN_SIZE = get_in_size(stage);
+                localparam int CPR_N_2_IN_WIDTH = gen_in_width(stage);
                 localparam int CPR_N_2_MAX_EXT_BITS = stage == 0 ? EXT_BITS : 0;
-                localparam int NUM_LANES            = 4 / pow2(stage);
+                localparam int NUM_LANES = 4 / pow2(stage);
 
                 for (lane = 0; lane < NUM_LANES; lane++) begin
 
                     localparam int CPR_N_2_OUT_WIDTH = CPR_N_2_IN_WIDTH + CPR_N_2_MAX_EXT_BITS;
 
-                    logic [ CPR_N_2_IN_WIDTH-1:0] cpr_n_2_in [0:CPR_N_2_IN_SIZE-1];
+                    logic [ CPR_N_2_IN_WIDTH-1:0] cpr_n_2_in    [0:CPR_N_2_IN_SIZE-1];
                     logic [CPR_N_2_OUT_WIDTH-1:0] cpr_n_2_sum;
                     logic [CPR_N_2_OUT_WIDTH-1:0] cpr_n_2_carry;
 
@@ -141,13 +140,13 @@ module cpr_tree_8x8 #(
                         .carry_o(cpr_n_2_carry)
                     );
 
-                    localparam int EXT_N_IN_SIZE   = 2;
-                    localparam int EXT_N_EXTEND    = 8;
-                    localparam int EXT_N_SEL_EXT   = get_sel_ext(stage, lane);
+                    localparam int EXT_N_IN_SIZE = 2;
+                    localparam int EXT_N_EXTEND = 8;
+                    localparam int EXT_N_SEL_EXT = get_sel_ext(stage, lane);
                     localparam int EXT_N_OUT_WIDTH = CPR_N_2_OUT_WIDTH + EXT_N_EXTEND;
 
-                    logic [CPR_N_2_OUT_WIDTH-1:0] ext_n_in  [0:EXT_N_IN_SIZE-1];
-                    logic [  EXT_N_OUT_WIDTH-1:0] ext_n_out [0:EXT_N_IN_SIZE-1];
+                    logic [CPR_N_2_OUT_WIDTH-1:0] ext_n_in [0:EXT_N_IN_SIZE-1];
+                    logic [  EXT_N_OUT_WIDTH-1:0] ext_n_out[0:EXT_N_IN_SIZE-1];
 
                     assign ext_n_in[0] = cpr_n_2_sum;
                     assign ext_n_in[1] = cpr_n_2_carry;
@@ -167,7 +166,7 @@ module cpr_tree_8x8 #(
 
                         if (stage == 0) begin
 
-                            logic [EXT_N_OUT_WIDTH-1:0] ext_n_out_tmp [0:EXT_N_IN_SIZE-1];
+                            logic [EXT_N_OUT_WIDTH-1:0] ext_n_out_tmp[0:EXT_N_IN_SIZE-1];
 
                             ff_n #(
                                 .WIDTH(EXT_N_OUT_WIDTH),
@@ -198,14 +197,14 @@ module cpr_tree_8x8 #(
                 end
             end
 
-            localparam int EXT_N_LAST_IN_SIZE   = 4;
-            localparam int EXT_N_LAST_IN_WIDTH  = gen_in_width(NUM_STAGES);
-            localparam int EXT_N_LAST_EXTEND    = ACC_WIDTH - EXT_N_LAST_IN_WIDTH;
-            localparam int EXT_N_LAST_SEL_EXT   = get_sel_ext(NUM_STAGES, 0);
+            localparam int EXT_N_LAST_IN_SIZE = 4;
+            localparam int EXT_N_LAST_IN_WIDTH = gen_in_width(NUM_STAGES);
+            localparam int EXT_N_LAST_EXTEND = ACC_WIDTH - EXT_N_LAST_IN_WIDTH;
+            localparam int EXT_N_LAST_SEL_EXT = get_sel_ext(NUM_STAGES, 0);
             localparam int EXT_N_LAST_OUT_WIDTH = EXT_N_LAST_IN_WIDTH + EXT_N_LAST_EXTEND;
 
-            logic [ EXT_N_LAST_IN_WIDTH-1:0] ext_n_last_in  [0:EXT_N_LAST_IN_SIZE-1];
-            logic [EXT_N_LAST_OUT_WIDTH-1:0] ext_n_last_out [0:EXT_N_LAST_IN_SIZE-1];
+            logic [ EXT_N_LAST_IN_WIDTH-1:0] ext_n_last_in [0:EXT_N_LAST_IN_SIZE-1];
+            logic [EXT_N_LAST_OUT_WIDTH-1:0] ext_n_last_out[0:EXT_N_LAST_IN_SIZE-1];
 
             for (i = 0; i < EXT_N_LAST_IN_SIZE; i++)
                 assign ext_n_last_in[i] = tmp[NUM_STAGES][i][EXT_N_LAST_IN_WIDTH-1:0];
@@ -221,19 +220,17 @@ module cpr_tree_8x8 #(
                 .out_o      (ext_n_last_out)
             );
 
-            localparam int CPR_N_2_LAST_IN_SIZE      = EXT_N_LAST_IN_SIZE + ACC_SIZE;
-            localparam int CPR_N_2_LAST_IN_WIDTH     = EXT_N_LAST_OUT_WIDTH;
+            localparam int CPR_N_2_LAST_IN_SIZE = EXT_N_LAST_IN_SIZE + ACC_SIZE;
+            localparam int CPR_N_2_LAST_IN_WIDTH = EXT_N_LAST_OUT_WIDTH;
             localparam int CPR_N_2_LAST_MAX_EXT_BITS = 0;
 
-            logic [CPR_N_2_LAST_IN_WIDTH-1:0] cpr_n_2_last_in [0:CPR_N_2_LAST_IN_SIZE-1];
+            logic [CPR_N_2_LAST_IN_WIDTH-1:0] cpr_n_2_last_in    [0:CPR_N_2_LAST_IN_SIZE-1];
             logic [CPR_N_2_LAST_IN_WIDTH-1:0] cpr_n_2_last_sum;
             logic [CPR_N_2_LAST_IN_WIDTH-1:0] cpr_n_2_last_carry;
 
-            for (i = 0; i < EXT_N_LAST_IN_SIZE; i++)
-                assign cpr_n_2_last_in[i] = ext_n_last_out[i];
+            for (i = 0; i < EXT_N_LAST_IN_SIZE; i++) assign cpr_n_2_last_in[i] = ext_n_last_out[i];
 
-            for (i = 0; i < ACC_SIZE; i++)
-                assign cpr_n_2_last_in[EXT_N_LAST_IN_SIZE+i] = acc_i[i];
+            for (i = 0; i < ACC_SIZE; i++) assign cpr_n_2_last_in[EXT_N_LAST_IN_SIZE+i] = acc_i[i];
 
             cpr_n_2 #(
                 .IN_SIZE     (CPR_N_2_LAST_IN_SIZE),

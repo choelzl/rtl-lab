@@ -173,27 +173,27 @@ inline void stride_get_strides(tdm_stor_mode mode, uint64_t R, uint64_t C, uint6
     uint64_t inner, middle;
     switch (mode) {
     case M::Loop_Row_Col:
-        inner = C;
+        inner  = C;
         middle = R;
         break;
     case M::Loop_Col_Row:
-        inner = R;
+        inner  = R;
         middle = C;
         break;
     case M::Row_Col_Loop:
-        inner = L;
+        inner  = L;
         middle = C;
         break;
     case M::Col_Row_Loop:
-        inner = L;
+        inner  = L;
         middle = R;
         break;
     case M::Row_Loop_Col:
-        inner = C;
+        inner  = C;
         middle = L;
         break;
     case M::Col_Loop_Row:
-        inner = R;
+        inner  = R;
         middle = L;
         break;
     default:

@@ -8,16 +8,16 @@
 //   right shift replicates the sign bit (arithmetic right shift).
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module shifter_n #(
     parameter int IN_NUM  = 2,
     parameter int IN_SIZE = 8,
     parameter bit IS_LEFT = 1,
     parameter int SHIFT   = 4
-)(
-    input  logic [IN_SIZE-1:0] in_i  [0:IN_NUM-1],
-    output logic [IN_SIZE-1:0] out_o [0:IN_NUM-1]
+) (
+    input  logic [IN_SIZE-1:0] in_i [0:IN_NUM-1],
+    output logic [IN_SIZE-1:0] out_o[0:IN_NUM-1]
 );
 
     genvar i;
