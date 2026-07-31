@@ -59,6 +59,33 @@ static void bind_monitor(obi_monitor<N, BYTES_PER_ROW> &mon, sc_clock &clk, sc_s
         bind_obi(mon.obi[p], bus[p]);
 }
 
+// SEL_VCD support: trace one OBI bundle array's 8 fields per lane under
+// descriptive names ("<prefix>[i].req" etc.) — sc_signal's own auto-generated
+// name is unique but not readable in a waveform viewer.
+// Zero-pad a small non-negative index to 2 digits so scope/signal names sort
+// lexically in waveform viewers (00,01,..,09,10,11 instead of 0,1,10,11,..,2).
+static std::string z2(int v) {
+    const std::string s = std::to_string(v);
+    return s.size() < 2 ? std::string(2 - s.size(), '0') + s : s;
+}
+
+template <int N>
+static void trace_group(sc_trace_file *tf, const char *prefix, obi_signal_bundle<data_t> (&bus)[N]) {
+    for (int i = 0; i < N; ++i) {
+        // <prefix>.<port>.<field> — prefix is e.g. "AGU_A.READ", so each port
+        // 0..N-1 becomes a sub-scope holding the full OBI interface.
+        const std::string base = std::string(prefix) + "." + z2(i) + ".";
+        sc_trace(tf, bus[i].req, base + "req");
+        sc_trace(tf, bus[i].gnt, base + "gnt");
+        sc_trace(tf, bus[i].addr, base + "addr");
+        sc_trace(tf, bus[i].be, base + "be");
+        sc_trace(tf, bus[i].we, base + "we");
+        sc_trace(tf, bus[i].wdata, base + "wdata");
+        sc_trace(tf, bus[i].rvalid, base + "rvalid");
+        sc_trace(tf, bus[i].rdata, base + "rdata");
+    }
+}
+
 int sc_main(int, char *[]) {
     const std::string project = env_or("SEL_PROJECT", "tdm");
     const char       *ch      = std::getenv("RTL_LAB_HOME");
@@ -76,12 +103,42 @@ int sc_main(int, char *[]) {
     // when set — useful for large sweeps where only the printed/stats.log
     // summary is needed, since these per-cycle logs dominate I/O time.
     const bool no_monitor = std::getenv("SEL_NO_MONITOR") != nullptr;
+    // SEL_DESC_SYNC (crossbar only): per-descriptor barrier — the 5 agu groups
+    // (ragu_a/b/c, wagu_a/b) synchronize at each descriptor boundary (fences
+    // ignored, tasks NOT merged), so descriptor N is directly comparable across
+    // builds. DMA (ragu_d/e, wagu_d/e) runs free as background traffic. Emits
+    // out_dir/desc_sync.csv (drain cycles + L1/L2/L3 split per descriptor). See
+    // doc/xbar_hash_l1_performance.md. Must NOT be combined with SEL_NO_FENCE,
+    // whose task-merge would erase the descriptor boundaries this relies on.
+    const bool desc_sync = std::getenv("SEL_DESC_SYNC") != nullptr;
+    if (desc_sync && std::getenv("SEL_NO_FENCE"))
+        fprintf(stderr, "WARNING: SEL_DESC_SYNC with SEL_NO_FENCE — the latter's "
+                        "task-merge destroys descriptor boundaries; run SEL_DESC_SYNC alone\n");
     // SEL_BANK_TRACE: write one line per cycle with the number of banks
     // served (req&&gnt) that cycle — the per-cycle parallelism timeline
     // (doc/report §5.1). Cheap: one small integer per cycle.
     std::ofstream bank_trace;
     if (std::getenv("SEL_BANK_TRACE"))
         bank_trace.open(out_dir + "/bank_trace.csv");
+    // SEL_VCD: dump a VCD waveform of every OBI request (all 9 AGU-facing
+    // port groups) plus the bank-facing stage (IMPL_TDM: mux_tdm/xbar_bank
+    // and the tdm mapping function's per-lane bank_id/row_id/conflict;
+    // IMPL_CROSSBAR: l3_bank) to out_dir/wave.vcd — for interactive
+    // inspection (gtkwave), not for any automated stat.
+    const bool  sel_vcd = std::getenv("SEL_VCD") != nullptr;
+    sc_trace_file *tf   = nullptr;
+    // SEL_MAP_CONFLICT_LOG (IMPL_TDM only): one row per cycle/lane where the
+    // mapping function's XOR hash landed on the same bank_id as another real
+    // lane in the same group — the collision the downstream per-bank
+    // arbiter must then serialize.
+    std::ofstream map_conflict_log;
+#if defined(IMPL_TDM) && !defined(IMPL_SV)
+    if (std::getenv("SEL_MAP_CONFLICT_LOG")) {
+        map_conflict_log.open(out_dir + "/map_conflicts.csv");
+        if (map_conflict_log)
+            map_conflict_log << "cycle,lane,bank_id,row_id\n";
+    }
+#endif
     auto log_path = [&](const std::string &name) -> std::string {
         return no_monitor ? std::string() : out_dir + "/" + name;
     };
@@ -176,6 +233,21 @@ int sc_main(int, char *[]) {
     bind_agu(*wagu_d_src, clk, rst_ni, done[7], wagu_d);
     bind_agu(*wagu_e_src, clk, rst_ni, done[8], wagu_e);
 
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+    if (desc_sync) {
+        // All 9 groups ignore start_cycle fences (barrier controls timing);
+        // the 5 agu groups additionally hold at each descriptor boundary until
+        // released together. DMA (d/e) has no barrier — it just runs free.
+        ragu_a_src->ignore_fence_ = ragu_b_src->ignore_fence_ = ragu_c_src->ignore_fence_ = true;
+        ragu_d_src->ignore_fence_ = ragu_e_src->ignore_fence_ = true;
+        wagu_a_src->ignore_fence_ = wagu_b_src->ignore_fence_ = true;
+        wagu_d_src->ignore_fence_ = wagu_e_src->ignore_fence_ = true;
+        ragu_a_src->desc_barrier_hold_ = ragu_b_src->desc_barrier_hold_ =
+            ragu_c_src->desc_barrier_hold_ = true;
+        wagu_a_src->desc_barrier_hold_ = wagu_b_src->desc_barrier_hold_ = true;
+    }
+#endif
+
     // OBI monitors — one per AGU group; follow same path convention as AGU logs.
     auto mon_path = [&](const char *name) -> std::string {
         return log_path(std::string("obi_") + name + ".csv");
@@ -260,6 +332,179 @@ int sc_main(int, char *[]) {
         dut.impl.set_arb_sequence(kArbSeq8, 8);
     }
 #endif
+
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+    // Per-port L1 collision flags (one per physical RPORT/WPORT, i.e. one
+    // per 4-lane L1 instance): true this cycle iff that port's own 4
+    // concurrent sub-lanes had more real requesters than the L1 stage
+    // forwarded to l1_l2_{rd,wr} — i.e. >=2 of its lanes hashed to the same
+    // L1 output (addr[5:4] by default; addr[5:4] is unhashed unless built
+    // with -DXBAR_HASH_L1, see top_crossbar.hpp's addr_hash()). Declared
+    // here (before SEL_VCD tracing) and populated per-cycle in the main
+    // loop's crossbar accounting block below.
+    sc_signal<bool> l1_conflict_rd[9];
+    sc_signal<bool> l1_conflict_wr[8];
+    // SEL_VCD per-cycle conflict-wait view: number of requesters blocked *at*
+    // each crossbar stage this cycle (the telescoped d[0..2] = L1/L2/L3, rd+wr)
+    // plus the raw req && !gnt input-port counts. Written in the crossbar
+    // accounting block below, traced under `wait.` — lets you watch conflict
+    // spikes line up with the `<group>.desc` label in Surfer per descriptor.
+    sc_signal<sc_uint<16>> wait_lvl_l1, wait_lvl_l2, wait_lvl_l3;
+    sc_signal<sc_uint<16>> wait_cyc_rd, wait_cyc_wr;  // = cyc_wait_rd/wr (input req && !gnt)
+    // Accumulated (running-sum) conflict wait-cycles per level — the same
+    // lvl_rd[0..2]/lvl_wr[0..2] totals printed on the `conflict lvl` line. 32-bit
+    // (the totals exceed 16-bit) traced as wait.lvl_{rd,wr}_l{1,2,3}.
+    sc_signal<sc_uint<32>> lvl_rd_sig[3], lvl_wr_sig[3];
+#endif
+
+    // SEL_VCD descriptor label as ONE `<group>.desc` signal: a standard
+    // bit-vector holding the current descriptor's label as ASCII bytes (char[0]
+    // in the MS byte, space-padded). In Surfer, add the signal and set its value
+    // format to ASCII to read it as text; the label mirrors the stimulus line
+    // "#cycle,num_port_active,R,C,L,sm" exactly (see doc/specs/stimuli.md). A
+    // plain bit-vector is used (not the VCD string extension) because that is
+    // the one representation every VCD reader parses — underscores keep every
+    // field separated without whitespace.
+    static constexpr int        kDescChars = 48;          // ASCII chars in the label field
+    static constexpr int        kDescBits  = kDescChars * 8;
+    sc_signal<sc_bv<kDescBits>> desc_sig[5];
+    std::vector<std::string>    desc_labels[5];
+    auto desc_label_of = [](const auto &t, std::size_t i) {
+        std::string s = "d" + std::to_string(i) + "_cyc" + std::to_string(t.start_cycle) +
+                        "_npa" + std::to_string(t.num_port_active);
+        if (t.has_crl)
+            s += "_R" + std::to_string(t.R) + "_C" + std::to_string(t.C) + "_L" + std::to_string(t.L);
+        return s + "_sm" + std::to_string(t.store_mode);
+    };
+    auto pack_ascii = [](const std::string &s) {
+        sc_bv<kDescBits> v;
+        for (int i = 0; i < kDescChars; ++i) {
+            const int c  = i < static_cast<int>(s.size()) ? static_cast<unsigned char>(s[i]) : ' ';
+            const int hi = kDescBits - 1 - i * 8; // char[0] -> most-significant byte
+            v.range(hi, hi - 7) = c;
+        }
+        return v;
+    };
+
+    if (sel_vcd) {
+        tf = sc_create_vcd_trace_file((out_dir + "/wave").c_str());
+        sc_trace(tf, clk, "clk");
+        sc_trace(tf, rst_ni, "rst_ni");
+        // Group each AGU letter under one AGU_<L> scope, split READ (ragu_*) /
+        // WRITE (wagu_*). AGU_C is read-only (no wagu_c in hardware).
+        trace_group(tf, "AGU_A.READ", ragu_a);
+        trace_group(tf, "AGU_A.WRITE", wagu_a);
+        trace_group(tf, "AGU_B.READ", ragu_b);
+        trace_group(tf, "AGU_B.WRITE", wagu_b);
+        trace_group(tf, "AGU_C.READ", ragu_c);
+        trace_group(tf, "AGU_D.READ", ragu_d);
+        trace_group(tf, "AGU_D.WRITE", wagu_d);
+        trace_group(tf, "AGU_E.READ", ragu_e);
+        trace_group(tf, "AGU_E.WRITE", wagu_e);
+        // One `<group>.desc` signal per barriered agu group: an ASCII bit-vector
+        // holding the current descriptor's label (set format=ASCII in Surfer).
+        // Labels are precomputed from each group's already-parsed tasks_; the
+        // main loop packs the current one each cycle.
+        {
+            const char *strn[5] = {"ragu_a.desc", "ragu_b.desc", "ragu_c.desc",
+                                   "wagu_a.desc", "wagu_b.desc"};
+            auto setup = [&](int g, const auto &src) {
+                for (std::size_t i = 0; i < src->tasks_.size(); ++i)
+                    desc_labels[g].push_back(desc_label_of(src->tasks_[i], i));
+                sc_trace(tf, desc_sig[g], strn[g]);
+            };
+            setup(0, ragu_a_src);
+            setup(1, ragu_b_src);
+            setup(2, ragu_c_src);
+            setup(3, wagu_a_src);
+            setup(4, wagu_b_src);
+        }
+#if defined(IMPL_TDM) && !defined(IMPL_SV)
+        for (int w = 0; w < N_BANK; ++w) {
+            // Group banks 8 per scope: banks.<lo>-<hi>.<w>.<field>
+            const int lo = (w / 8) * 8;
+            const std::string base = "banks." + z2(lo) + "-" + z2(lo + 7) + "." + z2(w) + ".";
+            // Full OBI bank interface (xbar_bank = the bank's OBI port)
+            sc_trace(tf, dut.impl.xbar_bank[w].req, base + "req");
+            sc_trace(tf, dut.impl.xbar_bank[w].gnt, base + "gnt");
+            sc_trace(tf, dut.impl.xbar_bank[w].addr, base + "addr");
+            sc_trace(tf, dut.impl.xbar_bank[w].be, base + "be");
+            sc_trace(tf, dut.impl.xbar_bank[w].we, base + "we");
+            sc_trace(tf, dut.impl.xbar_bank[w].wdata, base + "wdata");
+            sc_trace(tf, dut.impl.xbar_bank[w].rvalid, base + "rvalid");
+            sc_trace(tf, dut.impl.xbar_bank[w].rdata, base + "rdata");
+            // TDM-specific diagnostics (mux arbitration + address map)
+            sc_trace(tf, dut.impl.mux_tdm[w].req, base + "mux_req");
+            sc_trace(tf, dut.impl.mux_tdm[w].gnt, base + "mux_gnt");
+            sc_trace(tf, dut.impl.mux_tdm[w].addr, base + "mux_addr");
+            sc_trace(tf, dut.impl.mapf.bank_id_o[w], base + "map_bank_id");
+            sc_trace(tf, dut.impl.mapf.row_id_o[w], base + "map_row_id");
+            sc_trace(tf, dut.impl.mapf.conflict_o[w], base + "map_conflict");
+        }
+#elif defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+        for (int b = 0; b < decltype(dut.impl)::NUM_PHYS_BANKS; ++b) {
+            // Group banks 8 per scope: banks.<lo>-<hi>.<b>.<field>
+            const int lo = (b / 8) * 8;
+            const std::string base = "banks." + z2(lo) + "-" + z2(lo + 7) + "." + z2(b) + ".";
+            sc_trace(tf, dut.impl.l3_bank[b].req, base + "req");
+            sc_trace(tf, dut.impl.l3_bank[b].gnt, base + "gnt");
+            sc_trace(tf, dut.impl.l3_bank[b].addr, base + "addr");
+            sc_trace(tf, dut.impl.l3_bank[b].be, base + "be");
+            sc_trace(tf, dut.impl.l3_bank[b].we, base + "we");
+            sc_trace(tf, dut.impl.l3_bank[b].wdata, base + "wdata");
+            sc_trace(tf, dut.impl.l3_bank[b].rvalid, base + "rvalid");
+            sc_trace(tf, dut.impl.l3_bank[b].rdata, base + "rdata");
+        }
+        // L1 stage (4x4 per physical port): l1_l2_rd/wr is L1's OUTPUT side
+        // (post-arbitration, feeding L2) — flat-indexed j*NUM_REQ+m, the
+        // same global lane numbering as the AGU-facing ragu_*/wagu_* arrays
+        // traced above, so l1_l2_rd(i) lines up directly with e.g.
+        // ragu_a(i) for i in RAGU_A's own lane range.
+        // Grouped as L1_IF_OUT.<READ|WRITE>.<lo>-<hi>.<lane>.<field>, 4 lanes
+        // per scope (one physical port's 4-lane L1 instance).
+        for (int i = 0; i < decltype(dut.impl)::NUM_L1_L2_RD; ++i) {
+            const int lo = (i / 4) * 4;
+            const std::string base = "L1_IF_OUT.READ." + z2(lo) + "-" + z2(lo + 3) + "." + z2(i) + ".";
+            sc_trace(tf, dut.impl.l1_l2_rd[i].req, base + "req");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].gnt, base + "gnt");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].addr, base + "addr");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].be, base + "be");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].we, base + "we");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].wdata, base + "wdata");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].rvalid, base + "rvalid");
+            sc_trace(tf, dut.impl.l1_l2_rd[i].rdata, base + "rdata");
+        }
+        for (int i = 0; i < decltype(dut.impl)::NUM_L1_L2_WR; ++i) {
+            const int lo = (i / 4) * 4;
+            const std::string base = "L1_IF_OUT.WRITE." + z2(lo) + "-" + z2(lo + 3) + "." + z2(i) + ".";
+            sc_trace(tf, dut.impl.l1_l2_wr[i].req, base + "req");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].gnt, base + "gnt");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].addr, base + "addr");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].be, base + "be");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].we, base + "we");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].wdata, base + "wdata");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].rvalid, base + "rvalid");
+            sc_trace(tf, dut.impl.l1_l2_wr[i].rdata, base + "rdata");
+        }
+        for (int j = 0; j < 9; ++j)
+            sc_trace(tf, l1_conflict_rd[j], "l1_conflict_rd(" + std::to_string(j) + ")");
+        for (int j = 0; j < 8; ++j)
+            sc_trace(tf, l1_conflict_wr[j], "l1_conflict_wr(" + std::to_string(j) + ")");
+        // Per-cycle conflict-wait counts (see declaration), grouped under `wait.`
+        sc_trace(tf, wait_cyc_rd, "wait.cyc_wait_rd");
+        sc_trace(tf, wait_cyc_wr, "wait.cyc_wait_wr");
+        sc_trace(tf, wait_lvl_l1, "wait.l1");
+        sc_trace(tf, wait_lvl_l2, "wait.l2");
+        sc_trace(tf, wait_lvl_l3, "wait.l3");
+        {
+            static const char *ln[3] = {"l1", "l2", "l3"};
+            for (int k = 0; k < 3; ++k) {
+                sc_trace(tf, lvl_rd_sig[k], std::string("wait.lvl_rd_") + ln[k]);
+                sc_trace(tf, lvl_wr_sig[k], std::string("wait.lvl_wr_") + ln[k]);
+            }
+        }
+#endif
+    }
 
     rst_ni.write(false);
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
@@ -406,6 +651,29 @@ int sc_main(int, char *[]) {
     // request-cycle counters above, which weight by how many requests were
     // blocked at once).
     uint64_t lvl_cyc[4] = {0, 0, 0, 0};
+
+    // SEL_DESC_SYNC per-descriptor barrier state (see the barrier step at the
+    // end of the main loop). desc_prev_lvl snapshots [l1_rd,l2_rd,l3_rd,
+    // l1_wr,l2_wr,l3_wr] at the previous descriptor boundary.
+    std::ofstream desc_csv;
+    if (desc_sync) {
+        desc_csv.open(out_dir + "/desc_sync.csv");
+        if (desc_csv)
+            desc_csv << "desc,boundary_cycle,drain,ideal,overhead,"
+                        "l1_rd,l2_rd,l3_rd,l1_wr,l2_wr,l3_wr\n";
+    }
+    bool     desc_just_released = false;
+    int      desc_idx           = 0;
+    uint64_t desc_prev_cycle    = 0;
+    uint64_t desc_prev_lvl[6]   = {0, 0, 0, 0, 0, 0};
+    // Per-descriptor overhead accounting (1c): ideal = max over the 5 barriered
+    // groups of the just-drained task's n_groups (conflict-free issue cycles);
+    // overhead = drain - ideal. barrier_overhead collects the overhead of
+    // zero-conflict descriptors (structural: last-beat response drain + any
+    // cross-group load imbalance) so conflict_overhead = total - barrier is the
+    // part actually attributable to counted L1/L2/L3 conflicts.
+    uint64_t sum_ideal = 0, sum_drain = 0, sum_overhead = 0, barrier_overhead = 0;
+    uint64_t agu_ideal[5] = {0, 0, 0, 0, 0};  // ragu_a,b,c, wagu_a,b : sum of n_groups
 #endif
 #if defined(IMPL_TDM) && !defined(IMPL_SV)
     // Shared-TDM-bus accounting: bus_busy = cycles the granted buffer had
@@ -690,6 +958,20 @@ int sc_main(int, char *[]) {
             }
         }
 #endif
+        // SEL_VCD: pack each group's current descriptor label (ASCII) into its
+        // `desc` signal (only emits a VCD change at descriptor boundaries).
+        if (sel_vcd) {
+            auto upd = [&](int g, const auto &src) {
+                const std::size_t i = src->task_idx_;
+                desc_sig[g].write(
+                    pack_ascii(i < desc_labels[g].size() ? desc_labels[g][i] : std::string("done")));
+            };
+            upd(0, ragu_a_src);
+            upd(1, ragu_b_src);
+            upd(2, ragu_c_src);
+            upd(3, wagu_a_src);
+            upd(4, wagu_b_src);
+        }
 
         // --- sample this cycle's settled req/gnt state into the counters ---
         int  cyc_wait_rd = 0, cyc_wait_wr = 0; // this cycle's waiting input ports
@@ -852,6 +1134,13 @@ int sc_main(int, char *[]) {
             }
             bank_stall_cycles += any_blocked;
         }
+        if (map_conflict_log.is_open()) {
+            for (int w = 0; w < N_BANK; ++w) {
+                if (dut.impl.mapf.conflict_o[w].read())
+                    map_conflict_log << actual << ',' << w << ',' << dut.impl.mapf.bank_id_o[w].read()
+                                      << ',' << dut.impl.mapf.row_id_o[w].read() << "\n";
+            }
+        }
         {
             using impl_t       = decltype(dut.impl);
             const int sel      = dut.impl.arb_req_sel.read();
@@ -877,6 +1166,63 @@ int sc_main(int, char *[]) {
 #elif defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
         {
             using impl_t = decltype(dut.impl);
+            // Per-port L1 collision detection: for each physical port's own
+            // 4-lane L1 instance, more real requesters at the input than
+            // distinct winners forwarded to l1_l2_{rd,wr} means >=2 lanes
+            // hashed to the same L1 output this cycle (see l1_conflict_rd/wr
+            // declaration above for why).
+            auto l1_conflict_check = [&](const obi_signal_bundle<data_t> *in, int n_lanes,
+                                         const obi_signal_bundle<data_t> *l1out, int sig_base,
+                                         sc_signal<bool> *sig) {
+                for (int p = 0; p * 4 < n_lanes; ++p) {
+                    int in_req = 0, out_req = 0;
+                    for (int k = 0; k < 4; ++k) {
+                        if (in[p * 4 + k].req.read())
+                            ++in_req;
+                        if (l1out[p * 4 + k].req.read())
+                            ++out_req;
+                    }
+                    sig[sig_base + p].write(in_req > out_req);
+                }
+            };
+            {
+                int rd_base = 0, sig_base = 0;
+                l1_conflict_check(ragu_a, dut_t::RAGU_A_PORTS, dut.impl.l1_l2_rd + rd_base, sig_base,
+                                  l1_conflict_rd);
+                rd_base += dut_t::RAGU_A_PORTS;
+                sig_base += dut_t::RAGU_A_PORTS / 4;
+                l1_conflict_check(ragu_b, dut_t::RAGU_B_PORTS, dut.impl.l1_l2_rd + rd_base, sig_base,
+                                  l1_conflict_rd);
+                rd_base += dut_t::RAGU_B_PORTS;
+                sig_base += dut_t::RAGU_B_PORTS / 4;
+                l1_conflict_check(ragu_c, dut_t::RAGU_C_PORTS, dut.impl.l1_l2_rd + rd_base, sig_base,
+                                  l1_conflict_rd);
+                rd_base += dut_t::RAGU_C_PORTS;
+                sig_base += dut_t::RAGU_C_PORTS / 4;
+                l1_conflict_check(ragu_d, dut_t::RAGU_D_PORTS, dut.impl.l1_l2_rd + rd_base, sig_base,
+                                  l1_conflict_rd);
+                rd_base += dut_t::RAGU_D_PORTS;
+                sig_base += dut_t::RAGU_D_PORTS / 4;
+                l1_conflict_check(ragu_e, dut_t::RAGU_E_PORTS, dut.impl.l1_l2_rd + rd_base, sig_base,
+                                  l1_conflict_rd);
+
+                int wr_base = 0;
+                sig_base    = 0;
+                l1_conflict_check(wagu_a, dut_t::WAGU_A_PORTS, dut.impl.l1_l2_wr + wr_base, sig_base,
+                                  l1_conflict_wr);
+                wr_base += dut_t::WAGU_A_PORTS;
+                sig_base += dut_t::WAGU_A_PORTS / 4;
+                l1_conflict_check(wagu_b, dut_t::WAGU_B_PORTS, dut.impl.l1_l2_wr + wr_base, sig_base,
+                                  l1_conflict_wr);
+                wr_base += dut_t::WAGU_B_PORTS;
+                sig_base += dut_t::WAGU_B_PORTS / 4;
+                l1_conflict_check(wagu_d, dut_t::WAGU_D_PORTS, dut.impl.l1_l2_wr + wr_base, sig_base,
+                                  l1_conflict_wr);
+                wr_base += dut_t::WAGU_D_PORTS;
+                sig_base += dut_t::WAGU_D_PORTS / 4;
+                l1_conflict_check(wagu_e, dut_t::WAGU_E_PORTS, dut.impl.l1_l2_wr + wr_base, sig_base,
+                                  l1_conflict_wr);
+            }
             int a_rd = 0, a_wr = 0, b_rd = 0, b_wr = 0, c_rd = 0, c_wr = 0;
             for (int i = 0; i < impl_t::NUM_L1_L2_RD; ++i)
                 if (dut.impl.l1_l2_rd[i].req.read() && !dut.impl.l1_l2_rd[i].gnt.read())
@@ -917,6 +1263,76 @@ int sc_main(int, char *[]) {
             lvl_wr[3] += c_wr;
             for (int k = 0; k < 4; ++k)
                 lvl_cyc[k] += d[k] > 0;
+            if (sel_vcd) {
+                wait_cyc_rd.write(cyc_wait_rd);
+                wait_cyc_wr.write(cyc_wait_wr);
+                wait_lvl_l1.write(d[0]);
+                wait_lvl_l2.write(d[1]);
+                wait_lvl_l3.write(d[2]);
+                for (int k = 0; k < 3; ++k) {
+                    lvl_rd_sig[k].write(static_cast<unsigned>(lvl_rd[k]));
+                    lvl_wr_sig[k].write(static_cast<unsigned>(lvl_wr[k]));
+                }
+            }
+        }
+#endif
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+        // --- SEL_DESC_SYNC per-descriptor barrier: the 5 agu groups hold at
+        //     each descriptor boundary; when all are drained, log this
+        //     descriptor's drain cycles + conflict-level split, then release
+        //     all together for exactly one advance (one task each).
+        if (desc_sync) {
+            auto bnd  = [](const auto &s) { return s->all_tasks_done() || s->at_task_boundary(); };
+            auto hold = [](auto &s, bool v) { s->desc_barrier_hold_ = v; };
+            if (desc_just_released) {
+                // cycle after release: the 5 groups advanced one task each — re-hold.
+                hold(ragu_a_src, true); hold(ragu_b_src, true); hold(ragu_c_src, true);
+                hold(wagu_a_src, true); hold(wagu_b_src, true);
+                desc_just_released = false;
+            } else {
+                const bool all_bnd = bnd(ragu_a_src) && bnd(ragu_b_src) && bnd(ragu_c_src) &&
+                                     bnd(wagu_a_src) && bnd(wagu_b_src);
+                const bool all_done = ragu_a_src->all_tasks_done() && ragu_b_src->all_tasks_done() &&
+                                      ragu_c_src->all_tasks_done() && wagu_a_src->all_tasks_done() &&
+                                      wagu_b_src->all_tasks_done();
+                if (all_bnd && !all_done) {
+                    const uint64_t drain = actual - desc_prev_cycle;
+                    auto ng = [](const auto &s) {
+                        return s->all_tasks_done() ? std::size_t(0) : s->cur_task().n_groups;
+                    };
+                    const uint64_t ideal = std::max({ng(ragu_a_src), ng(ragu_b_src), ng(ragu_c_src),
+                                                     ng(wagu_a_src), ng(wagu_b_src)});
+                    const int64_t  ovh = static_cast<int64_t>(drain) - static_cast<int64_t>(ideal);
+                    const uint64_t cl1 = (lvl_rd[0] - desc_prev_lvl[0]) + (lvl_wr[0] - desc_prev_lvl[3]);
+                    const uint64_t cl2 = (lvl_rd[1] - desc_prev_lvl[1]) + (lvl_wr[1] - desc_prev_lvl[4]);
+                    const uint64_t cl3 = (lvl_rd[2] - desc_prev_lvl[2]) + (lvl_wr[2] - desc_prev_lvl[5]);
+                    if (desc_csv)
+                        desc_csv << desc_idx << ',' << actual << ',' << drain << ',' << ideal << ','
+                                 << ovh << ',' << (lvl_rd[0] - desc_prev_lvl[0]) << ','
+                                 << (lvl_rd[1] - desc_prev_lvl[1]) << ','
+                                 << (lvl_rd[2] - desc_prev_lvl[2]) << ','
+                                 << (lvl_wr[0] - desc_prev_lvl[3]) << ','
+                                 << (lvl_wr[1] - desc_prev_lvl[4]) << ','
+                                 << (lvl_wr[2] - desc_prev_lvl[5]) << '\n';
+                    const uint64_t ovh_pos = ovh > 0 ? static_cast<uint64_t>(ovh) : 0;
+                    sum_drain += drain;
+                    sum_ideal += ideal;
+                    sum_overhead += ovh_pos;
+                    if (cl1 + cl2 + cl3 == 0)
+                        barrier_overhead += ovh_pos;
+                    agu_ideal[0] += ng(ragu_a_src); agu_ideal[1] += ng(ragu_b_src);
+                    agu_ideal[2] += ng(ragu_c_src); agu_ideal[3] += ng(wagu_a_src);
+                    agu_ideal[4] += ng(wagu_b_src);
+                    ++desc_idx;
+                    desc_prev_cycle  = actual;
+                    desc_prev_lvl[0] = lvl_rd[0]; desc_prev_lvl[1] = lvl_rd[1];
+                    desc_prev_lvl[2] = lvl_rd[2]; desc_prev_lvl[3] = lvl_wr[0];
+                    desc_prev_lvl[4] = lvl_wr[1]; desc_prev_lvl[5] = lvl_wr[2];
+                    hold(ragu_a_src, false); hold(ragu_b_src, false); hold(ragu_c_src, false);
+                    hold(wagu_a_src, false); hold(wagu_b_src, false);
+                    desc_just_released = true;
+                }
+            }
         }
 #endif
     }
@@ -1078,6 +1494,50 @@ int sc_main(int, char *[]) {
 #endif
         }
     }
+
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV)
+    if (desc_sync) {
+        // Per-descriptor overhead rollup (SEL_DESC_SYNC): overall drain vs ideal,
+        // conflict vs barrier split (1c), per-level conflict wait-cycles, and
+        // per-AGU (barriered groups) ideal + wall-clock contention stall.
+        const uint64_t conflict_overhead =
+            sum_overhead > barrier_overhead ? sum_overhead - barrier_overhead : 0;
+        const uint64_t cw_l1 = lvl_rd[0] + lvl_wr[0];
+        const uint64_t cw_l2 = lvl_rd[1] + lvl_wr[1];
+        const uint64_t cw_l3 = lvl_rd[2] + lvl_wr[2];
+        const double   ov_pct = sum_ideal ? 100.0 * sum_overhead / sum_ideal : 0.0;
+        const int      bidx[5] = {0, 1, 2, 5, 6};  // gstat: ragu_a,b,c, wagu_a,b
+        std::ofstream ds(out_dir + "/desc_sync_summary.txt");
+        if (ds) {
+            ds << "# per-descriptor overhead summary (SEL_DESC_SYNC)\n";
+            ds << "descriptors," << desc_idx << "\n";
+            ds << "sum_drain," << sum_drain << "\n";
+            ds << "sum_ideal," << sum_ideal << "\n";
+            ds << "total_overhead," << sum_overhead << "\n";
+            ds << "conflict_overhead," << conflict_overhead << "\n";
+            ds << "barrier_overhead," << barrier_overhead << "\n";
+            ds << "overhead_pct," << ov_pct << "\n";
+            ds << "conflict_wait_l1," << cw_l1 << "\n";
+            ds << "conflict_wait_l2," << cw_l2 << "\n";
+            ds << "conflict_wait_l3," << cw_l3 << "\n";
+            ds << "# agu,name,real_beats,ideal_cyc,stall_cyc\n";
+            for (int a = 0; a < 5; ++a) {
+                const auto &gs = gstat[bidx[a]];
+                ds << "agu," << gs.name << "," << gs.real_beats << "," << agu_ideal[a] << ","
+                   << (gs.wait_cycles - gs.fill_wait_cycles) << "\n";
+            }
+        }
+        printf(" desc-sync overhead: %d desc  drain=%llu ideal=%llu  overhead=%llu "
+               "(conflict=%llu barrier=%llu, %.1f%%)  conflict-wait L1/L2/L3=%llu/%llu/%llu\n",
+               desc_idx, (unsigned long long)sum_drain, (unsigned long long)sum_ideal,
+               (unsigned long long)sum_overhead, (unsigned long long)conflict_overhead,
+               (unsigned long long)barrier_overhead, ov_pct,
+               (unsigned long long)cw_l1, (unsigned long long)cw_l2, (unsigned long long)cw_l3);
+    }
+#endif
+
+    if (tf)
+        sc_close_vcd_trace_file(tf);
 
     sc_stop();
     return 0;

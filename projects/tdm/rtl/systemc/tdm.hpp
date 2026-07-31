@@ -36,6 +36,14 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
     obi_subordinate_ports<data_t> g[NUM_WORD];
     obi_manager_ports<data_t>     c[NUM_WORD];
 
+    // Debug/trace outputs (not consumed by any downstream module — for
+    // waveform inspection and conflict detection only): the placement this
+    // cycle's group computed, and whether it collided with another real
+    // lane's bank_id in the same group. addr==0 (NOP) lanes report 0/0/false.
+    sc_signal<uint64_t> bank_id_o[NUM_WORD];
+    sc_signal<uint64_t> row_id_o[NUM_WORD];
+    sc_signal<bool>     conflict_o[NUM_WORD];
+
     sc_in<uint64_t> num_banks_i;
     sc_in<uint64_t> bank_width_i;
     sc_in<uint64_t> r_i;
@@ -60,11 +68,41 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
         const uint64_t      L    = l_i.read();
         const tdm_stor_mode mode = static_cast<tdm_stor_mode>(store_mode_i.read());
 
+        // Pass 1: compute this cycle's placement for every lane so pass 2 can
+        // compare lanes against each other before anything is driven.
+        bool     real[NUM_WORD];
+        uint64_t bank_id[NUM_WORD], row_id[NUM_WORD];
         for (int w = 0; w < NUM_WORD; ++w) {
-            const bool     req  = g[w].req_i.read();
             const uint64_t addr = g[w].addr_i.read();
+            real[w]             = g[w].req_i.read() && addr != 0;
+            if (!real[w]) {
+                bank_id[w] = 0;
+                row_id[w]  = 0;
+                continue;
+            }
+            map_one(addr, nb, bw, R, C, L, mode, bank_id[w], row_id[w]);
+            if (bank_id[w] >= static_cast<uint64_t>(NUM_BANK))
+                SC_REPORT_FATAL("tdm", "bank_id >= NUM_BANK (build N_BANK too small; "
+                                       "the mapping needs N_BANK >= 32)");
+        }
 
-            if (addr == 0) {
+        // Pass 2: a lane conflicts iff it's real and shares its bank_id with
+        // at least one other real lane this cycle (a genuine collision the
+        // downstream per-bank arbiter must serialize).
+        for (int w = 0; w < NUM_WORD; ++w) {
+            bool conflict = false;
+            if (real[w])
+                for (int w2 = 0; w2 < NUM_WORD && !conflict; ++w2)
+                    conflict = w2 != w && real[w2] && bank_id[w2] == bank_id[w];
+            bank_id_o[w].write(bank_id[w]);
+            row_id_o[w].write(row_id[w]);
+            conflict_o[w].write(conflict);
+        }
+
+        for (int w = 0; w < NUM_WORD; ++w) {
+            const bool req = g[w].req_i.read();
+
+            if (!real[w]) {
                 // addr=0 is the NOP sentinel: suppress the bank request and
                 // grant immediately. Do NOT touch g[w].rvalid_o — fall through
                 // to always pass c[w].rvalid_i so a concurrent response for
@@ -76,12 +114,8 @@ template <int NUM_WORD = 8, int NUM_BANK = 32, int BYTES_PER_ROW = 4 * 4> SC_MOD
                 c[w].wdata_o.write(data_t{});
                 g[w].gnt_o.write(req);
             } else {
-                uint64_t bank_id = 0, row_id = 0;
-                map_one(addr, nb, bw, R, C, L, mode, bank_id, row_id);
-                if (bank_id >= static_cast<uint64_t>(NUM_BANK))
-                    SC_REPORT_FATAL("tdm", "bank_id >= NUM_BANK (build N_BANK too small; "
-                                           "the mapping needs N_BANK >= 32)");
-                const uint64_t word_index = row_id * static_cast<uint64_t>(NUM_BANK) + bank_id;
+                const uint64_t word_index =
+                    row_id[w] * static_cast<uint64_t>(NUM_BANK) + bank_id[w];
 
                 c[w].req_o.write(req);
                 c[w].addr_o.write(word_index * static_cast<uint64_t>(BYTES_PER_ROW));

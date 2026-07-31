@@ -132,6 +132,8 @@ Further harness knobs (all environment variables, all optional; details in
 | `SEL_PORT_INTERLEAVE=1` | deal a group's trace entries across ports (entry i → port i mod napa) instead of port-major |
 | `SEL_ARB_FULL9=1`    | TDM-RR: keep the full 9-slot rotation instead of the 8-slot table that skips the never-driven WAGU_B |
 | `SEL_BANK_TRACE=1`   | write `bank_trace.csv`: one `served,stall_lanes` line per cycle (banks granted that cycle, real lanes blocked by contention) — feeds the report's timeline figure |
+| `SEL_VCD=1`          | dump a VCD waveform (`wave.vcd`) of every OBI request (all 9 AGU port groups) plus the bank-facing stage — `IMPL=tdm` additionally traces the mapping function's per-lane `bank_id`/`row_id` and a conflict flag; `IMPL=crossbar` traces the physical bank ports |
+| `SEL_MAP_CONFLICT_LOG=1` | `IMPL=tdm` only: write `map_conflicts.csv` — one `cycle,lane,bank_id,row_id` row per lane where the mapping function's XOR hash collided with another lane's `bank_id` in the same group |
 
 Build-time options: `-DIMPL_ARB_ADAPTIVE` (request-aware TDM arbiter, the
 recommended configuration), `-DXBAR_HASH_L1` (crossbar L1-select hash

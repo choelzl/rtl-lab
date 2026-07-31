@@ -158,7 +158,8 @@ SC_MODULE(agu) {
 
     struct task_t {
         uint64_t                   start_cycle = 0;
-        int                        ports_used  = NUM_REQ;
+        int                        num_port_active = 1;         // raw descriptor field v[1]
+        int                        ports_used  = NUM_REQ;       // = num_port_active * N_PER_GROUP
         uint64_t                   store_mode  = 0;
         uint64_t                   C = 4, R = 4, L = 8;
         bool                       has_crl = true;
@@ -198,6 +199,15 @@ SC_MODULE(agu) {
     std::size_t         task_idx_;
     std::size_t         group_;
     uint64_t            cycle_;
+
+    // Descriptor-barrier mode (SEL_DESC_SYNC in tb_top, crossbar only). Both
+    // default false => zero behavior change; tb_top sets them only for the
+    // barriered agu groups. ignore_fence_ makes start_cycle fences a no-op (the
+    // barrier controls timing instead); desc_barrier_hold_ holds a fully-drained
+    // group at its task boundary until tb_top releases all barriered groups
+    // together (see at_task_boundary()/advance_task_if_ready()).
+    bool ignore_fence_      = false;
+    bool desc_barrier_hold_ = false;
 
     // -------------------------------------------------------------------------
     // Public fields — always reflect the CURRENT task; used by tb_top for
@@ -314,6 +324,13 @@ SC_MODULE(agu) {
         return false;
     }
 
+    // SEL_DESC_SYNC: the current descriptor is fully drained (all groups issued
+    // AND all responses returned) with more descriptors still to come — i.e. the
+    // group is parked at a task boundary waiting for the barrier to release.
+    bool at_task_boundary() const {
+        return !all_tasks_done() && group_ >= cur_task().n_groups && !has_inflight();
+    }
+
     // Sync public compat fields to the current task
     void sync_public_fields() {
         if (all_tasks_done())
@@ -362,8 +379,9 @@ SC_MODULE(agu) {
             SC_REPORT_FATAL(name(),
                             "task descriptor needs at least: #cycle, num_port_active, storemode");
         task_t t;
-        t.start_cycle = v[0];
-        t.ports_used  = static_cast<int>(v[1]) * N_PER_GROUP;
+        t.start_cycle     = v[0];
+        t.num_port_active = static_cast<int>(v[1]);
+        t.ports_used      = static_cast<int>(v[1]) * N_PER_GROUP;
         if (v.size() >= 6) { // full descriptor: #cycle, napa, R, C, L, storemode
             t.R          = v[2];
             t.C          = v[3];
@@ -749,7 +767,7 @@ SC_MODULE(agu) {
     }
 
     void record_grants() {
-        if (all_tasks_done() || cycle_ < cur_task().start_cycle)
+        if (all_tasks_done() || (!ignore_fence_ && cycle_ < cur_task().start_cycle))
             return;
         const task_t &t  = cur_task();
         const int     ew = effective_ports_used();
@@ -807,14 +825,18 @@ SC_MODULE(agu) {
             return;
         if (group_ < cur_task().n_groups || has_inflight())
             return;
+        // SEL_DESC_SYNC: current descriptor drained — hold here until tb_top
+        // releases all barriered groups to advance together (no-op otherwise).
+        if (desc_barrier_hold_)
+            return;
         // Current task done. Find next task respecting its fence cycle.
         const std::size_t next = task_idx_ + 1;
         if (next >= tasks_.size()) {
             task_idx_ = tasks_.size(); // sentinel: all done
             return;
         }
-        if (cycle_ < tasks_[next].start_cycle)
-            return; // fence: wait
+        if (!ignore_fence_ && cycle_ < tasks_[next].start_cycle)
+            return; // fence: wait (ignored under SEL_DESC_SYNC)
         task_idx_ = next;
         group_    = 0;
         for (int p = 0; p < NUM_REQ; ++p)
@@ -824,7 +846,8 @@ SC_MODULE(agu) {
 
     void drive_requests() {
         for (int p = 0; p < NUM_REQ; ++p) {
-            const bool active = !all_tasks_done() && cycle_ >= cur_task().start_cycle &&
+            const bool active = !all_tasks_done() &&
+                                (ignore_fence_ || cycle_ >= cur_task().start_cycle) &&
                                 group_ < cur_task().n_groups && p < effective_ports_used() &&
                                 !granted_[p];
             if (active) {

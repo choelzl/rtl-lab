@@ -41,7 +41,7 @@
 // Address line format:
 //   RAGU (read):  addr,width
 //   WAGU (write): addr,data,width
-// `width` is in BYTES (not bits), and takes one of two forms:
+// `width` is in BYTES (not bits), and must be in (0, 2*BYTES_PER_ROW]:
 //   width <= BYTES_PER_ROW       : single beat on the sub-port's PRIMARY
 //                                  lane only; be_o enables just the low
 //                                  `width` bytes of that beat (partial byte
@@ -49,13 +49,21 @@
 //                                  writes carry exactly 16 hex chars = 8
 //                                  bytes). The secondary lane sits idle
 //                                  (NOP) for the whole transfer.
-//   width == 2*BYTES_PER_ROW     : two beats — PRIMARY lane at `addr` (low
-//                                  half of the data) and SECONDARY lane at
-//                                  `addr + kDmaWideOffset` (high half), both
-//                                  full byte-enable. See kDmaWideOffset's
-//                                  comment for why this specific offset.
-// Any other width is rejected (SC_REPORT_FATAL) rather than silently
-// mishandled.
+//   width >  BYTES_PER_ROW       : two beats — PRIMARY lane at `addr`,
+//                                  always a full beat, and SECONDARY lane at
+//                                  `addr + kDmaWideOffset` covering the
+//                                  remaining `width - BYTES_PER_ROW` bytes
+//                                  (partial byte-enable via be_for_width(),
+//                                  full only when width == 2*BYTES_PER_ROW
+//                                  exactly). See kDmaWideOffset's comment for
+//                                  why this specific offset. For WAGU, the
+//                                  data hex string is split the same way:
+//                                  the last BYTES_PER_ROW*2 hex chars are the
+//                                  primary lane's (full) payload, whatever
+//                                  precedes that is the secondary lane's
+//                                  (possibly partial) payload.
+// Any width outside (0, 2*BYTES_PER_ROW] is rejected (SC_REPORT_FATAL)
+// rather than silently mishandled.
 //
 // -----------------------------------------------------------------------------
 // Why the hardware forces "always assert req on all 4 lanes, real-or-NOP" —
@@ -128,6 +136,7 @@
 
 #include <systemc.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -172,17 +181,19 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
 
     static constexpr uint32_t kBeFull = (BYTES_PER_BEAT >= 32) ? ~0u : ((1u << BYTES_PER_BEAT) - 1);
 
-    // Address offset for a width=2*BYTES_PER_BEAT ("wide") transfer's second
+    // Address offset for a width>BYTES_PER_BEAT ("wide") transfer's second
     // beat, relative to the address given in the trace. Verified against the
-    // FULL real trace (tb/stimuli/final/wagu_e.log): every wide (width=32)
-    // entry is packed exactly 0x20 = 2*BYTES_PER_BEAT bytes apart from the
-    // next one with zero gaps/exceptions (e.g. 0x254c0 -> 0x254e0 -> 0x25500,
-    // each delta 0x20) — so `addr + BYTES_PER_BEAT` lands exactly at the
-    // midpoint before the next real transfer begins, with no risk of
-    // aliasing real data. THIS MUST STAY CONSISTENT with BYTES_PER_BEAT (the
-    // wide-transfer width is always exactly 2*BYTES_PER_BEAT) — if that
-    // relationship ever changes, re-verify against the real trace before
-    // changing this constant.
+    // FULL real trace (tb/stimuli/final/wagu_e.log): every exactly-wide
+    // (width=32) entry is packed exactly 0x20 = 2*BYTES_PER_BEAT bytes apart
+    // from the next one with zero gaps/exceptions (e.g. 0x254c0 -> 0x254e0 ->
+    // 0x25500, each delta 0x20) — so `addr + BYTES_PER_BEAT` lands exactly at
+    // the midpoint before the next real transfer begins, with no risk of
+    // aliasing real data. This offset is correct for ANY width > BYTES_PER_BEAT,
+    // not just exactly 2*BYTES_PER_BEAT: the primary lane is always a full
+    // beat, so the remaining bytes always start right after it regardless of
+    // how many of them are real — a PARTIAL second beat only narrows the
+    // byte-enable mask (be_for_width(width-BYTES_PER_BEAT)), it never moves
+    // where that beat starts, so there's no aliasing risk to re-verify.
     static constexpr uint64_t kDmaWideOffset = static_cast<uint64_t>(BYTES_PER_BEAT);
 
     SC_HAS_PROCESS(lane_agu);
@@ -216,7 +227,7 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
     struct dma_task_t {
         uint64_t start_cycle = 0;
         uint64_t addr        = 0;
-        int      width       = 0; // bytes; <=BYTES_PER_BEAT or 2*BYTES_PER_BEAT
+        int      width       = 0; // bytes; in (0, 2*BYTES_PER_BEAT]
         bool     we          = false;
         data_t   data_lo{}; // primary-lane payload (write only)
         data_t   data_hi{}; // secondary-lane payload (write, wide only)
@@ -266,6 +277,11 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
     // corruption bug found via `final`'s real trace data under contention.
     bool sp_active_[NUM_SUBPORT]                          = {};
     bool sp_lane_granted_[NUM_SUBPORT][LANES_PER_SUBPORT] = {};
+
+    // SEL_DESC_SYNC (tb_top, crossbar only): when true, start_cycle fences are a
+    // no-op so DMA runs free/back-to-back as background traffic (DMA is excluded
+    // from the descriptor barrier). Defaults false => zero behavior change.
+    bool ignore_fence_ = false;
     struct lane_rec_t {
         uint64_t addr;
         bool     we;
@@ -355,25 +371,32 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
             t.addr                = parse_hex_u64(f[0]);
             t.width               = static_cast<int>(parse_hex_u64(f[2]));
             const std::string hex = strip_0x(f[1]);
-            if (t.width == 2 * BYTES_PER_BEAT) {
+            if (t.width > BYTES_PER_BEAT) {
+                if (t.width > 2 * BYTES_PER_BEAT)
+                    SC_REPORT_FATAL("lane_agu",
+                                    "WAGU_E width must be in (0, 2*BYTES_PER_BEAT]");
                 if (hex.size() != static_cast<std::size_t>(t.width) * 2)
                     SC_REPORT_FATAL("lane_agu",
-                                    "wide WAGU_E data length does not match width*2 hex chars");
-                const std::size_t half = hex.size() / 2;
-                t.data_hi              = data_from_hex_digits(hex.substr(0, half)); // bits[255:128]
-                t.data_lo = data_from_hex_digits(hex.substr(half, half));           // bits[127:0]
+                                    "WAGU_E data length does not match width*2 hex chars");
+                // Primary lane is always a full beat, so the data string's
+                // LAST BYTES_PER_BEAT*2 chars are data_lo; whatever precedes
+                // that (width-BYTES_PER_BEAT bytes, partial unless width==
+                // 2*BYTES_PER_BEAT) is data_hi for the secondary lane.
+                // data_from_hex_digits zero-extends a short string, so a
+                // partial data_hi lands in its own low bytes — matching
+                // be_for_width(width-BYTES_PER_BEAT)'s low-byte enable mask.
+                const std::size_t lo_chars = static_cast<std::size_t>(BYTES_PER_BEAT) * 2;
+                const std::size_t hi_chars = hex.size() - lo_chars;
+                t.data_hi                  = data_from_hex_digits(hex.substr(0, hi_chars));
+                t.data_lo                  = data_from_hex_digits(hex.substr(hi_chars, lo_chars));
             } else if (t.width > 0 && t.width <= BYTES_PER_BEAT) {
                 t.data_lo = data_from_hex_digits(hex);
             } else {
-                SC_REPORT_FATAL("lane_agu", "WAGU_E width must be in (0,BYTES_PER_BEAT] or exactly "
-                                            "2*BYTES_PER_BEAT");
+                SC_REPORT_FATAL("lane_agu", "WAGU_E width must be in (0, 2*BYTES_PER_BEAT]");
             }
         }
-        if (dir_ == lane_agu_dir::read && t.width != BYTES_PER_BEAT &&
-            t.width != 2 * BYTES_PER_BEAT && !(t.width > 0 && t.width <= BYTES_PER_BEAT))
-            SC_REPORT_FATAL(
-                "lane_agu",
-                "RAGU_E width must be in (0,BYTES_PER_BEAT] or exactly 2*BYTES_PER_BEAT");
+        if (dir_ == lane_agu_dir::read && !(t.width > 0 && t.width <= 2 * BYTES_PER_BEAT))
+            SC_REPORT_FATAL("lane_agu", "RAGU_E width must be in (0, 2*BYTES_PER_BEAT]");
         return t;
     }
 
@@ -434,14 +457,14 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
     // already mid-task (sp_active_[sp]==false) — see drive_crossbar_requests().
     void decide_content_for(int sp) {
         auto             &s         = subports_[sp];
-        const bool        ready     = !s.done() && cycle_ >= s.tasks[s.idx].start_cycle;
+        const bool        ready     = !s.done() && (ignore_fence_ || cycle_ >= s.tasks[s.idx].start_cycle);
         const dma_task_t *t         = ready ? &s.tasks[s.idx] : nullptr;
         const int         primary   = sp * LANES_PER_SUBPORT;
         const int         secondary = primary + 1;
 
         if (t) {
             content_[primary] = {true, t->addr, t->data_lo, sp};
-            if (t->width == 2 * BYTES_PER_BEAT)
+            if (t->width > BYTES_PER_BEAT)
                 content_[secondary] = {true, t->addr + kDmaWideOffset, t->data_hi, sp};
             else
                 content_[secondary] = {false, 0, data_t{}, sp};
@@ -502,14 +525,20 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
             obi[p].req_o.write(pending || must_hold_req);
             obi[p].addr_o.write(pending ? c.addr : uint64_t{0});
             obi[p].we_o.write(pending && is_write);
-            // Width only matters for the primary lane's partial-BE case on
-            // writes; reads always use full byte-enable regardless of width.
+            // Width only matters for a write's byte-enable — the primary
+            // lane's own width (saturates to full at BYTES_PER_BEAT via
+            // be_for_width) or, for a >BYTES_PER_BEAT transfer, the
+            // secondary lane's REMAINING width (partial unless the transfer
+            // is exactly 2*BYTES_PER_BEAT). Reads always use full
+            // byte-enable regardless of width.
             const bool  primary = (lane_idx == 0);
             const auto &s       = subports_[sp];
-            obi[p].be_o.write(pending ? (is_write && primary && !s.done()
-                                             ? be_for_width(s.tasks[s.idx].width)
-                                             : kBeFull)
-                                      : uint32_t{0});
+            uint32_t    be      = kBeFull;
+            if (pending && is_write && !s.done()) {
+                const int w = s.tasks[s.idx].width;
+                be          = primary ? be_for_width(w) : be_for_width(std::max(0, w - BYTES_PER_BEAT));
+            }
+            obi[p].be_o.write(pending ? be : uint32_t{0});
             obi[p].wdata_o.write(pending && is_write ? c.data : data_t{});
         }
     }
@@ -648,7 +677,7 @@ template <typename DATA_T = uint64_t, int BYTES_PER_BEAT = 16> SC_MODULE(lane_ag
             const std::size_t primary   = g * NUM_REQ + sp * LANES_PER_SUBPORT;
             const std::size_t secondary = primary + 1;
             win[primary]                = {true, t.addr, t.data_lo, sp};
-            if (t.width == 2 * BYTES_PER_BEAT)
+            if (t.width > BYTES_PER_BEAT)
                 win[secondary] = {true, t.addr + kDmaWideOffset, t.data_hi, sp};
         }
     }

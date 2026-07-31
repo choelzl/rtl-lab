@@ -47,7 +47,10 @@ static std::vector<expected_entry_t> expected_entries_for_case(bool dense_is_sp0
     for (int i = 0; i < 20; ++i) {
         const uint64_t base = dense_base + static_cast<uint64_t>(i) * 0x20;
         out.push_back({base, make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i))});
-        if (i == 10)
+        // i==10: width=32 (full second beat); i==15: width=24 (PARTIAL second
+        // beat — regression-locks the width>BYTES_PER_BEAT-but-not-exactly-
+        // 2*BYTES_PER_BEAT case added alongside the DMA width fix).
+        if (i == 10 || i == 15)
             out.push_back(
                 {base + 16, make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i) + 0x100u)});
     }
@@ -436,7 +439,7 @@ SC_MODULE(tb) {
             const uint64_t addr = dense_base + static_cast<uint64_t>(i) * 0x20;
             preload_lane_all_groups(ctrl, dense_pri, addr,
                                     make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i)));
-            if (i == 10)
+            if (i == 10 || i == 15)
                 preload_lane_all_groups(
                     ctrl, dense_sec, addr + 16,
                     make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i) + 0x100u));
@@ -503,16 +506,19 @@ SC_MODULE(tb) {
         const uint64_t sparse_base = sparse_sp == 0 ? 0x1000 : 0x9000;
 
         // Dense sub-port: 20 narrow (width=16) tasks at consecutive cycles,
-        // plus one wide (width=32) task partway through.
+        // plus one wide (width=32, full second beat) task and one PARTIAL
+        // wide (width=24, second beat only half-real) task partway through —
+        // the latter regression-locks the width>BYTES_PER_BEAT-but-not-
+        // exactly-2*BYTES_PER_BEAT case.
         for (int i = 0; i < 20; ++i) {
             task_t t;
             t.start_cycle = static_cast<uint64_t>(i);
             t.addr        = dense_base + static_cast<uint64_t>(i) * 0x20;
-            t.width       = (i == 10) ? 32 : 16;
+            t.width       = (i == 10) ? 32 : (i == 15) ? 24 : 16;
             t.we          = write;
             if (write) {
                 t.data_lo = make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i));
-                if (t.width == 32)
+                if (t.width > 16)
                     t.data_hi = make_row<data_t>(0xD0000000u + static_cast<uint32_t>(i) + 0x100u);
             }
             dma.subports_[dense_sp].tasks.push_back(t);

@@ -97,17 +97,21 @@ Address line format:
 - **RAGU (read)**: `addr,width`
 - **WAGU (write)**: `addr,data,width`
 
-`width` is in **bytes** (not bits), and takes one of two forms:
+`width` is in **bytes** (not bits) and must be in `(0, 2*BYTES_PER_ROW]`:
 
 - `width <= BYTES_PER_ROW` (e.g. `16`): single beat on the sub-port's
   *primary* lane only; `be_o` enables just the low `width` bytes. The
   secondary lane sits idle (NOP) for the whole transfer.
-- `width == 2*BYTES_PER_ROW` (e.g. `32`): two beats — primary lane at `addr`
-  (low half of `data`) and secondary lane at `addr + kDmaWideOffset` (high
-  half), both full byte-enable. `data` is `width*2` hex chars (e.g. 64 hex
-  chars for `width=32`), constructed via `sc_bv`'s string constructor rather
-  than `strtoull`, so — unlike the grouped format above — it does *not*
-  truncate wide (256-bit) payloads.
+- `width > BYTES_PER_ROW` (e.g. `24` or `32`): two beats — primary lane at
+  `addr`, always a full beat, and secondary lane at `addr + kDmaWideOffset`
+  covering the remaining `width - BYTES_PER_ROW` bytes, byte-enabled to just
+  that many (full only when `width == 2*BYTES_PER_ROW` exactly, e.g. `32`).
+  `data` is `width*2` hex chars (e.g. 48 hex chars for `width=24`, 64 for
+  `width=32`), constructed via `sc_bv`'s string constructor rather than
+  `strtoull`, so — unlike the grouped format above — it does *not* truncate
+  wide (up to 256-bit) payloads. The hex string is split with the primary
+  lane's (always-full) payload as the *last* `BYTES_PER_ROW*2` characters and
+  the secondary lane's (possibly partial) payload as whatever precedes that.
 
-Any other `width` value is rejected with a fatal error rather than silently
-mishandled.
+Any `width` value outside `(0, 2*BYTES_PER_ROW]` is rejected with a fatal
+error rather than silently mishandled.
