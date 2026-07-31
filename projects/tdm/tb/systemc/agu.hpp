@@ -755,6 +755,38 @@ SC_MODULE(agu) {
         return idx < t.trace.size() ? t.trace[idx].addr : uint64_t{0};
     }
 
+    // XBAR_ROB (crossbar read-side reorder buffer) lookahead: the ROB
+    // prefetches GROUP-granular (one arrival group at a time), not
+    // window-granular like the TDM buffers, and has none of the TDM
+    // buffer's window-atomicity constraints — so task rollover here is a
+    // plain fence check (cycle_ + la_lead() must have reached the next
+    // task's start_cycle), with NO la_task_roll_gate_open_/flush_hold_
+    // gating (those protect buffer.hpp's all-cells-idle boot latch, which
+    // the ROB doesn't have). Uses the same la_task_idx_/la_group_ cursor
+    // as the TDM path — the two targets are never built together.
+    // advance: step one group (called when every ROB port of this AGU has
+    // ingested the current group); retry: re-check a fence-parked rollover
+    // on a plain cycle tick (same reason as retry_lookahead_fence()).
+    void advance_lookahead_group_rob() {
+        if (la_task_idx_ >= tasks_.size())
+            return;
+        ++la_group_;
+        retry_lookahead_fence_rob();
+    }
+    void retry_lookahead_fence_rob() {
+        if (la_task_idx_ >= tasks_.size() || la_group_ < tasks_[la_task_idx_].n_groups)
+            return;
+        const std::size_t next = la_task_idx_ + 1;
+        if (next >= tasks_.size()) {
+            la_task_idx_ = tasks_.size(); // trace exhausted
+            return;
+        }
+        if (cycle_ + la_lead() < tasks_[next].start_cycle)
+            return; // fenced: parked until the fence (minus lead) clears
+        la_task_idx_ = next;
+        la_group_    = 0;
+    }
+
     void collect_crossbar_responses() {
         for (int p = 0; p < NUM_REQ; ++p) {
             if (!lane_inflight_[p].empty() && obi[p].rvalid_i.read()) {

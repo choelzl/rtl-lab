@@ -46,6 +46,51 @@ struct addr_hash_ops {
         l1          = (l1 + ((a >> 10) & 0x3)) & 0x3;
         l1          = (l1 + ((a >> 12) & 0x3)) & 0x3;
         r           = (r & ~(static_cast<uint64_t>(0x3) << 4)) | (l1 << 4);
+#elif defined(XBAR_HASH_L1_V3S)
+        // Selector-free (L1,L2) fold pair — the best UNCONDITIONAL single
+        // formula a joint L1+L2 offline search found on the patroklos2
+        // sweep. L1 = addr[5:4]^[7:6]^[9:8]^[10:9]: the overlapping
+        // [9:8]/[10:9] window pair fixes the 2-D lane grids (e.g. lanes
+        // {base,+0x100,+0x400,+0x500}) that no aligned-window fold
+        // separates — their XOR contributes bit9^bit10 to the high output
+        // bit and bit8^bit9 to the low one, gathering one bit from each
+        // grid stride. L2 = addr[7:5]^[10:8]^[12:10] REPLACES the hi+mid
+        // ADD fold above (overwritten below): co-optimizing L2 with this L1
+        // matters because the L1 field selects which L2 instance a beat
+        // traverses, so L1 and L2 conflict rates are coupled (joint static
+        // 7.2% vs 9.6% keeping the stock L2). Purely address-keyed: unlike
+        // L1_V2/V3 this can NEVER route the same address to different banks
+        // across a buffer's lifetime — no descriptor-selector risk at all.
+        uint64_t l1 = (a >> 4) & 0x3;
+        l1 ^= (a >> 6) & 0x3;
+        l1 ^= (a >> 8) & 0x3;
+        l1 ^= (a >> 9) & 0x3;
+        uint64_t l2 = (a >> 5) & 0x7;
+        l2 ^= (a >> 8) & 0x7;
+        l2 ^= (a >> 10) & 0x7;
+        r = (a & ~(static_cast<uint64_t>(0x1f) << 4)) | (l2 << 6) | (l1 << 4);
+#elif defined(XBAR_HASH_POLY)
+        // GF(2^5) polynomial-skew bank interleaving (classic Rau-style):
+        // bank[4:0] = q[4:0] ^ (x^1 * row mod p), p = x^5 + x^2 + 1
+        // (primitive), q = a>>4 (one 16B row per bank granule), row = q>>5;
+        // 7 row bits folded = a[15:9], the buffer-local 64 KiB. kG[i] =
+        // x^(1+i) mod p. Selector-free / address-only like V3S. Writes the
+        // WHOLE 5-bit field a[8:4] (overriding the unconditional hi+mid L2
+        // fold above). Measured caveat for THIS fabric: the primitive
+        // polynomial guarantees distinct BANKS for power-of-2 strides, but
+        // the fabric structurally splits bank[4:0] into L1=bank[1:0] and
+        // L2=bank[4:2] — and the fold only reaches bank[1:0] when row bits
+        // 0/4/5 flip, so 2-D lane grids (e.g. {0,+0x100,+0x400,+0x500} ->
+        // banks {0,16,4,20}) land on 4 DISTINCT banks that share one L1
+        // field and still serialize in the port's 4x4 switch.
+        static const uint64_t kG[7] = {2, 4, 8, 16, 5, 10, 20};
+        const uint64_t q    = a >> 4;
+        const uint64_t row  = q >> 5;
+        uint64_t       fold = 0;
+        for (int i = 0; i < 7; ++i)
+            if ((row >> i) & 1)
+                fold ^= kG[i];
+        r = (a & ~(static_cast<uint64_t>(0x1f) << 4)) | (((q & 0x1f) ^ fold) << 4);
 #elif defined(XBAR_HASH_L1)
         // Single-term fold: addr[5:4] with addr[11:10].
         const uint64_t l1 = ((a >> 4) + (a >> 10)) & 0x3;
@@ -121,6 +166,50 @@ struct addr_hash_ops {
             l1 = (l1 + ((a >> 12) & 0x3)) & 0x3;
         r = (r & ~(static_cast<uint64_t>(0x3) << 4)) | (l1 << 4);
         return r;
+    }
+#endif
+
+#if defined(XBAR_HASH_L1_V3)
+    // Two L1 XOR folds keyed on the task's C via a single compare (no R,
+    // no L, no napa — deliberately the narrowest descriptor surface the
+    // offline search could reach; see doc/report §4.4), over ONE shared
+    // address-only L2 ADD fold that replaces addr_hash()'s stock hi+mid.
+    // C<=96 tasks use XBAR_HASH_L1_V3S's selector-free L1 fold;
+    // very-wide-column tasks (C>96) push the L1 windows up (their lane
+    // strides live in higher bits). Chosen by a JOINT L1+L2 static model —
+    // an L1-only search first found folds that halved L1 conflicts but
+    // gave most of the win back at L2, because the L1 field selects which
+    // L2 instance a beat traverses, so the two stages' conflict rates are
+    // coupled (measured: M1 L2 3.6%->6.5% under the L1-only pair); the
+    // shared L2 was then re-searched jointly under both L1 legs (the legs
+    // themselves re-verified optimal under the sharing constraint).
+    // Measured M1 tot 6.4%/3.4% (unpadded/padded32, ragu_a isolated) vs
+    // 11.0%/8.7% for XBAR_HASH_L1_V2. Variants measured: per-leg L2
+    // (each C leg with its own L2 fold) trades the other way, 7.3%/2.5% —
+    // better padded32, worse unpadded, second formula surface; 3 L1 legs
+    // (C<=34/66) 6.3%/1.6%; 4 legs 5.3%/1.6% — padded32 saturates near
+    // 1.6% for every rule-based selector tried. Exact zero is NOT
+    // reachable with
+    // fold formulas: a perfect per-address lookup provably exists for
+    // every shape (graph-coloring feasible, no duplicate addresses share a
+    // cycle), but six small R1_C16/SM10 shapes (~0.6% of padded32 traffic)
+    // resist every fold/gather candidate swept (~4k L1 x ~1k L2). Carries
+    // the SAME correctness caveat as addr_hash_l1_v2() below: C is
+    // transient task-descriptor state, so the same address can route to a
+    // different bank across a buffer's life — reduced surface (one field
+    // instead of three), not eliminated. XBAR_HASH_L1_V3S eliminates it
+    // entirely.
+    static uint64_t addr_hash_l1_v3(uint64_t a, uint64_t C) {
+        // L2 is ONE shared address-only fold for both legs (only L1 muxes
+        // on C): 3-term ADD over a[8:6]/[9:7]/[11:9].
+        const uint64_t l2 = (((a >> 6) & 0x7) + ((a >> 7) & 0x7) + ((a >> 9) & 0x7)) & 0x7;
+        uint64_t       l1 = (a >> 4) & 0x3;
+        if (C <= 96) {
+            l1 ^= ((a >> 6) ^ (a >> 8) ^ (a >> 9)) & 0x3;
+        } else { // very wide columns: strides live in higher bits
+            l1 ^= ((a >> 8) ^ (a >> 10) ^ (a >> 11)) & 0x3;
+        }
+        return (a & ~(static_cast<uint64_t>(0x1f) << 4)) | (l2 << 6) | (l1 << 4);
     }
 #endif
 

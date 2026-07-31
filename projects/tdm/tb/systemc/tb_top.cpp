@@ -315,6 +315,36 @@ int sc_main(int, char *[]) {
     dut.impl.rd3_lookahead_valid_i(rd3_lookahead_valid);
 #endif
 
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_ROB)
+    // Read-side reorder buffers (top_crossbar.hpp's XBAR_ROB experiment):
+    // per-ROB-port fetch buses fed from each agu<>-driven read AGU's
+    // lookahead cursor, group-granular — the crossbar analogue of the TDM
+    // lookahead wiring above. ROB ports 0-3 = ragu_a, 4-5 = ragu_b,
+    // 6 = ragu_c; ragu_d/e (lane_agu, sequential DMA-style traffic) keep
+    // the plain fabric path.
+    using impl_rob_t = std::remove_reference_t<decltype(dut.impl)>;
+    constexpr int kRobPorts = impl_rob_t::ROB_PORTS;
+    constexpr int kRobLanes = impl_rob_t::ROB_LANES;
+    static_assert(kRobPorts == 7, "fetch wiring below assumes ragu_a(4)+ragu_b(2)+ragu_c(1)");
+    sc_signal<uint64_t> rob_fetch_addr[kRobLanes];
+    sc_signal<bool>     rob_fetch_valid[kRobPorts], rob_fetch_ready[kRobPorts],
+        rob_fetch_ack[kRobPorts];
+    sc_signal<uint64_t> rob_la_r[kRobPorts], rob_la_c[kRobPorts], rob_la_l[kRobPorts],
+        rob_la_sm[kRobPorts], rob_la_napa[kRobPorts];
+    for (int w = 0; w < kRobLanes; ++w)
+        dut.impl.rob_.fetch_addr_i[w](rob_fetch_addr[w]);
+    for (int j = 0; j < kRobPorts; ++j) {
+        dut.impl.rob_.fetch_valid_i[j](rob_fetch_valid[j]);
+        dut.impl.rob_.fetch_ready_o[j](rob_fetch_ready[j]);
+        dut.impl.rob_.fetch_ack_o[j](rob_fetch_ack[j]);
+        dut.impl.rob_.la_r_i[j](rob_la_r[j]);
+        dut.impl.rob_.la_c_i[j](rob_la_c[j]);
+        dut.impl.rob_.la_l_i[j](rob_la_l[j]);
+        dut.impl.rob_.la_sm_i[j](rob_la_sm[j]);
+        dut.impl.rob_.la_napa_i[j](rob_la_napa[j]);
+    }
+#endif
+
 #if defined(IMPL_TDM) && !defined(IMPL_SV) && !defined(IMPL_ARB_ADAPTIVE)
     // Free-running RR slot table: the final/N stimuli never drive WAGU_B (no
     // wagu_b.log exists in any set), so its buffer never has work — drop it
@@ -824,7 +854,7 @@ int sc_main(int, char *[]) {
 
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) &&                                                \
     (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                \
-     defined(XBAR_HASH_L1_V2))
+     defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3))
         // top_crossbar.hpp's dynamic-hash experiment: broadcast each AGU's
         // current task R/C/L/store_mode to every crossbar port-group index
         // that AGU drives. Crossbar mode has no prefetch buffer (unlike the
@@ -886,6 +916,49 @@ int sc_main(int, char *[]) {
             write_wmap(4, dut_t::NUM_WAGU_B, wagu_b_src, true);
             write_wmap(6, dut_t::NUM_WAGU_D, wagu_d_src, true);
             write_wmap(7, dut_t::NUM_WAGU_E, wagu_e_src, true);
+        }
+#endif
+
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_ROB)
+        {
+            // ROB fetch driving, one block per agu<>-driven read AGU. Per
+            // cycle: (1) if last cycle's ingest ack fired, the whole group
+            // was consumed (all sibling ports ingest on the same edge —
+            // valid is only raised when every sibling is ready), so advance
+            // the group-granular lookahead cursor; (2) retry a fence-parked
+            // task rollover; (3) re-drive the fetch buses and lookahead
+            // geometry for whatever group the cursor now points at. Lanes
+            // beyond the lookahead task's rounded width belong to the NEXT
+            // group in lookahead_addr()'s flat indexing, so they are driven
+            // as 0 (NOP holes) rather than leaking the next group early.
+            auto drive_rob_fetch = [&](auto &src, int base_port, int n_ports) {
+                if (rob_fetch_ack[base_port].read())
+                    src->advance_lookahead_group_rob();
+                src->retry_lookahead_fence_rob();
+                bool ready_all = src->lookahead_ready();
+                for (int jp = 0; jp < n_ports; ++jp)
+                    ready_all = ready_all && rob_fetch_ready[base_port + jp].read();
+                const int rw =
+                    std::remove_reference_t<decltype(*src)>::rounded_width(
+                        src->lookahead_ports_used());
+                for (int jp = 0; jp < n_ports; ++jp) {
+                    const int j = base_port + jp;
+                    rob_fetch_valid[j].write(ready_all);
+                    rob_la_r[j].write(src->lookahead_R());
+                    rob_la_c[j].write(src->lookahead_C());
+                    rob_la_l[j].write(src->lookahead_L());
+                    rob_la_sm[j].write(src->lookahead_store_mode());
+                    rob_la_napa[j].write(src->lookahead_ports_used());
+                    for (int m = 0; m < dut_t::NUM_REQ; ++m) {
+                        const int wla = jp * dut_t::NUM_REQ + m;
+                        rob_fetch_addr[j * dut_t::NUM_REQ + m].write(
+                            (ready_all && wla < rw) ? src->lookahead_addr(wla) : 0);
+                    }
+                }
+            };
+            drive_rob_fetch(ragu_a_src, 0, dut_t::NUM_RAGU_A);
+            drive_rob_fetch(ragu_b_src, 4, dut_t::NUM_RAGU_B);
+            drive_rob_fetch(ragu_c_src, 6, dut_t::NUM_RAGU_C);
         }
 #endif
 
@@ -1484,6 +1557,20 @@ int sc_main(int, char *[]) {
             sf << "bank_busy," << bank_busy << "\n";
             sf << "bank_stall," << bank_stall << "\n";
             sf << "n_banks," << kNBanks << "\n";
+#if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) && defined(XBAR_ROB)
+            // Read-ROB experiment counters (see top_crossbar.hpp's XBAR_ROB
+            // block). Note: per-LEVEL M1/M2 splits are not meaningful under
+            // XBAR_ROB (external port waits are prefetch underruns, not
+            // fabric-stage blocks); use the tot columns + these.
+            sf << "rob_depth," << static_cast<int>(decltype(dut.impl)::ROB_DEPTH) << "\n";
+            sf << "rob_underrun_wait," << dut.impl.rob_.underrun_wait << "\n";
+            sf << "rob_fabric_hold," << dut.impl.rob_.fabric_hold << "\n";
+            sf << "rob_sched_eligible," << dut.impl.rob_.sched_eligible << "\n";
+            sf << "rob_sched_issued," << dut.impl.rob_.sched_issued << "\n";
+            sf << "rob_ingest_groups," << dut.impl.rob_.ingest_groups << "\n";
+            sf << "rob_mismatch," << dut.impl.rob_.mismatch_cnt << "\n";
+            sf << "rob_sched_ooo," << dut.impl.rob_.sched_ooo << "\n";
+#endif
 #if defined(IMPL_TDM) && !defined(IMPL_SV)
             sf << "bus_busy," << bus_busy << "\n";
             sf << "bus_wasted," << bus_wasted << "\n";

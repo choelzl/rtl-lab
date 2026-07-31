@@ -127,7 +127,7 @@ SC_MODULE(top) {
     top_crossbar<NUM_RPORT, NUM_WPORT, NUM_REQ, NUM_BANK, NUM_ROW, BYTES_PER_WORD, WORDS_PER_ROW>
         impl;
 #if defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) || \
-    defined(XBAR_HASH_L1_V2)
+    defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3)
     // Per-port-group mapping geometry for top_crossbar.hpp's dynamic-hash
     // experiment — one scalar set per read/write driver group (see
     // top_crossbar.hpp's rport_map_r_i/etc). Written by the testbench from
@@ -262,7 +262,7 @@ SC_MODULE(top) {
 
 #if defined(IMPL_CROSSBAR) && !defined(IMPL_SV) &&                                                \
     (defined(XBAR_HASH_DYNAMIC) || defined(XBAR_HASH16) || defined(XBAR_HASH32) ||                \
-     defined(XBAR_HASH_L1_V2))
+     defined(XBAR_HASH_L1_V2) || defined(XBAR_HASH_L1_V3))
         for (int i = 0; i < NUM_RPORT; ++i) {
             impl.rport_map_r_i[i](impl_rport_map_r[i]);
             impl.rport_map_c_i[i](impl_rport_map_c[i]);

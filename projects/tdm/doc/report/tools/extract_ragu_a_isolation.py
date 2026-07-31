@@ -23,14 +23,18 @@ from pathlib import Path
 V = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/tmp/tdm_ragu_a_isolation")
 DATA = Path(__file__).resolve().parent.parent / "data"
 
-VARIANTS = ["baseline", "baseline_p32", "l1", "l1v2", "l1v2_p32", "hash16", "hash32"]
+VARIANTS = ["baseline", "l1", "l1v2", "l1v3", "poly", "rob_d2", "rob_d4", "rob_poly_d4", "hash16", "hash32"]
 SRC_LABEL = {
-    "baseline": "unpadded", "baseline_p32": "padded32", "l1": "unpadded", "l1v2": "unpadded",
-    "l1v2_p32": "padded32", "hash16": "padded16", "hash32": "padded32",
+    "baseline": "unpadded", "l1": "unpadded", "l1v2": "unpadded", "l1v3": "unpadded",
+    "rob_d2": "unpadded", "rob_d4": "unpadded",
+    "poly": "unpadded", "rob_poly_d4": "unpadded",
+    "hash16": "padded16", "hash32": "padded32",
 }
 SCENARIO_LABEL = {
-    "baseline": "Hash11 (baseline)", "baseline_p32": "Hash11 (baseline)", "l1": "XBAR_HASH_L1",
-    "l1v2": "XBAR_HASH_L1_V2", "l1v2_p32": "XBAR_HASH_L1_V2",
+    "baseline": "Hash11 (baseline)", "l1": "XBAR_HASH_L1",
+    "l1v2": "XBAR_HASH_L1_V2", "l1v3": "XBAR_HASH_L1_V3",
+    "rob_d2": "XBAR_ROB d2 + L1_V3", "rob_d4": "XBAR_ROB d4 + L1_V3",
+    "poly": "XBAR_HASH_POLY", "rob_poly_d4": "XBAR_ROB d4 + POLY",
     "hash16": "XBAR_HASH16", "hash32": "XBAR_HASH32",
 }
 MODES = ["fenced", "nofence"]

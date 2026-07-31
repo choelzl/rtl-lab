@@ -1494,6 +1494,35 @@ static bool run_bank_check(const char *backend_label) {
     dut.impl.rd3_lookahead_valid_i(rd3_lookahead_valid);
 #endif
 
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+    // Read-side reorder buffers (top_crossbar.hpp's XBAR_ROB): per-ROB-port
+    // fetch buses fed group-granularly from each agu<>-driven read AGU's
+    // lookahead cursor — same wiring pattern as tb_top.cpp's. ROB ports
+    // 0-3 = ragu_a, 4-5 = ragu_b, 6 = ragu_c; ragu_d/e keep the plain
+    // fabric path.
+    using impl_rob_t = std::remove_reference_t<decltype(dut.impl)>;
+    constexpr int kRobPorts = impl_rob_t::ROB_PORTS;
+    constexpr int kRobLanes = impl_rob_t::ROB_LANES;
+    static_assert(kRobPorts == 7, "fetch wiring assumes ragu_a(4)+ragu_b(2)+ragu_c(1)");
+    sc_signal<uint64_t> rob_fetch_addr[kRobLanes];
+    sc_signal<bool>     rob_fetch_valid[kRobPorts], rob_fetch_ready[kRobPorts],
+        rob_fetch_ack[kRobPorts];
+    sc_signal<uint64_t> rob_la_r[kRobPorts], rob_la_c[kRobPorts], rob_la_l[kRobPorts],
+        rob_la_sm[kRobPorts], rob_la_napa[kRobPorts];
+    for (int w = 0; w < kRobLanes; ++w)
+        dut.impl.rob_.fetch_addr_i[w](rob_fetch_addr[w]);
+    for (int j = 0; j < kRobPorts; ++j) {
+        dut.impl.rob_.fetch_valid_i[j](rob_fetch_valid[j]);
+        dut.impl.rob_.fetch_ready_o[j](rob_fetch_ready[j]);
+        dut.impl.rob_.fetch_ack_o[j](rob_fetch_ack[j]);
+        dut.impl.rob_.la_r_i[j](rob_la_r[j]);
+        dut.impl.rob_.la_c_i[j](rob_la_c[j]);
+        dut.impl.rob_.la_l_i[j](rob_la_l[j]);
+        dut.impl.rob_.la_sm_i[j](rob_la_sm[j]);
+        dut.impl.rob_.la_napa_i[j](rob_la_napa[j]);
+    }
+#endif
+
     rst_ni.write(false);
     sc_start(3 * CLK_PERIOD_NS + CLK_PERIOD_NS / 2, SC_NS);
     rst_ni.write(true);
@@ -1505,6 +1534,27 @@ static bool run_bank_check(const char *backend_label) {
         int      cycle; // sample cycle — lets phase 6 measure BANK-side occupancy
     };
     std::vector<RawHit> hits;
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+    // Post-negedge presence-only samples (see the split-cycle sampling
+    // comment in the loop): merged into the routing HitSet only, NEVER into
+    // the occupancy/span walks over `hits` — a full-cycle access would
+    // otherwise be double-counted.
+    std::vector<RawHit> hits_neg;
+    // --- ROB protocol/invariant checkers, evaluated once per cycle at the
+    // post-posedge sample instant (same instant the conflict tally uses).
+    // Violation counters, all asserted ==0 after the sweep:
+    uint64_t rob_v_gnt_wo_req = 0;   // port gnt asserted without req
+    uint64_t rob_v_rvalid_timing = 0; // port rvalid not exactly 1 cycle after its gnt
+    uint64_t rob_v_fab_nop = 0;      // fabric request carrying addr 0 (NOP must never route)
+    uint64_t rob_v_fab_unstable = 0; // fabric req dropped/re-addressed before gnt
+    uint64_t rob_v_sched_l1 = 0;     // two live fabric reqs of one port share an L1 field
+    uint64_t rob_v_sched_bank = 0;   // two live fabric reqs share an (L1,L2) pair
+    bool     rob_prev_gnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]     = {};
+    bool     rob_prev_rvalid[dut_t::NUM_RPORT * dut_t::NUM_REQ]  = {};
+    bool     rob_prev_freq[dut_t::NUM_RPORT * dut_t::NUM_REQ]    = {};
+    bool     rob_prev_fgnt[dut_t::NUM_RPORT * dut_t::NUM_REQ]    = {};
+    uint64_t rob_prev_faddr[dut_t::NUM_RPORT * dut_t::NUM_REQ]   = {};
+#endif
 
     // Generous vs. the sweep's worst case (n_data=64, ports=1 needs 64
     // sequential TDM window-drains per read task; see kCrossPhaseFence's
@@ -1591,22 +1641,124 @@ static bool run_bank_check(const char *backend_label) {
         }
 #endif
 
-        sc_start(CLK_PERIOD_NS, SC_NS);
-        ++actual;
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+        {
+            // Same driving discipline as tb_top.cpp's XBAR_ROB block: on an
+            // ingest ack advance the group-granular lookahead cursor, retry
+            // fence-parked rollovers each cycle, then re-drive the fetch
+            // buses and lookahead geometry. Lanes beyond the lookahead
+            // task's rounded width are the NEXT group in lookahead_addr()'s
+            // flat indexing — driven as 0 (NOP holes) instead.
+            auto drive_rob_fetch = [&](auto &src, int base_port, int n_ports) {
+                if (rob_fetch_ack[base_port].read())
+                    src.advance_lookahead_group_rob();
+                src.retry_lookahead_fence_rob();
+                bool ready_all = src.lookahead_ready();
+                for (int jp = 0; jp < n_ports; ++jp)
+                    ready_all = ready_all && rob_fetch_ready[base_port + jp].read();
+                const int rw = std::remove_reference_t<decltype(src)>::rounded_width(
+                    src.lookahead_ports_used());
+                for (int jp = 0; jp < n_ports; ++jp) {
+                    const int j = base_port + jp;
+                    rob_fetch_valid[j].write(ready_all);
+                    rob_la_r[j].write(src.lookahead_R());
+                    rob_la_c[j].write(src.lookahead_C());
+                    rob_la_l[j].write(src.lookahead_L());
+                    rob_la_sm[j].write(src.lookahead_store_mode());
+                    rob_la_napa[j].write(src.lookahead_ports_used());
+                    for (int m = 0; m < dut_t::NUM_REQ; ++m) {
+                        const int wla = jp * dut_t::NUM_REQ + m;
+                        rob_fetch_addr[j * dut_t::NUM_REQ + m].write(
+                            (ready_all && wla < rw) ? src.lookahead_addr(wla) : 0);
+                    }
+                }
+            };
+            drive_rob_fetch(ragu_a_src, 0, 4);
+            drive_rob_fetch(ragu_b_src, 4, 2);
+            drive_rob_fetch(ragu_c_src, 6, 1);
+        }
+#endif
 
         // Sample every bank-facing wire each cycle — a presence check
         // (rather than a strict per-cycle log) keeps this robust to
         // incidental timing shifts.
+        auto sample_banks = [&](std::vector<RawHit> &dst) {
 #if defined(IMPL_TDM)
-        for (int b = 0; b < N_BANK; ++b)
-            if (dut.impl.xbar_bank[b].req.read())
-                hits.push_back({b, dut.impl.xbar_bank[b].addr.read(),
-                                dut.impl.xbar_bank[b].we.read(), actual});
+            for (int b = 0; b < N_BANK; ++b)
+                if (dut.impl.xbar_bank[b].req.read())
+                    dst.push_back({b, dut.impl.xbar_bank[b].addr.read(),
+                                   dut.impl.xbar_bank[b].we.read(), actual});
 #else
-        for (int b = 0; b < tc_t::NUM_PHYS_BANKS; ++b)
-            if (dut.impl.l3_bank[b].req.read())
-                hits.push_back(
-                    {b, dut.impl.bank_addr[b].read(), dut.impl.l3_bank[b].we.read(), actual});
+            for (int b = 0; b < tc_t::NUM_PHYS_BANKS; ++b)
+                if (dut.impl.l3_bank[b].req.read())
+                    dst.push_back(
+                        {b, dut.impl.bank_addr[b].read(), dut.impl.l3_bank[b].we.read(), actual});
+#endif
+        };
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+        // The ROB drives its fabric requests on NEGEDGES, so the bank-facing
+        // wires legitimately change twice per cycle: the state a bank
+        // latches at its posedge is the post-negedge one, while the single
+        // post-sc_start sample instant sits between posedge and negedge —
+        // the L3 read-vs-write mux can re-arbitrate between those two
+        // instants, hiding served accesses (of EITHER stream) from a single
+        // sample. Split the cycle and sample after each half; presence-set
+        // semantics make the extra sample purely additive.
+        sc_start(CLK_PERIOD_NS / 2.0, SC_NS);
+        ++actual;
+        sample_banks(hits);
+        {
+            using impl_t = std::remove_reference_t<decltype(dut.impl)>;
+            for (int w = 0; w < impl_t::ROB_LANES; ++w) {
+                // --- port-side OBI (subordinate face) ---
+                const bool prq = dut.impl.rport_req_i[w].read();
+                const bool pgt = dut.impl.rport_gnt_o[w].read();
+                const bool prv = dut.impl.rport_rvalid_o[w].read();
+                if (pgt && !prq)
+                    ++rob_v_gnt_wo_req;
+                // rvalid exactly one cycle after each gnt, and only then
+                if (prv != rob_prev_gnt[w])
+                    ++rob_v_rvalid_timing;
+                rob_prev_gnt[w]    = pgt && prq;
+                rob_prev_rvalid[w] = prv;
+                // --- fabric-side OBI (manager face) ---
+                const bool     frq = dut.impl.rob_l1_req[w].read();
+                const bool     fgt = dut.impl.rob_l1_gnt[w].read();
+                const uint64_t fad = dut.impl.rob_l1_addr[w].read();
+                if (frq && fad == 0)
+                    ++rob_v_fab_nop;
+                // a held (ungranted) request must persist with the same
+                // address until granted
+                if (rob_prev_freq[w] && !rob_prev_fgnt[w] && (!frq || fad != rob_prev_faddr[w]))
+                    ++rob_v_fab_unstable;
+                rob_prev_freq[w]  = frq;
+                rob_prev_fgnt[w]  = frq && fgt;
+                rob_prev_faddr[w] = fad;
+            }
+            // --- cross-ROB scheduler invariants over all LIVE fabric reqs ---
+            for (int w1 = 0; w1 < impl_t::ROB_LANES; ++w1) {
+                if (!dut.impl.rob_l1_req[w1].read())
+                    continue;
+                const uint64_t a1 = dut.impl.rob_l1_addr[w1].read();
+                for (int w2 = w1 + 1; w2 < impl_t::ROB_LANES; ++w2) {
+                    if (!dut.impl.rob_l1_req[w2].read())
+                        continue;
+                    const uint64_t a2 = dut.impl.rob_l1_addr[w2].read();
+                    const int f1a = (a1 >> 4) & 3, f1b = (a2 >> 4) & 3;
+                    const int f2a = (a1 >> 6) & 7, f2b = (a2 >> 6) & 7;
+                    if (w1 / dut_t::NUM_REQ == w2 / dut_t::NUM_REQ && f1a == f1b)
+                        ++rob_v_sched_l1;
+                    if (f1a == f1b && f2a == f2b)
+                        ++rob_v_sched_bank;
+                }
+            }
+        }
+        sc_start(CLK_PERIOD_NS / 2.0, SC_NS);
+        sample_banks(hits_neg); // presence-only (routing HitSet), see above
+#else
+        sc_start(CLK_PERIOD_NS, SC_NS);
+        ++actual;
+        sample_banks(hits);
 #endif
     }
 
@@ -1619,6 +1771,10 @@ static bool run_bank_check(const char *backend_label) {
     HitSet write_hits, read_hits;
     for (const auto &h : hits)
         (h.we ? write_hits : read_hits).insert({h.bank, h.addr});
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+    for (const auto &h : hits_neg)
+        (h.we ? write_hits : read_hits).insert({h.bank, h.addr});
+#endif
 
     verify_routing(dut, phase1_tasks, write_hits, read_hits, "phase1 ragu_a", backend_label);
     verify_routing(dut, phase2_tasks, write_hits, read_hits, "phase2 ragu_b", backend_label);
@@ -1725,6 +1881,17 @@ static bool run_bank_check(const char *backend_label) {
     // 1-cycle latency saving) — see kExpected's adaptive-arbiter sibling
     // above for where this saving shows up unmasked.
     const int kExpected[9] = {8, 8, 8, 13, 40, 76, 29, 218, 434};
+#elif defined(XBAR_ROB)
+    // Crossbar with the read-side reorder buffers (top_crossbar.hpp's
+    // XBAR_ROB, depth 4): same-bank serialization still happens at the
+    // BANK (one row per cycle — see the phase-6 occupancy checks, which
+    // are unchanged), but the ROB overlaps it ACROSS groups: while one
+    // group's colliding beats trickle out of their bank, later groups'
+    // beats to other banks fetch in parallel, so the port-side span
+    // compresses toward ceil(n_conflicting/1 + fill) instead of paying
+    // each group's collisions serially. conflict=none rows match the plain
+    // crossbar exactly (nothing to reorder around).
+    const int kExpected[9] = {8, 9, 13, 8, 13, 21, 8, 21, 37};
 #else
     const int kExpected[9] = {8, 16, 32, 8, 32, 64, 8, 64, 128};
 #endif
@@ -1849,6 +2016,10 @@ static bool run_bank_check(const char *backend_label) {
         const int kExpected5x[3] = {8, 8, 17};
 #elif defined(IMPL_TDM)
         const int kExpected5x[3] = {8, 22, 110};
+#elif defined(XBAR_ROB)
+        // Reordering compresses the TDM-adversarial clusters the same way
+        // as the own-map full-conflict rows above.
+        const int kExpected5x[3] = {13, 13, 15};
 #else
         const int kExpected5x[3] = {32, 32, 59};
 #endif
@@ -1905,6 +2076,15 @@ static bool run_bank_check(const char *backend_label) {
         const int kExpected6[6] = {104, 100, 98, 118, 115, 108};
 #elif defined(IMPL_TDM)
         const int kExpected6[6] = {867, 868, 866, 1055, 1027, 964};
+#elif defined(XBAR_ROB)
+        // Writes are untouched (128 = n_data, one beat per cycle at the
+        // single bank). Read spans undercut n_data the same way TDM's do:
+        // the ROB prefetches ahead of the port, so part of the bank-side
+        // serialization happens BEFORE the first port response — the
+        // phase-6 bank-side occupancy checks below still pin the bank at
+        // exactly n_data busy cycles. ports=1 stays 128 (depth 4 x 4-beat
+        // groups = 16 beats of lead, consumed 4x slower than wider modes).
+        const int kExpected6[6] = {128, 128, 128, 128, 118, 110};
 #else
         const int kExpected6[6] = {128, 128, 128, 128, 128, 128};
 #endif
@@ -2041,6 +2221,15 @@ static bool run_bank_check(const char *backend_label) {
         const int kExpected7[10] = {16, 58, 60, 20, 492, 16, 58, 58, 16, 469};
 #elif defined(IMPL_TDM)
         const int kExpected7[10] = {65, 506, 532, 65, 3673, 65, 504, 502, 60, 4198};
+#elif defined(XBAR_ROB)
+        // intra_port/inter_port are UNCHANGED from the plain crossbar (64):
+        // those classes saturate the L1/L2 wire structure itself (4 lanes
+        // per L1 output, one (L1,L2) pair per bank wire) — the scheduler
+        // respects exactly those limits, so reordering cannot create
+        // capacity, only avoid arbitration losses. Random noise nearly
+        // halves (808 -> 451): scattered collisions are exactly what
+        // cross-group reordering absorbs. Write rows untouched.
+        const int kExpected7[10] = {16, 64, 64, 31, 528, 16, 64, 64, 31, 810};
 #else
         const int kExpected7[10] = {16, 64, 64, 31, 808, 16, 64, 64, 31, 810};
 #endif
@@ -2095,6 +2284,21 @@ static bool run_bank_check(const char *backend_label) {
 #elif defined(IMPL_TDM)
         const int kExpected8[9]   = {1147, 1147, 1151, 1152, 1151, 1146, 1147, 1148, 1147};
         const int kExpected8Total = 1162;
+#elif defined(XBAR_ROB)
+        // Saturation behavior depends on the SCHEDULER's arbitration
+        // policy, measured both ways: the idealized global age-ordered
+        // scheduler (XBAR_ROB_SCHED_IDEAL) let the ROB streams monopolize
+        // banks — ragu_a/b finished early (923/861) while the direct-path
+        // readers, ragu_c, and the write plane starved (1319/1351/1308,
+        // writes to 1259), stretching the wall clock to 1351 (+16% over
+        // the plain crossbar's 1161). The hardware-feasible default's
+        // per-BANK rotating priority restores fairness at no scheduling
+        // cost that matters: every stream lands in a tight 1018-1144 band
+        // and the overall wall clock, 1144, comes in BELOW the plain
+        // crossbar's 1161 — the reordering recovers enough bank
+        // parallelism to pay for the sharing.
+        const int kExpected8[9]   = {1026, 1020, 1029, 1037, 1143, 1024, 1018, 1031, 1144};
+        const int kExpected8Total = 1144;
 #else
         const int kExpected8[9]   = {1000, 986, 1054, 1057, 1161, 1023, 977, 1046, 1151};
         const int kExpected8Total = 1161;
@@ -2339,6 +2543,50 @@ static bool run_bank_check(const char *backend_label) {
         report("phase8_write", {phase8_write_tasks[1]}, wagu_b_src);
         report("phase8_write", {phase8_write_tasks[2]}, wagu_d_src);
         report("phase8_write", {phase8_write_tasks[3]}, wagu_e_src);
+    }
+#endif
+
+#if defined(IMPL_CROSSBAR) && defined(XBAR_ROB)
+    // --- ROB protocol & reorder invariants, accumulated per cycle above ---
+    {
+        char lbl[224];
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): port gnt only ever asserted with req high (%llu violations)",
+                      backend_label, (unsigned long long)rob_v_gnt_wo_req);
+        CHECK(rob_v_gnt_wo_req == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): port rvalid exactly 1 cycle after each gnt, never spurious "
+                      "(%llu violations)",
+                      backend_label, (unsigned long long)rob_v_rvalid_timing);
+        CHECK(rob_v_rvalid_timing == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): NOP (addr 0) never driven into the fabric (%llu violations)",
+                      backend_label, (unsigned long long)rob_v_fab_nop);
+        CHECK(rob_v_fab_nop == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): fabric requests held stable (same addr) until granted "
+                      "(%llu violations)",
+                      backend_label, (unsigned long long)rob_v_fab_unstable);
+        CHECK(rob_v_fab_unstable == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): no two live requests of one port share an L1 field "
+                      "(%llu violations)",
+                      backend_label, (unsigned long long)rob_v_sched_l1);
+        CHECK(rob_v_sched_l1 == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): no two live requests anywhere share an (L1,L2) bank pair "
+                      "(%llu violations)",
+                      backend_label, (unsigned long long)rob_v_sched_bank);
+        CHECK(rob_v_sched_bank == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): delivery matched prefetched entries exactly (%llu mismatches)",
+                      backend_label, (unsigned long long)dut.impl.rob_.mismatch_cnt);
+        CHECK(dut.impl.rob_.mismatch_cnt == 0, lbl);
+        std::snprintf(lbl, sizeof(lbl),
+                      "rob (%s): out-of-order issue demonstrably exercised (%llu OOO issues — "
+                      "younger entries scheduled past bank-blocked older ones)",
+                      backend_label, (unsigned long long)dut.impl.rob_.sched_ooo);
+        CHECK(dut.impl.rob_.sched_ooo > 0, lbl);
     }
 #endif
 

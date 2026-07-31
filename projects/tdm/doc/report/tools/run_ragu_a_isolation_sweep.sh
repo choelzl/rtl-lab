@@ -35,6 +35,11 @@ declare -A VARIANT_FLAGS=(
   [baseline]=""
   [l1]="-DXBAR_HASH_L1"
   [l1v2]="-DXBAR_HASH_L1_V2"
+  [l1v3]="-DXBAR_HASH_L1_V3"
+  [rob_d2]="-DXBAR_ROB -DXBAR_ROB_DEPTH=2 -DXBAR_HASH_L1_V3"
+  [rob_d4]="-DXBAR_ROB -DXBAR_ROB_DEPTH=4 -DXBAR_HASH_L1_V3"
+  [poly]="-DXBAR_HASH_POLY"
+  [rob_poly_d4]="-DXBAR_ROB -DXBAR_ROB_DEPTH=4 -DXBAR_HASH_POLY"
   [hash16]="-DXBAR_HASH16"
   [hash32]="-DXBAR_HASH32"
 )
@@ -42,11 +47,15 @@ declare -A VARIANT_FLAGS=(
 # baseline_p32 reuses the baseline binary against padded32 (same convention as
 # l1v2_p32: same scheme, different stimuli, not a rebuild).
 declare -A VARIANT_BIN=(
-  [baseline]=baseline [baseline_p32]=baseline [l1]=l1 [l1v2]=l1v2 [l1v2_p32]=l1v2
+  [baseline]=baseline [l1]=l1 [l1v2]=l1v2 [l1v3]=l1v3
+  [rob_d2]=rob_d2 [rob_d4]=rob_d4
+  [poly]=poly [rob_poly_d4]=rob_poly_d4
   [hash16]=hash16 [hash32]=hash32
 )
 declare -A VARIANT_SRC=(
-  [baseline]=unpadded [baseline_p32]=padded32 [l1]=unpadded [l1v2]=unpadded [l1v2_p32]=padded32
+  [baseline]=unpadded [l1]=unpadded [l1v2]=unpadded [l1v3]=unpadded
+  [rob_d2]=unpadded [rob_d4]=unpadded
+  [poly]=unpadded [rob_poly_d4]=unpadded
   [hash16]=padded16
   [hash32]=padded32
 )
@@ -65,6 +74,10 @@ wait
 
 export RTL_LAB_HOME=${RTL_LAB_HOME:-$(cd "$PROJ/../.." && pwd)}
 export SEL_NO_MONITOR=1
+# Lookahead lead 16 = the evaluation's standing convention (doc/report A.7).
+# Only the XBAR_ROB variants consume it (their prefetch may roll into a
+# fenced task early); the plain-crossbar builds never touch the lookahead.
+export SEL_LA_LEAD=16
 
 # Isolated per-set stimuli: only ragu_a's own trace, copied once per (source,
 # set) -- shared across variants that use the same source (baseline/l1/l1v2
