@@ -12,21 +12,21 @@
 
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module add_sqr_s_5_bit_array #(
-    parameter int IN_SIZE   = 8,
-    parameter int SQR_TYPE  = 0,
+    parameter int IN_SIZE  = 8,
+    parameter int SQR_TYPE = 0,
 
     localparam int IN_WIDTH      = 4,
     localparam int IN_SQR_WIDTH  = IN_WIDTH + 1,
     localparam int OUT_SQR_WIDTH = (IN_SQR_WIDTH * 2) - 1,
     localparam int PP_SIZE       = IN_SIZE,
     localparam int PP_WIDTH      = OUT_SQR_WIDTH + 1
-)(
-    input  logic [IN_WIDTH-1:0] a_i  [0:IN_SIZE-1],
-    input  logic [IN_WIDTH-1:0] b_i  [0:IN_SIZE-1],
-    output logic [PP_WIDTH-1:0] pp_o [0:PP_SIZE-1]
+) (
+    input  logic [IN_WIDTH-1:0] a_i [0:IN_SIZE-1],
+    input  logic [IN_WIDTH-1:0] b_i [0:IN_SIZE-1],
+    output logic [PP_WIDTH-1:0] pp_o[0:PP_SIZE-1]
 );
 
     genvar i;

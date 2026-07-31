@@ -8,7 +8,7 @@
 //   a cout (cout_o) chained to the cin of the adjacent bit's cell.
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module cpr_4_2_bit (
     input  logic in_0_i,

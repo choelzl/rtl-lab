@@ -17,21 +17,21 @@
 /* verilator lint_off UNOPTFLAT */
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module cpr_4_2 #(
     parameter int IN_WIDTH = 12,
     parameter int EXT_BITS = 2,
 
     localparam int OUT_WIDTH = IN_WIDTH + EXT_BITS
-)(
-    input  logic [ IN_WIDTH-1:0] in_i [4],
+) (
+    input  logic [ IN_WIDTH-1:0] in_i   [4],
     output logic [OUT_WIDTH-1:0] sum_o,
     output logic [OUT_WIDTH-1:0] carry_o
 );
-    logic [OUT_WIDTH-1:0] ext_in [4];
+    logic [OUT_WIDTH-1:0] ext_in[4];
     logic [OUT_WIDTH-1:0] s, c;
-    logic [  OUT_WIDTH:0] cout;
+    logic [OUT_WIDTH:0] cout;
 
     generate
         for (genvar i = 0; i < 4; i++) begin : gen_extenders

@@ -28,15 +28,18 @@ resolve to the same location.
 | in        | `R`          | size of the **Row** axis of the access pattern (power of two)  |
 | in        | `C`          | size of the **Col** axis of the access pattern (power of two)  |
 | in        | `L`          | size of the **Loop** axis of the access pattern (power of two) |
-| in        | `store_mode` | linearization order of the R/C/L axes (one of 15 modes, below) |
+| in        | `store_mode` | linearization order of the R/C/L axes (one of 16 mode indices, below) |
 | out       | `bank_id`    | selected bank, a 5-bit value (0..31)                           |
 | out       | `row_id`     | selected bank-local row                                        |
 
-The five non-address inputs are **kernel-wide constants** (they describe the
-access pattern of the whole kernel, not one access). In the TDM design they are
-read once from the first line of the trace by [agu_tdm.hpp](../../tb/systemc/agu_tdm.hpp)
-and selected per time slot by [tdm_mux.hpp](../../rtl/systemc/tdm_mux.hpp); see
-[tdm.md](tdm.md).
+The six non-address inputs are **kernel-wide constants** (they describe the
+access pattern of the whole kernel, not one access). In the TDM design,
+`R`/`C`/`L`/`store_mode` come from each task's `#`-descriptor line, parsed by
+[agu.hpp](../../tb/systemc/agu.hpp) and selected per time slot by
+`top_tdm.hpp`'s `map_cfg_comb()` (an inline mux over each buffer's own config,
+keyed by the same arbiter selection used to pick which buffer's address is on
+the mapping function's input that cycle); `num_banks` and `bank_width` are
+fixed at build time to `N_BANK` and `BYTES_PER_ROW`. See [tdm.md](tdm.md).
 
 ## Parameter meaning
 
@@ -71,31 +74,44 @@ zeros of a power of two equal its `log2`.)
 The address (above the `e` offset bits) is divided into three fields by two bit
 boundaries `k1 ≤ k2`. `store_mode` chooses how those boundaries are computed from
 the axis widths; the table below is the authoritative definition (it is the
-`get_k` function). Both boundaries are clamped to at least `e` so a field never
-reaches into the sub-word offset.
+`get_k_raw` function). Both boundaries are clamped to at least `e` so a field
+never reaches into the sub-word offset.
 
 | `store_mode` (index)  | `k1`              | `k2`                |
 | --------------------- | ----------------- | ------------------- |
 | `Loop_Row_Col`   (0)  | `max(tzC, e)`     | `max(tzR + tzC, e)` |
-| `Loop_Row`       (1)  | `max(tzC, e)`     | `max(tzR + tzC, e)` |
-| `Loop_Col_Row`   (2)  | `max(tzR, e)`     | `max(tzC + tzR, e)` |
-| `Loop_Row_Space` (3)  | `max(tzR, e)`     | `max(tzC + tzR, e)` |
-| `Row_Col_Loop`   (4)  | `max(tzL, e)`     | `max(tzL + tzC, e)` |
-| `Row_Loop`       (5)  | `max(tzL, e)`     | `max(tzL + tzC, e)` |
-| `Col_Row_Loop`   (6)  | `max(tzL, e)`     | `max(tzR + tzL, e)` |
-| `Row_Loop_Col`   (7)  | `max(tzC, e)`     | `max(tzL + tzC, e)` |
-| `Col_Loop_Row`   (8)  | `max(tzR, e)`     | `max(tzL + tzR, e)` |
-| `Loop_2x2_H`     (9)  | `max(tzC + 1, e)` | `max(tzR + tzC, e)` |
-| `Loop_2x2_V`     (10) | `max(tzR + 1, e)` | `max(tzC + tzR, e)` |
-| `Loop_2i`        (11) | `max(tzR + 1, e)` | `max(tzC + tzR, e)` |
-| `Loop_4x4_H`     (12) | `max(tzC + 2, e)` | `max(tzR + tzC, e)` |
-| `Loop_4x4_V`     (13) | `max(tzR + 2, e)` | `max(tzC + tzR, e)` |
-| `Loop_4i`        (14) | `max(tzR + 2, e)` | `max(tzC + tzR, e)` |
+| `Loop_Col_Row`   (1)  | `max(tzR, e)`     | `max(tzC + tzR, e)` |
+| `Row_Col_Loop`   (2)  | `max(tzL, e)`     | `max(tzL + tzC, e)` |
+| `Col_Row_Loop`   (3)  | `max(tzL, e)`     | `max(tzR + tzL, e)` |
+| `Row_Loop_Col`   (4)  | `max(tzC, e)`     | `max(tzL + tzC, e)` |
+| `Col_Loop_Row`   (5)  | `max(tzR, e)`     | `max(tzL + tzR, e)` |
+| `Loop_2x2_H`     (6)  | `max(tzC + 1, e)` | `max(tzR + tzC, e)` |
+| `Loop_2x2_V`     (7)  | `max(tzR + 1, e)` | `max(tzC + tzR, e)` |
+| `Loop_4x4_H`     (8)  | `max(tzC + 2, e)` | `max(tzR + tzC, e)` |
+| `Loop_4x4_V`     (9)  | `max(tzR + 2, e)` | `max(tzC + tzR, e)` |
+| `Loop_Row`       (10) | `max(tzC, e)`     | `max(tzR + tzC, e)` |
+| `Row_Loop`       (11) | `max(tzL, e)`     | `max(tzL + tzC, e)` |
+| `Loop_Row_Space` (12) | `max(tzR, e)`     | `max(tzC + tzR, e)` |
+| `Loop_2i`        (13) | `max(tzR + 1, e)` | `max(tzC + tzR, e)` |
+| `Loop_3i`        (14) | — unsupported     | — unsupported       |
+| `Loop_4i`        (15) | `max(tzR + 2, e)` | `max(tzC + tzR, e)` |
 
 `store_mode` is carried in the trace as the **integer index** in the first
-column (0..14). Modes that share a row produce identical boundaries; the `2x2`/
-`4x4`/`2i`/`4i` variants widen the first boundary by 1 or 2 bits, which shifts a
-sub-tile of consecutive elements into the bank index (a coarser interleave).
+column (0..15). Modes that share a formula produce identical boundaries
+(`Loop_Row` ≡ `Loop_Row_Col`, `Row_Loop` ≡ `Row_Col_Loop`,
+`Loop_Row_Space` ≡ `Loop_Col_Row`, `Loop_2i` ≡ `Loop_2x2_V`,
+`Loop_4i` ≡ `Loop_4x4_V`); the `2x2`/`4x4`/`2i`/`4i` variants widen the first
+boundary by 1 or 2 bits, which shifts a sub-tile of consecutive elements into
+the bank index (a coarser interleave). `Loop_3i` (14) has no `get_k` case and
+raises a fatal error if a trace carries it.
+
+The production `get_k` is a thin wrapper over this table: with the opt-in
+build define `TDM_GETK_GUARD` it additionally repairs the degenerate split
+that arises when the mode's leading dimension has no trailing zeros (`k1`
+collapses onto `e`, the `con` field vanishes and windows can fold pairwise
+onto half the banks) by borrowing up to two `str` bits into `con`. The guard
+is pattern-blind and off by default — see the design report, Appendix A.8,
+for the evaluation.
 
 ## The three address fields
 
@@ -182,13 +198,15 @@ share a bank — the bank conflict the experiment measures.
 
 ## Use in the TDM design
 
-The reused [crossbar](crossbar.md) decodes a *byte address* into bank/row by
-word-interleave (`bank = (addr/WORD_BYTES) % N_BANK`, `row = (addr/WORD_BYTES) /
-N_BANK`). To route a mapped word there, the TDM module re-encodes the placement
-as the byte address the crossbar will decode back to the same `(bank_id, row_id)`:
+The reused word-interleaved crossbar primitive (`crossbar.hpp` — not the
+three-level [crossbar backend](crossbar.md)) decodes a *byte address* into
+bank/row by beat-interleave (`bank = (addr/BYTES_PER_ROW) % N_BANK`,
+`row = (addr/BYTES_PER_ROW) / N_BANK` — one 16-byte beat per slot). To route a
+mapped word there, the TDM module re-encodes the placement as the byte address
+the crossbar will decode back to the same `(bank_id, row_id)`:
 
 ```
-emitted_addr = (row_id * N_BANK + bank_id) * WORD_BYTES
+emitted_addr = (row_id * N_BANK + bank_id) * BYTES_PER_ROW
 ```
 
 So the mapping function decides the bank placement, and the crossbar's per-bank
@@ -199,6 +217,10 @@ end-to-end flow.
 
 - **Power-of-two sizes** — `num_banks`, `bank_width`, `R`, `C`, `L` are assumed
   powers of two; the derived bit counts use `floor(log2)` / trailing zeros.
+  Non-power-of-two dimensions still map (the trailing-zero counts just become
+  lossy summaries), but they are the one task-geometry class that produces
+  residual bank collisions in production traces — quantified, with every
+  evaluated remedy, in the design report's Appendix A.8.
 - **32 banks** — the XOR matrix is hard-wired to 5 output bits, so the scheme is
   a 32-bank placement (`N_BANK ≥ 32`).
 - **`bank_width` unit** — taken here as **bytes per bank word** (so `e =

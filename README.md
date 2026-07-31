@@ -126,7 +126,7 @@ Tool and PDK install locations are **per-user**: you declare them in your `~/.ba
 source sourceme.sh
 ```
 
-`sourceme.sh` sets `RTL_LAB_HOME` from its own location, sources `~/.bashrc`, and then derives `SYSTEMC_INCLUDE`, `SYSTEMC_LIBDIR` (from `SYSTEMC_HOME`) and `ASAP7_HOME` (from `PDK_HOME`). You therefore export only the install **roots** in your `~/.bashrc`:
+`sourceme.sh` sets `RTL_LAB_HOME` from its own location, sources `~/.bashrc`, and then derives `SYSTEMC_INCLUDE`, `SYSTEMC_LIB` (from `SYSTEMC_HOME`) and `ASAP7_HOME` (from `PDK_HOME`). You therefore export only the install **roots** in your `~/.bashrc`:
 
 | Variable                                                                           | Purpose                                                                                                                                                 |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -153,7 +153,7 @@ export PDK_HOME=/opt/pdks
 Notes:
 
 - **Do not** set `RTL_LAB_HOME` — `sourceme.sh` derives it from its own location, before sourcing `~/.bashrc`.
-- `SYSTEMC_INCLUDE` and `SYSTEMC_LIBDIR` are derived from `SYSTEMC_HOME` (the `lib64`/`lib` variant is auto-detected); export them yourself to override.
+- `SYSTEMC_INCLUDE` and `SYSTEMC_LIB` are derived from `SYSTEMC_HOME` (the `lib64`/`lib` variant is auto-detected); export them yourself to override.
 - `ASAP7_HOME` defaults to `$PDK_HOME/OpenROAD-flow-scripts/flow/platforms/asap7`; export it in `~/.bashrc` to target a different platform/technology.
 
 The SystemC simulation mode (`make sim-sc`) additionally requires the Accellera SystemC library installed at `$SYSTEMC_HOME`, built with the same C++ standard Verilator compiles the model with (C++17). The other flows do not depend on it.

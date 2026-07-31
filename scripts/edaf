@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec make -s -f "${RTL_LAB_HOME:?edaf: RTL_LAB_HOME not set — source sourceme.sh}/scripts/Makefile" "$@"

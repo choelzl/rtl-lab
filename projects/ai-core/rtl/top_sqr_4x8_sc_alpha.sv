@@ -22,7 +22,7 @@
 /* verilator lint_off GENUNNAMED */
 /* verilator lint_off UNUSEDPARAM */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module top_sqr_4x8_sc_alpha #(
     parameter bit IS_PIPELINED = 1,
@@ -35,17 +35,17 @@ module top_sqr_4x8_sc_alpha #(
     localparam int PP_WIDTH     = IS_SQUARE ? (2 * IN_WIDTH_A) : IN_WIDTH_A,
     localparam int CPR_EXT_BITS = 4,
     localparam int OUT_WIDTH    = PP_WIDTH + CPR_EXT_BITS + 20
-)(
+) (
     input  logic                  clk_i,
     input  logic                  rst_ni,
-    input  logic                  is_signed_i [ 0:EXT_NUM-1],
-    input  logic                  is_shift_i  [ 0:EXT_NUM-1],
-    input  logic [IN_WIDTH_A-1:0] a_i         [ 0:IN_SIZE-1],
+    input  logic                  is_signed_i[0:EXT_NUM-1],
+    input  logic                  is_shift_i [0:EXT_NUM-1],
+    input  logic [IN_WIDTH_A-1:0] a_i        [0:IN_SIZE-1],
     output logic [ OUT_WIDTH-1:0] out_o
 );
 
-    logic [IN_WIDTH_A-1:0] a  [0:IN_SIZE-1];
-    logic [  PP_WIDTH-1:0] pp [0:PP_SIZE-1];
+    logic [IN_WIDTH_A-1:0] a   [0:IN_SIZE-1];
+    logic [  PP_WIDTH-1:0] pp  [0:PP_SIZE-1];
     logic [ OUT_WIDTH-1:0] out;
 
     // -------------------------------------------------------------------------

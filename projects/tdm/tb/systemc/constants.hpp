@@ -24,19 +24,50 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// AGU / manager side
+// DUT port side — per-unit driver group counts (not flat port counts)
+// These name the number of RAGU/WAGU driver instances per group.
+// Flat OBI port counts are derived inside top.hpp as N_RAGU_X * N_REQ.
 // ---------------------------------------------------------------------------
-#ifndef N_RAGU
-#define N_RAGU 7
+#ifndef N_RAGU_A
+#define N_RAGU_A 4
 #endif
-#ifndef N_WAGU
-#define N_WAGU 6
+#ifndef N_RAGU_B
+#define N_RAGU_B 2
+#endif
+#ifndef N_RAGU_C
+#define N_RAGU_C 1
+#endif
+#ifndef N_RAGU_D
+#define N_RAGU_D 1
+#endif
+#ifndef N_RAGU_E
+#define N_RAGU_E 1
+#endif
+
+#ifndef N_WAGU_A
+#define N_WAGU_A 4
+#endif
+#ifndef N_WAGU_B
+#define N_WAGU_B 2
+#endif
+#ifndef N_WAGU_D
+#define N_WAGU_D 1
+#endif
+#ifndef N_WAGU_E
+#define N_WAGU_E 1
+#endif
+
+// ---------------------------------------------------------------------------
+// DUT port side — aggregates (derived from per-unit counts)
+// ---------------------------------------------------------------------------
+#ifndef N_RPORT
+#define N_RPORT (N_RAGU_A + N_RAGU_B + N_RAGU_C + N_RAGU_D + N_RAGU_E)
+#endif
+#ifndef N_WPORT
+#define N_WPORT (N_WAGU_A + N_WAGU_B + N_WAGU_D + N_WAGU_E)
 #endif
 #ifndef N_REQ
 #define N_REQ 4
-#endif
-#ifndef N_MGR
-#define N_MGR (N_AGU * N_REQ)
 #endif
 
 // ---------------------------------------------------------------------------

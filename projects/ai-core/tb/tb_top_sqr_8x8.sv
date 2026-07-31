@@ -23,34 +23,34 @@
 /* verilator lint_off UNUSEDSIGNAL */
 /* verilator lint_off DECLFILENAME */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module tb_top_sqr_8x8 #(
     parameter bit  IS_PIPELINED = 1,
     parameter int  MAX_VAL_A    = 127,
     parameter int  MAX_VAL_B    = 127,
     parameter int  DIST_TYPE    = 0,
-    parameter real MU_SCALE     = 1.0/2.0,
-    parameter real SIGMA_SCALE  = 1.0/6.0
+    parameter real MU_SCALE     = 1.0 / 2.0,
+    parameter real SIGMA_SCALE  = 1.0 / 6.0
 );
-    localparam int IN_SIZE    = 32;
+    localparam int IN_SIZE = 32;
     localparam int IN_WIDTH_A = 8;
     localparam int IN_WIDTH_B = 8;
-    localparam int ACC_SIZE   = 3;
-    localparam int ACC_WIDTH  = 48;
-    localparam int EXT_NUM    = 7;
-    localparam int OUT_WIDTH  = ACC_WIDTH;
+    localparam int ACC_SIZE = 3;
+    localparam int ACC_WIDTH = 48;
+    localparam int EXT_NUM = 7;
+    localparam int OUT_WIDTH = ACC_WIDTH;
     localparam int ALPHA_LANES = 16;  // IN_SIZE of sqr_8x8_alpha (feeds acc[1]/acc[2])
 
-    real clk_p = `CLK_PERIOD_NS;
+    real                   clk_p = `CLK_PERIOD_NS;
 
     logic                  clk;
     logic                  rst_n;
-    logic [ ACC_WIDTH-1:0] acc       [0:ACC_SIZE-1];
-    logic                  is_signed [ 0:EXT_NUM-1];
-    logic                  is_shift  [ 0:EXT_NUM-1];
-    logic [IN_WIDTH_A-1:0] a         [ 0:IN_SIZE-1];
-    logic [IN_WIDTH_B-1:0] b         [ 0:IN_SIZE-1];
+    logic [ ACC_WIDTH-1:0] acc                    [0:ACC_SIZE-1];
+    logic                  is_signed              [ 0:EXT_NUM-1];
+    logic                  is_shift               [ 0:EXT_NUM-1];
+    logic [IN_WIDTH_A-1:0] a                      [ 0:IN_SIZE-1];
+    logic [IN_WIDTH_B-1:0] b                      [ 0:IN_SIZE-1];
     logic [ OUT_WIDTH-1:0] out;
 
     logic [ OUT_WIDTH-1:0] exp;
@@ -63,16 +63,15 @@ module tb_top_sqr_8x8 #(
     logic [IN_SIZE*IN_WIDTH_A-1:0] a_flat;
     logic [IN_SIZE*IN_WIDTH_B-1:0] b_flat;
     logic [ACC_SIZE*ACC_WIDTH-1:0] acc_flat;
-    logic [EXT_NUM-1:0]            is_signed_flat;
-    logic [EXT_NUM-1:0]            is_shift_flat;
+    logic [           EXT_NUM-1:0] is_signed_flat;
+    logic [           EXT_NUM-1:0] is_shift_flat;
 
     always_comb begin
         for (int i = 0; i < IN_SIZE; i++) begin
-            a_flat[i*IN_WIDTH_A +: IN_WIDTH_A] = a[i];
-            b_flat[i*IN_WIDTH_B +: IN_WIDTH_B] = b[i];
+            a_flat[i*IN_WIDTH_A+:IN_WIDTH_A] = a[i];
+            b_flat[i*IN_WIDTH_B+:IN_WIDTH_B] = b[i];
         end
-        for (int i = 0; i < ACC_SIZE; i++)
-            acc_flat[i*ACC_WIDTH +: ACC_WIDTH] = acc[i];
+        for (int i = 0; i < ACC_SIZE; i++) acc_flat[i*ACC_WIDTH+:ACC_WIDTH] = acc[i];
         for (int i = 0; i < EXT_NUM; i++) begin
             is_signed_flat[i] = is_signed[i];
             is_shift_flat[i]  = is_shift[i];
@@ -108,12 +107,12 @@ module tb_top_sqr_8x8 #(
     // Reset DUT
     // -------------------------------------------------------------------------
     task automatic reset_dut;
-    begin
-        rst_n = 1'b0;
-        repeat(5) @(posedge clk);
-        rst_n = 1'b1;
-        @(posedge clk);
-    end
+        begin
+            rst_n = 1'b0;
+            repeat (5) @(posedge clk);
+            rst_n = 1'b1;
+            @(posedge clk);
+        end
     endtask
 
     // -------------------------------------------------------------------------
@@ -123,9 +122,9 @@ module tb_top_sqr_8x8 #(
 
     always begin
         clk = 1'b0;
-        #(clk_p/2);
+        #(clk_p / 2);
         clk = 1'b1;
-        #(clk_p/2);
+        #(clk_p / 2);
     end
 
     // -------------------------------------------------------------------------
@@ -141,16 +140,14 @@ module tb_top_sqr_8x8 #(
     function automatic logic [IN_WIDTH_A-1:0] gen_a();
         real s;
         int  v;
-        if (MAX_VAL_A == 0)
-            return '0;
+        if (MAX_VAL_A == 0) return '0;
         if (DIST_TYPE == 0)
             return IN_WIDTH_A'($signed(int'($urandom_range(0, 2 * MAX_VAL_A)) - MAX_VAL_A));
-        s = normal_rand(MU_SCALE    * real'(MAX_VAL_A),
-                        SIGMA_SCALE * real'(MAX_VAL_A));
+        s = normal_rand(MU_SCALE * real'(MAX_VAL_A), SIGMA_SCALE * real'(MAX_VAL_A));
         v = int'($floor(s + 0.5));
-        if (v < 0)                           v = 0;
+        if (v < 0) v = 0;
         if (v > (1 << (IN_WIDTH_A - 1)) - 1) v = (1 << (IN_WIDTH_A - 1)) - 1;
-        if ($urandom_range(0, 1) != 0)       v = -v;
+        if ($urandom_range(0, 1) != 0) v = -v;
         return IN_WIDTH_A'($signed(v));
     endfunction
 
@@ -159,30 +156,27 @@ module tb_top_sqr_8x8 #(
         int  v;
         if (DIST_TYPE == 0)
             return IN_WIDTH_B'($signed(int'($urandom_range(0, 2 * MAX_VAL_B)) - MAX_VAL_B));
-        s = normal_rand(MU_SCALE    * real'(MAX_VAL_B),
-                        SIGMA_SCALE * real'(MAX_VAL_B));
+        s = normal_rand(MU_SCALE * real'(MAX_VAL_B), SIGMA_SCALE * real'(MAX_VAL_B));
         v = int'($floor(s + 0.5));
-        if (v < 0)                           v = 0;
+        if (v < 0) v = 0;
         if (v > (1 << (IN_WIDTH_B - 1)) - 1) v = (1 << (IN_WIDTH_B - 1)) - 1;
-        if ($urandom_range(0, 1) != 0)       v = -v;
+        if ($urandom_range(0, 1) != 0) v = -v;
         return IN_WIDTH_B'($signed(v));
     endfunction
 
     // -------------------------------------------------------------------------
     // Verification tasks
     // -------------------------------------------------------------------------
-    task automatic run_and_check(
-        input bit                           use_random,
-        input logic signed [IN_WIDTH_A-1:0] a_fixed,
-        input logic signed [IN_WIDTH_B-1:0] b_fixed
-    );
+    task automatic run_and_check(input bit use_random, input logic signed [IN_WIDTH_A-1:0] a_fixed,
+                                 input logic signed [IN_WIDTH_B-1:0] b_fixed);
         logic signed [OUT_WIDTH-1:0] sum_ext;
 
         begin
-            exp    = '0;
+            exp = '0;
             acc[0] = ACC_WIDTH'($urandom_range(0, (1 << ACC_WIDTH) - 1));
             acc[1] = ACC_WIDTH'($urandom_range(0, ALPHA_LANES * MAX_VAL_A * MAX_VAL_A));
-            acc[2] = ACC_WIDTH'($signed(int'($urandom_range(0, 2 * ALPHA_LANES * MAX_VAL_A)) - ALPHA_LANES * MAX_VAL_A));
+            acc[2] = ACC_WIDTH'($signed(int'($urandom_range(0, 2 * ALPHA_LANES * MAX_VAL_A)) -
+                                        ALPHA_LANES * MAX_VAL_A));
 
             for (int k = 0; k < EXT_NUM; k++) begin
                 is_signed[k] = 1'b1;
@@ -203,12 +197,20 @@ module tb_top_sqr_8x8 #(
             end
 
             if (IS_PIPELINED) begin
-                repeat(3) @(posedge clk);
+                repeat (3) @(posedge clk);
             end else begin
-                repeat(2) @(posedge clk);
+                repeat (2) @(posedge clk);
             end
 
-            if (out !== OUT_WIDTH'($signed(exp) + $signed(acc[0]) + $signed(acc[1]) + $signed(acc[2]))) begin
+            if (out !== OUT_WIDTH'($signed(
+                    exp
+                ) + $signed(
+                    acc[0]
+                ) + $signed(
+                    acc[1]
+                ) + $signed(
+                    acc[2]
+                ))) begin
                 $dumpoff;
                 $error("Error!\n");
                 $fatal;
@@ -235,7 +237,7 @@ module tb_top_sqr_8x8 #(
             run_and_check(1'b0, min_neg_0, min_neg_1);
             run_and_check(1'b0, max_pos_0, min_neg_1);
             run_and_check(1'b0, min_neg_0, max_pos_1);
-            run_and_check(1'b0,        '0,        '0);
+            run_and_check(1'b0, '0, '0);
         end
     endtask
 

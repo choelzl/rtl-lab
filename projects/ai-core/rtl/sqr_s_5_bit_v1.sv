@@ -13,7 +13,7 @@
 //   out_o[8]:   set only for input -16 (magnitude overflows 4 bits → square 256).
 // -----------------------------------------------------------------------------
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_s_5_bit_v1 (
     input  logic [4:0] in_i,
@@ -29,8 +29,7 @@ module sqr_s_5_bit_v1 (
     assign out_o[2] = a1 & ~a0;
     assign out_o[3] = a0 & (a1 ^ a2);
     assign out_o[4] = (a0 & (a2 ^ a3)) | (a2 & ~a1 & ~a0);
-    assign out_o[5] = (~a0 & a1 & (a3 ^ a2)) |
-                      ( a0 & (((a3 & (a2 | a1)) | (a2 & a1)) ^ s));
+    assign out_o[5] = (~a0 & a1 & (a3 ^ a2)) | (a0 & (((a3 & (a2 | a1)) | (a2 & a1)) ^ s));
     assign out_o[6] = (~s & a3 & (~a2 | a1)) |
                       ( s & a3 & ~a2 & ~a1 & ~a0) |
                       ( s & ~a3 & ((a1 ^ a0) | (a2 & a1)));

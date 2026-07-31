@@ -14,7 +14,7 @@
 
 /* verilator lint_off GENUNNAMED */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_4x8_sc #(
     parameter  int SQR_TYPE      = 0,
@@ -28,16 +28,16 @@ module sqr_4x8_sc #(
     localparam int CPR_IN_WIDTH  = (IN_WIDTH_A + 1) * 2,
     localparam int PP_SUB_SHIFT  = 4,
     localparam int PP_WIDTH      = CPR_IN_WIDTH + $clog2(CPR_IN_SIZE) + 1 + PP_SUB_SHIFT
-)(
-    input  logic [IN_WIDTH_A-1:0] a_i  [0:IN_SIZE-1],
-    input  logic [IN_WIDTH_B-1:0] b_i  [0:IN_SIZE-1],
-    output logic [  PP_WIDTH-1:0] pp_o [0:PP_SIZE-1]
+) (
+    input  logic [IN_WIDTH_A-1:0] a_i [0:IN_SIZE-1],
+    input  logic [IN_WIDTH_B-1:0] b_i [0:IN_SIZE-1],
+    output logic [  PP_WIDTH-1:0] pp_o[0:PP_SIZE-1]
 );
 
     genvar lane, sub_lane;
     generate
 
-        localparam int ADD_SQR_ARRAY_IN_SIZE    = IN_SIZE / NUM_LANES;
+        localparam int ADD_SQR_ARRAY_IN_SIZE = IN_SIZE / NUM_LANES;
         localparam int ADD_SQR_ARRAY_IN_WIDTH_B = IN_WIDTH_B / 2;
 
         for (lane = 0; lane < NUM_LANES; lane++) begin : gen_lane
@@ -48,9 +48,9 @@ module sqr_4x8_sc #(
 
                 localparam int ADD_SQR_ARRAY_IN_WIDTH_BASE = sub_lane * ADD_SQR_ARRAY_IN_WIDTH_B;
 
-                logic [              IN_WIDTH_A-1:0] a  [0:ADD_SQR_ARRAY_IN_SIZE-1];
-                logic [ADD_SQR_ARRAY_IN_WIDTH_B-1:0] b  [0:ADD_SQR_ARRAY_IN_SIZE-1];
-                logic [            CPR_IN_WIDTH-1:0] pp [0:ADD_SQR_ARRAY_IN_SIZE-1];
+                logic [              IN_WIDTH_A-1:0] a [0:ADD_SQR_ARRAY_IN_SIZE-1];
+                logic [ADD_SQR_ARRAY_IN_WIDTH_B-1:0] b [0:ADD_SQR_ARRAY_IN_SIZE-1];
+                logic [            CPR_IN_WIDTH-1:0] pp[0:ADD_SQR_ARRAY_IN_SIZE-1];
 
                 always_comb begin
                     for (int k = 0; k < ADD_SQR_ARRAY_IN_SIZE; k++) begin
@@ -60,7 +60,7 @@ module sqr_4x8_sc #(
                             b[k][ADD_SQR_ARRAY_IN_WIDTH_B-1] = ~b[k][ADD_SQR_ARRAY_IN_WIDTH_B-1];
                     end
                 end
-                
+
                 add_sqr_s_5_bit_array #(
                     .IN_SIZE (ADD_SQR_ARRAY_IN_SIZE),
                     .SQR_TYPE(SQR_TYPE)
@@ -71,13 +71,15 @@ module sqr_4x8_sc #(
                 );
 
                 localparam int CPR_N_2_MAX_EXT_BITS = -1;
-                localparam int CPR_N_2_PP_OUT_WIDTH = CPR_IN_WIDTH + $clog2(ADD_SQR_ARRAY_IN_SIZE) + 1;
-                localparam int CPR_N_2_OUT_OFFSET   = (lane * NUM_SUB_LANES * 2) + (sub_lane * 2);
-                localparam int CPR_N_2_OUT_SHIFT    = sub_lane * PP_SUB_SHIFT;
+                localparam int CPR_N_2_PP_OUT_WIDTH = CPR_IN_WIDTH + $clog2(
+                    ADD_SQR_ARRAY_IN_SIZE
+                ) + 1;
+                localparam int CPR_N_2_OUT_OFFSET = (lane * NUM_SUB_LANES * 2) + (sub_lane * 2);
+                localparam int CPR_N_2_OUT_SHIFT = sub_lane * PP_SUB_SHIFT;
                 localparam int CPR_N_2_OUT_MARG     = PP_WIDTH - CPR_N_2_PP_OUT_WIDTH - CPR_N_2_OUT_SHIFT;
-                localparam int CPR_N_2_OUT_CUT      = CPR_N_2_PP_OUT_WIDTH + CPR_N_2_OUT_MARG;
+                localparam int CPR_N_2_OUT_CUT = CPR_N_2_PP_OUT_WIDTH + CPR_N_2_OUT_MARG;
 
-                logic [CPR_N_2_PP_OUT_WIDTH-1:0] pp_out [0:1];
+                logic [CPR_N_2_PP_OUT_WIDTH-1:0] pp_out[0:1];
 
                 cpr_n_2 #(
                     .IN_SIZE     (ADD_SQR_ARRAY_IN_SIZE),
@@ -91,13 +93,25 @@ module sqr_4x8_sc #(
 
                 if (CPR_N_2_OUT_MARG > 0) begin
 
-                    assign pp_o[CPR_N_2_OUT_OFFSET+0] = {{CPR_N_2_OUT_MARG{pp_out[0][CPR_N_2_PP_OUT_WIDTH-1]}}, pp_out[0], {CPR_N_2_OUT_SHIFT{1'b0}}};
-                    assign pp_o[CPR_N_2_OUT_OFFSET+1] = {{CPR_N_2_OUT_MARG{pp_out[1][CPR_N_2_PP_OUT_WIDTH-1]}}, pp_out[1], {CPR_N_2_OUT_SHIFT{1'b0}}};
+                    assign pp_o[CPR_N_2_OUT_OFFSET+0] = {
+                        {CPR_N_2_OUT_MARG{pp_out[0][CPR_N_2_PP_OUT_WIDTH-1]}},
+                        pp_out[0],
+                        {CPR_N_2_OUT_SHIFT{1'b0}}
+                    };
+                    assign pp_o[CPR_N_2_OUT_OFFSET+1] = {
+                        {CPR_N_2_OUT_MARG{pp_out[1][CPR_N_2_PP_OUT_WIDTH-1]}},
+                        pp_out[1],
+                        {CPR_N_2_OUT_SHIFT{1'b0}}
+                    };
 
                 end else begin
 
-                    assign pp_o[CPR_N_2_OUT_OFFSET+0] = {pp_out[0][CPR_N_2_OUT_CUT-1:0], {CPR_N_2_OUT_SHIFT{1'b0}}};
-                    assign pp_o[CPR_N_2_OUT_OFFSET+1] = {pp_out[1][CPR_N_2_OUT_CUT-1:0], {CPR_N_2_OUT_SHIFT{1'b0}}};
+                    assign pp_o[CPR_N_2_OUT_OFFSET+0] = {
+                        pp_out[0][CPR_N_2_OUT_CUT-1:0], {CPR_N_2_OUT_SHIFT{1'b0}}
+                    };
+                    assign pp_o[CPR_N_2_OUT_OFFSET+1] = {
+                        pp_out[1][CPR_N_2_OUT_CUT-1:0], {CPR_N_2_OUT_SHIFT{1'b0}}
+                    };
 
                 end
 

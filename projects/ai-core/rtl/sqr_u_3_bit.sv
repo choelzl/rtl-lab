@@ -9,7 +9,7 @@
 
 /* verilator lint_off UNUSEDSIGNAL */
 
-`timescale 1 ns/1 ps
+`timescale 1 ns / 1 ps
 
 module sqr_u_3_bit (
     input  logic [2:0] in_i,
